@@ -57,26 +57,81 @@ function getTransporter() {
 /**
  * Send email
  */
-export async function sendEmail(options: EmailOptions): Promise<boolean> {
-  try {
-    const transporter = getTransporter();
+export type SendResult = { ok: boolean; error?: string };
 
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || 'noreply@ticketbuddy.com',
+/**
+ * Resend over HTTPS rather than their SMTP relay.
+ *
+ * SMTP on port 587 is blocked by plenty of networks, keeps a connection
+ * open (a poor fit for serverless functions), and reports failures as
+ * opaque timeouts. The HTTP API returns a JSON error we can actually show
+ * someone.
+ */
+async function sendViaResend(
+  from: string,
+  options: EmailOptions
+): Promise<SendResult> {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return { ok: false, error: "RESEND_API_KEY is not set." };
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from,
+      to: [options.to],
+      subject: options.subject,
+      html: options.html,
+      ...(options.replyTo ? { reply_to: options.replyTo } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    return { ok: false, error: `Resend ${response.status}: ${body}` };
+  }
+  return { ok: true };
+}
+
+/**
+ * Send an email. Returns why it failed rather than just false, so callers
+ * can tell the user something useful — a silently swallowed error here is
+ * how every invitation and ticket went missing without a trace.
+ */
+export async function sendEmailWithResult(
+  options: EmailOptions
+): Promise<SendResult> {
+  const from = process.env.EMAIL_FROM || "onboarding@resend.dev";
+
+  try {
+    if ((process.env.EMAIL_PROVIDER || "smtp") === "resend") {
+      const result = await sendViaResend(from, options);
+      if (!result.ok) console.error("Email to " + options.to + " failed:", result.error);
+      return result;
+    }
+
+    const transporter = getTransporter();
+    await transporter.sendMail({
+      from,
       to: options.to,
       subject: options.subject,
       html: options.html,
-      replyTo: options.replyTo || 'support@ticketbuddy.com',
-    };
-
-    const result = await transporter.sendMail(mailOptions);
-
-    console.log(`Email sent to ${options.to}:`, result.messageId);
-    return true;
+      replyTo: options.replyTo || from,
+    });
+    return { ok: true };
   } catch (error) {
-    console.error(`Failed to send email to ${options.to}:`, error);
-    return false;
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Email to " + options.to + " failed:", message);
+    return { ok: false, error: message };
   }
+}
+
+/** Backwards-compatible boolean wrapper. */
+export async function sendEmail(options: EmailOptions): Promise<boolean> {
+  return (await sendEmailWithResult(options)).ok;
 }
 
 /**

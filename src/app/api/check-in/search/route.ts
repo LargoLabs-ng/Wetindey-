@@ -3,7 +3,7 @@ import { auth } from '@/auth';
 import { requireEventCapability } from '@/lib/authz';
 import { db } from '@/db';
 import { tickets } from '@/db/schema';
-import { and, eq, or, like, ilike } from 'drizzle-orm';
+import { and, eq, or, ilike, sql } from 'drizzle-orm';
 
 /**
  * GET /api/check-in/search?eventId=xyz&query=...
@@ -46,7 +46,9 @@ export async function GET(request: NextRequest) {
         or(
           ilike(tickets.attendeeName, `%${query}%`),
           ilike(tickets.attendeeEmail, `%${query}%`),
-          ilike(tickets.id, `%${query}%`)
+          // id is a uuid: Postgres has no ILIKE for that type, so this
+          // threw on every single search until it was cast to text.
+          sql`${tickets.id}::text ILIKE ${`%${query.toLowerCase()}%`}`
         )
       ),
       limit: 10,

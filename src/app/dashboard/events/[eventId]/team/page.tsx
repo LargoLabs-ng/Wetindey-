@@ -37,6 +37,7 @@ export default function TeamPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [manualLink, setManualLink] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<OrgRole>('gate_staff');
@@ -79,10 +80,22 @@ export default function TeamPage() {
         setError(data.error ?? 'Could not send that invitation.');
         return;
       }
-      setNotice(`Invitation sent to ${inviteEmail}.`);
       setInviteEmail('');
       setShowInvite(false);
       await load();
+
+      if (data.emailSent) {
+        setNotice(`Invitation sent to ${inviteEmail}.`);
+        setManualLink(null);
+      } else {
+        setNotice(null);
+        setManualLink(data.inviteUrl ?? null);
+        setError(
+          `${inviteEmail} was added, but the invitation email couldn't be sent` +
+            (data.emailError ? ` (${data.emailError})` : '') +
+            '. Share the link below with them instead.'
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -166,6 +179,14 @@ export default function TeamPage() {
         <p className="rounded-lg border border-error/40 bg-error/10 px-4 py-3 text-sm text-error">
           {error}
         </p>
+      )}
+      {manualLink && (
+        <div className="rounded-lg border border-line-dark bg-surface px-4 py-3">
+          <p className="mb-2 text-sm text-on-dark-2">Invitation link</p>
+          <code className="block overflow-x-auto whitespace-nowrap rounded bg-canvas px-3 py-2 text-sm text-gold">
+            {manualLink}
+          </code>
+        </div>
       )}
 
       {showInvite && (

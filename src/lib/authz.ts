@@ -343,13 +343,18 @@ export async function getStaffedEvents(
  * whole remit is the scanner.
  */
 export async function hasDashboardAccess(userId: string): Promise<boolean> {
-  const memberships = await db
-    .select({ role: organizationMembers.role })
-    .from(organizationMembers)
-    .where(eq(organizationMembers.userId, userId));
-
-  if (memberships.some((m) => m.role === "owner")) return true;
-
   const staffed = await getStaffedEvents(userId);
-  return staffed.some((e) => can(e.role, "event:view"));
+
+  // Anything they can actually look at earns them the dashboard.
+  if (staffed.some((e) => can(e.role, "event:view"))) return true;
+
+  // Nothing viewable. If they are staffed on something regardless, they are
+  // gate crew and belong at the scanner. Registration hands every new
+  // account its own organization, so "owns an org" cannot be the test —
+  // a volunteer who signed up to work one door owns an empty one too.
+  if (staffed.length > 0) return false;
+
+  // Staffed nowhere at all: a new organizer who still has to create their
+  // first event.
+  return true;
 }

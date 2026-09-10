@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { eventStaff, users } from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
 import { ASSIGNABLE_ROLES } from "@/lib/permissions";
-import { sendEmail } from "@/lib/email-service";
+import { sendEmailWithResult } from "@/lib/email-service";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -105,26 +105,30 @@ export async function POST(request: Request, context: RouteContext) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const inviteUrl = `${appUrl}/team/accept-invite?token=${inviteToken}`;
 
-  try {
-    await sendEmail({
-      to: email,
-      subject: `You've been added to ${access.event.title}`,
-      html: `
-        <h2>You're on the team</h2>
-        <p>You've been invited to help run <strong>${access.event.title}</strong> on Ticket Buddy.</p>
-        <p>Role: <strong>${parsed.data.role.replace(/_/g, " ").toUpperCase()}</strong></p>
-        <p>
-          <a href="${inviteUrl}" style="background-color:#12372A;color:#ffffff;padding:10px 20px;border-radius:5px;text-decoration:none;display:inline-block;">
-            Accept invitation
-          </a>
-        </p>
-        <p>This link expires in 7 days.</p>
-      `,
-    });
-  } catch (error) {
-    // The invite row is what matters; a failed email shouldn't lose it.
-    console.error("Failed to send staff invite email:", error);
-  }
+  const sent = await sendEmailWithResult({
+    to: email,
+    subject: "You've been added to " + access.event.title,
+    html: `
+      <h2>You're on the team</h2>
+      <p>You've been invited to help run <strong>${access.event.title}</strong> on Ticket Buddy.</p>
+      <p>Role: <strong>${parsed.data.role.replace(/_/g, " ").toUpperCase()}</strong></p>
+      <p>
+        <a href="${inviteUrl}" style="background-color:#12372A;color:#ffffff;padding:10px 20px;border-radius:5px;text-decoration:none;display:inline-block;">
+          Accept invitation
+        </a>
+      </p>
+      <p>This link expires in 7 days.</p>
+    `,
+  });
 
-  return NextResponse.json({ staff: invite }, { status: 201 });
+  // The invite row is what actually grants access, so a failed email is not
+  // a failed invite — but the organizer needs to know, and needs the link.
+  return NextResponse.json(
+    {
+      staff: invite,
+      emailSent: sent.ok,
+      ...(sent.ok ? {} : { inviteUrl, emailError: sent.error }),
+    },
+    { status: 201 }
+  );
 }
