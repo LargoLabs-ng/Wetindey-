@@ -5,8 +5,8 @@ import { events } from "@/db/schema";
 import { getPrimaryOrganizationId, getSessionUserId } from "@/lib/authz";
 
 const statusStyles: Record<string, string> = {
-  draft: "bg-border text-secondary-text",
-  published: "bg-success/15 text-success",
+  draft: "bg-surface-2 text-on-dark-2",
+  published: "bg-success/25 text-sage",
   unpublished: "bg-warning/15 text-warning",
   cancelled: "bg-error/15 text-error",
 };
@@ -27,43 +27,43 @@ export default async function EventsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-charcoal">Your events</h1>
-          <p className="text-secondary-text text-sm mt-1">
+          <h1 className="text-2xl font-bold text-on-dark">Your events</h1>
+          <p className="text-on-dark-2 text-sm mt-1">
             Everything under control.
           </p>
         </div>
         <Link
           href="/dashboard/events/new"
-          className="rounded-lg bg-forest text-ivory font-semibold px-4 py-2.5 hover:bg-emerald transition-colors"
+          className="rounded-lg bg-gold text-canvas font-semibold px-4 py-2.5 hover:bg-gold-deep transition-colors"
         >
           Create event
         </Link>
       </div>
 
       {orgEvents.length === 0 ? (
-        <div className="bg-white border border-border rounded-2xl p-12 text-center">
-          <p className="text-charcoal font-medium mb-1">No events yet</p>
-          <p className="text-secondary-text text-sm mb-6">
+        <div className="bg-surface border border-line-dark rounded-2xl p-12 text-center">
+          <p className="text-on-dark font-medium mb-1">No events yet</p>
+          <p className="text-on-dark-2 text-sm mb-6">
             Create your first event to start selling tickets.
           </p>
           <Link
             href="/dashboard/events/new"
-            className="inline-block rounded-lg bg-forest text-ivory font-semibold px-4 py-2.5 hover:bg-emerald transition-colors"
+            className="inline-block rounded-lg bg-gold text-canvas font-semibold px-4 py-2.5 hover:bg-gold-deep transition-colors"
           >
             Create event
           </Link>
         </div>
       ) : (
-        <div className="bg-white border border-border rounded-2xl divide-y divide-border overflow-hidden">
+        <div className="bg-surface border border-line-dark rounded-2xl divide-y divide-line-dark overflow-hidden">
           {orgEvents.map((event) => (
             <Link
               key={event.id}
               href={`/dashboard/events/${event.id}`}
-              className="flex items-center justify-between px-6 py-4 hover:bg-ivory transition-colors"
+              className="flex items-center justify-between px-6 py-4 hover:bg-surface-2 transition-colors"
             >
               <div>
-                <p className="font-semibold text-charcoal">{event.title}</p>
-                <p className="text-sm text-secondary-text">
+                <p className="font-semibold text-on-dark">{event.title}</p>
+                <p className="text-sm text-on-dark-2">
                   {new Date(event.startDatetime).toLocaleDateString("en-NG", {
                     day: "numeric",
                     month: "short",

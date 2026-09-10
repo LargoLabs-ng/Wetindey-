@@ -13,11 +13,7 @@ const googleConfigured = Boolean(
 );
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  // The adapter persists Google-authenticated users/accounts to our own
-  // `users`/`accounts` tables. It is NOT used for session storage — we keep
-  // `session: { strategy: "jwt" }` below, which is required for the
-  // Credentials provider to work at all, and Auth.js supports combining an
-  // adapter with Credentials as long as sessions stay JWT-based.
+  secret: process.env.AUTH_SECRET,
   adapter: DrizzleAdapter(db, { usersTable: users, accountsTable: accounts }),
   session: { strategy: "jwt" },
   pages: {
@@ -41,8 +37,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           .where(eq(users.email, email.toLowerCase()))
           .limit(1);
 
-        // No account, or an OAuth-only account with no password set —
-        // reject either way rather than letting bcrypt.compare throw.
         if (!user || !user.passwordHash) return null;
 
         const valid = await verifyPassword(password, user.passwordHash);
@@ -55,28 +49,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         };
       },
     }),
-    // Only registered when AUTH_GOOGLE_ID/SECRET are actually set — Google
-    // sign-in is optional (see decision log in README); when absent, the
-    // login/signup pages also hide the button so nobody hits a dead flow.
     ...(googleConfigured
       ? [
           Google({
-            // allowDangerousEmailAccountLinking: Google verifies email
-            // ownership itself, so it's safe (and expected) for a staff
-            // member who first signed up with email/password to also sign
-            // in with Google using the same address, and have it resolve
-            // to the same account.
             allowDangerousEmailAccountLinking: true,
           }),
         ]
       : []),
   ],
   events: {
-    // Fires only when the adapter creates a BRAND NEW user — i.e. the first
-    // time someone signs in with Google and no matching account exists yet.
-    // Credentials signups create their Organization explicitly in
-    // /api/auth/register instead; this is the equivalent step for OAuth,
-    // since there's no form step to collect an organization name mid-flow.
     async createUser({ user }) {
       if (!user.id) return;
 

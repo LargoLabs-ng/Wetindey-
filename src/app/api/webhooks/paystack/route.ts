@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
+import { sendTicketsForOrder } from '@/lib/ticket-email';
+import { confirmOrderInventory } from '@/lib/inventory';
 import { db } from '@/db';
 import { payments, orders, tickets } from '@/db/schema';
 import { eq } from 'drizzle-orm';
@@ -27,7 +29,14 @@ export async function POST(request: NextRequest) {
     // Verify HMAC-SHA512 signature
     const hash = createHmac('sha512', PAYSTACK_SECRET).update(body).digest('hex');
 
-    if (hash !== signature) {
+    // Constant-time compare so the response time can't be used to guess
+    // a valid signature byte by byte.
+    const expected = Buffer.from(hash, 'utf8');
+    const received = Buffer.from(signature, 'utf8');
+    const signatureValid =
+      expected.length === received.length && timingSafeEqual(expected, received);
+
+    if (!signatureValid) {
       return NextResponse.json(
         { error: 'Invalid signature' },
         { status: 401 }
@@ -102,20 +111,16 @@ export async function POST(request: NextRequest) {
         })
         .where(eq(tickets.orderId, payment.order.id));
 
-      // Send confirmation email with QR codes
-      try {
-        const emailResponse = await fetch(
-          `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/tickets/send-email`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId: payment.order.id }),
-          }
-        );
+      // Move this order's held inventory into the sold column. Without
+      // this, quantitySold stayed 0 forever and the public page kept
+      // offering tickets that no longer existed.
+      await confirmOrderInventory(payment.order.id);
 
-        if (!emailResponse.ok) {
-          console.error('Failed to send confirmation email:', await emailResponse.text());
-        }
+      // Send confirmation email with QR codes.
+      // Called in-process rather than over HTTP: no dependency on
+      // NEXT_PUBLIC_APP_URL being right, and nothing publicly reachable.
+      try {
+        await sendTicketsForOrder(payment.order.id);
       } catch (emailError) {
         // Email sending is best-effort, don't fail the webhook
         console.error('Error sending confirmation email:', emailError);

@@ -3,7 +3,8 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { events, ticketTypes } from "@/db/schema";
-import { canManageEvents, getMembership, getSessionUserId } from "@/lib/authz";
+import { getEventRole, getSessionUserId } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 
 const updateTicketTypeSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -12,6 +13,9 @@ const updateTicketTypeSchema = z.object({
   quantityTotal: z.coerce.number().int().min(1).optional(),
   maxPerOrder: z.coerce.number().int().min(1).max(50).optional(),
   status: z.enum(["active", "paused", "sold_out"]).optional(),
+  // Nullable so a sales window set at creation can also be cleared.
+  salesStart: z.coerce.date().nullable().optional(),
+  salesEnd: z.coerce.date().nullable().optional(),
 });
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -27,8 +31,8 @@ async function loadTierWithMembership(tierId: string, userId: string) {
   const [event] = await db.select().from(events).where(eq(events.id, tier.eventId)).limit(1);
   if (!event) return { tier: null, membership: null };
 
-  const membership = await getMembership(userId, event.organizationId);
-  return { tier, membership };
+  const role = await getEventRole(userId, event);
+  return { tier, membership: role ? { role } : null };
 }
 
 // PATCH /api/ticket-types/:id — Owner or Event Manager only.
@@ -43,7 +47,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!tier) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (!membership || !canManageEvents(membership.role)) {
+  if (!membership || !can(membership.role, "tickets:manage")) {
     return NextResponse.json(
       { error: "You do not have permission to edit this ticket type." },
       { status: 403 }
@@ -73,6 +77,17 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
+  if (
+    parsed.data.salesStart &&
+    parsed.data.salesEnd &&
+    parsed.data.salesEnd <= parsed.data.salesStart
+  ) {
+    return NextResponse.json(
+      { error: "Sales must end after they start." },
+      { status: 400 }
+    );
+  }
+
   const [updated] = await db
     .update(ticketTypes)
     .set({
@@ -98,7 +113,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (!tier) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (!membership || !canManageEvents(membership.role)) {
+  if (!membership || !can(membership.role, "tickets:manage")) {
     return NextResponse.json(
       { error: "You do not have permission to delete this ticket type." },
       { status: 403 }

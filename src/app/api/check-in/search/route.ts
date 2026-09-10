@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { requireEventCapability } from '@/lib/authz';
 import { db } from '@/db';
 import { tickets } from '@/db/schema';
 import { and, eq, or, like, ilike } from 'drizzle-orm';
@@ -27,6 +28,14 @@ export async function GET(request: NextRequest) {
         { error: 'Missing eventId or query parameter' },
         { status: 400 }
       );
+    }
+
+    // Gate: the caller must belong to the organization that owns this event.
+    // Without this, any signed-in account could check in another
+    // organizer's attendees.
+    const access = await requireEventCapability(eventId, 'checkin:perform');
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     // Search tickets by multiple fields

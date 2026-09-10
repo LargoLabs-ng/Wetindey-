@@ -3,7 +3,8 @@ import { z } from "zod";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { events, ticketTypes } from "@/db/schema";
-import { canManageEvents, getMembership, getSessionUserId } from "@/lib/authz";
+import { getEventRole, getSessionUserId } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 
 const createTicketTypeSchema = z.object({
   name: z.string().min(1).max(100),
@@ -11,8 +12,11 @@ const createTicketTypeSchema = z.object({
   price: z.coerce.number().min(0),
   quantityTotal: z.coerce.number().int().min(1),
   maxPerOrder: z.coerce.number().int().min(1).max(50).optional(),
-  salesStart: z.coerce.date().optional(),
-  salesEnd: z.coerce.date().optional(),
+  // .nullable() matters: z.coerce.date() would turn an explicit null into
+  // new Date(null) — the 1970 epoch — which then failed the ordering check
+  // below even when the organizer left both fields blank.
+  salesStart: z.coerce.date().nullable().optional(),
+  salesEnd: z.coerce.date().nullable().optional(),
 });
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -30,8 +34,8 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const membership = await getMembership(userId, event.organizationId);
-  if (!membership) {
+  const role = await getEventRole(userId, event);
+  if (!role || !can(role, "event:view")) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -57,8 +61,8 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const membership = await getMembership(userId, event.organizationId);
-  if (!membership || !canManageEvents(membership.role)) {
+  const role = await getEventRole(userId, event);
+  if (!role || !can(role, "tickets:manage")) {
     return NextResponse.json(
       { error: "You do not have permission to manage ticket types for this event." },
       { status: 403 }
@@ -70,6 +74,17 @@ export async function POST(request: Request, context: RouteContext) {
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid input", details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
+  if (
+    parsed.data.salesStart &&
+    parsed.data.salesEnd &&
+    parsed.data.salesEnd <= parsed.data.salesStart
+  ) {
+    return NextResponse.json(
+      { error: "Sales must end after they start." },
       { status: 400 }
     );
   }

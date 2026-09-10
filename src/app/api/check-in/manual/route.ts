@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { requireEventCapability } from '@/lib/authz';
 import { db } from '@/db';
 import { tickets, checkIns } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -26,6 +27,14 @@ export async function POST(request: NextRequest) {
         { error: 'Missing ticketId or eventId' },
         { status: 400 }
       );
+    }
+
+    // Gate: the caller must belong to the organization that owns this event.
+    // Without this, any signed-in account could check in another
+    // organizer's attendees.
+    const access = await requireEventCapability(eventId, 'checkin:perform');
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     // Find and verify ticket
@@ -71,16 +80,20 @@ export async function POST(request: NextRequest) {
       .set({
         status: 'checked_in',
         checkedInAt: now,
+        checkedInBy: access.userId,
       })
       .where(eq(tickets.id, ticketId));
 
-    // Create check-in record
+    // Create check-in record.
+    // checked_in_by is a uuid FK to users.id — this previously wrote
+    // session.user.email into it, which Postgres rejected outright, so
+    // every manual check-in failed with a 500.
     await db.insert(checkIns).values({
       id: crypto.randomUUID(),
       ticketId: ticket.id,
       eventId,
       checkedInAt: now,
-      checkedInBy: session.user.email,
+      checkedInBy: access.userId,
       method: 'manual_lookup',
     });
 

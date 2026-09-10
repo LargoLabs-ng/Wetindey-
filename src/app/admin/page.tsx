@@ -9,7 +9,6 @@ import {
   DollarSign,
   CheckCircle,
   Download,
-  Settings,
   ArrowRight,
 } from 'lucide-react';
 
@@ -141,16 +140,6 @@ export default function AdminDashboard() {
                 <Download className="h-4 w-4" />
                 Export
               </button>
-              <Link
-                href="/admin/settings"
-                className="flex items-center gap-2 rounded px-3 py-2 text-sm font-semibold border transition-opacity hover:opacity-75"
-                style={{
-                  borderColor: 'var(--color-stone-mid)',
-                  color: 'var(--color-stone)',
-                }}
-              >
-                <Settings className="h-4 w-4" />
-              </Link>
             </div>
           </div>
         </div>

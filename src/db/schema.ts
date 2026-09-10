@@ -361,3 +361,43 @@ export const ticketsRelations = relations(tickets, ({ one, many }) => ({
 export const paymentsRelations = relations(payments, ({ one }) => ({
   order: one(orders, { fields: [payments.orderId], references: [orders.id] }),
 }));
+
+// ─── Per-event staffing ──────────────────────────────────────────────────
+//
+// Organization membership says who belongs to the company; this table says
+// who works a *specific* event and in what capacity. A gate volunteer hired
+// for one show should not be able to scan tickets at the next one, which is
+// exactly what an organization-wide role would have allowed.
+//
+// The organization owner is deliberately absent here: ownership is a
+// company-level fact and grants full access to every event the org runs.
+export const eventStaff = pgTable(
+  "event_staff",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventId: uuid("event_id")
+      .references(() => events.id, { onDelete: "cascade" })
+      .notNull(),
+    // Null until the invitee accepts and we can bind a real account.
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    userEmail: varchar("user_email", { length: 255 }).notNull(),
+    role: orgRoleEnum("role").notNull(),
+    status: varchar("status", { length: 50 }).default("pending").notNull(),
+    inviteToken: varchar("invite_token", { length: 255 }),
+    invitedAt: timestamp("invited_at").defaultNow(),
+    joinedAt: timestamp("joined_at"),
+    invitedBy: varchar("invited_by", { length: 255 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueEventUser: uniqueIndex("event_staff_unique").on(t.eventId, t.userId),
+  })
+);
+
+export const eventStaffRelations = relations(eventStaff, ({ one }) => ({
+  event: one(events, {
+    fields: [eventStaff.eventId],
+    references: [events.id],
+  }),
+  user: one(users, { fields: [eventStaff.userId], references: [users.id] }),
+}));

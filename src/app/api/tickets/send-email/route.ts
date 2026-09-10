@@ -1,91 +1,54 @@
-import { NextRequest, NextResponse } from 'next/server';
-import QRCode from 'qrcode';
-import { db } from '@/db';
-import { orders, tickets } from '@/db/schema';
-import { eq } from 'drizzle-orm';
-import { sendOrderConfirmation } from '@/lib/email-service';
+import { NextRequest, NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { orders } from "@/db/schema";
+import { requireEventCapability } from "@/lib/authz";
+import { sendTicketsForOrder } from "@/lib/ticket-email";
 
+/**
+ * POST /api/tickets/send-email — { orderId }
+ * Resend an order's tickets. Organizer-only: the caller must belong to the
+ * organization running the event. The purchase flow no longer calls this;
+ * the Paystack webhook sends tickets by calling sendTicketsForOrder directly.
+ */
 export async function POST(request: NextRequest) {
   try {
-    const { orderId } = await request.json();
+    const { orderId } = await request.json().catch(() => ({}));
 
     if (!orderId) {
-      return NextResponse.json({ error: 'Missing orderId' }, { status: 400 });
+      return NextResponse.json({ error: "Missing orderId" }, { status: 400 });
     }
 
-    const order = await db.query.orders.findFirst({
-      where: eq(orders.id, orderId),
-      with: {
-        event: true,
-        tickets: true,
-      },
-    });
+    const [order] = await db
+      .select({ eventId: orders.eventId })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
 
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    const ticketsWithQR = await Promise.all(
-      order.tickets.map(async (ticket) => {
-        const qrValue = JSON.stringify({
-          ticketId: ticket.id,
-          token: ticket.qrToken || '',
-          attendeeName: ticket.attendeeName || 'Attendee',
-          eventTitle: order.event.title,
-          timestamp: new Date().toISOString(),
-        });
+    const access = await requireEventCapability(order.eventId, 'attendees:view');
+    if (!access.ok) {
+      return NextResponse.json(
+        { error: access.error },
+        { status: access.status }
+      );
+    }
 
-        const qrCode = await QRCode.toDataURL(qrValue, {
-          errorCorrectionLevel: 'H',
-          type: 'image/png',
-          margin: 1,
-          color: {
-            dark: '#12372A',
-            light: '#ffffff',
-          },
-        });
-
-        return {
-          id: ticket.id,
-          attendeeName: ticket.attendeeName || 'Attendee',
-          qrCode,
-          ticketType: 'Standard',
-        };
-      })
-    );
-
-    const emailSent = await sendOrderConfirmation({
-      attendeeEmail: order.email || '',
-      attendeeFirstName: (order.email || '').split('@')[0] || 'Customer',
-      eventTitle: order.event.title,
-      eventDate: new Date(order.event.startDatetime).toLocaleDateString('en-US', {
-        weekday: 'short',
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      }),
-      eventTime: new Date(order.event.startDatetime).toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      eventVenue: order.event.venueName || 'TBA',
-      eventCity: order.event.city || 'TBA',
-      tickets: ticketsWithQR,
-      orderId: order.id,
-      totalAmount: Number.isFinite(Number(order.total)) ? Number(order.total) : 0,
-    });
-
-    if (!emailSent) {
-      console.error(`Failed to send confirmation email for order ${orderId}`);
+    const result = await sendTicketsForOrder(orderId);
+    if (!result.ok) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Confirmation email sent',
-      emailSent,
+      message: "Confirmation email sent",
+      emailSent: result.emailSent,
     });
   } catch (error) {
-    console.error('Error sending ticket email:', error);
-    return NextResponse.json({ error: 'Failed to send email' }, { status: 500 });
+    console.error("Error sending ticket email:", error);
+    return NextResponse.json({ error: "Failed to send email" }, { status: 500 });
   }
 }

@@ -13,6 +13,7 @@ interface TicketType {
   price: string;
   quantityTotal: number;
   quantitySold: number;
+  quantityReserved: number;
   maxPerOrder: number;
   status: string;
 }
@@ -42,6 +43,8 @@ export default function EventDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [buyerName, setBuyerName] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
   const [buyerEmail, setBuyerEmail] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
   const [attendees, setAttendees] = useState<Array<{ name: string; email: string }>>([]);
@@ -92,14 +95,33 @@ export default function EventDetailPage() {
 
   const selectedTicketType = event?.ticketTypes.find((t) => t.id === selectedTicket);
   const available = selectedTicketType
-    ? selectedTicketType.quantityTotal - selectedTicketType.quantitySold
+    ? Math.max(0, selectedTicketType.quantityTotal - selectedTicketType.quantitySold - selectedTicketType.quantityReserved)
     : 0;
+
+  // The <select> shows the first tier from the start, so the state has to
+  // agree with it — otherwise nothing is really selected and checkout is
+  // dead on arrival.
+  useEffect(() => {
+    if (!selectedTicket && event?.ticketTypes.length) {
+      setSelectedTicket(event.ticketTypes[0].id);
+    }
+  }, [event, selectedTicket]);
+
+  // attendees must always be exactly `quantity` long: the API rejects the
+  // order otherwise, and previously buying a single ticket sent an empty
+  // array because only the quantity input ever populated it.
+  useEffect(() => {
+    setAttendees((current) => {
+      const next = [...current];
+      while (next.length < quantity) next.push({ name: '', email: '' });
+      return next.slice(0, quantity);
+    });
+  }, [quantity]);
 
   const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value);
     if (value > 0 && value <= Math.min(available, selectedTicketType?.maxPerOrder || 10)) {
       setQuantity(value);
-      setAttendees(Array(value).fill({ name: '', email: '' }));
     }
   };
 
@@ -112,13 +134,22 @@ export default function EventDetailPage() {
   const handleCheckout = async () => {
     if (!selectedTicketType || !event) return;
 
-    if (!buyerEmail || !buyerPhone) {
-      alert('Please enter your email and phone number');
+    setFormError(null);
+
+    if (!buyerName.trim() || !buyerEmail.trim() || !buyerPhone.trim()) {
+      setFormError('Please enter your name, email and phone number.');
       return;
     }
 
-    if (attendees.some((a) => !a.name || !a.email)) {
-      alert('Please enter details for all attendees');
+    // Ticket 1 belongs to the buyer unless they said otherwise; any extra
+    // tickets need their own holder.
+    const resolvedAttendees = Array.from({ length: quantity }, (_, i) => ({
+      name: attendees[i]?.name?.trim() || (i === 0 ? buyerName.trim() : ''),
+      email: attendees[i]?.email?.trim() || (i === 0 ? buyerEmail.trim() : ''),
+    }));
+
+    if (resolvedAttendees.some((a) => !a.name || !a.email)) {
+      setFormError('Please enter a name and email for every attendee.');
       return;
     }
 
@@ -134,7 +165,7 @@ export default function EventDetailPage() {
           quantity,
           buyerEmail,
           buyerPhone,
-          attendees,
+          attendees: resolvedAttendees,
         }),
       });
 
@@ -146,7 +177,9 @@ export default function EventDetailPage() {
       const { paymentUrl } = await response.json();
       window.location.href = paymentUrl;
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to process checkout');
+      setFormError(
+        err instanceof Error ? err.message : 'Failed to process checkout'
+      );
     } finally {
       setProcessing(false);
     }
@@ -300,7 +333,7 @@ export default function EventDetailPage() {
                     style={{ borderColor: 'var(--color-stone-mid)' }}
                   >
                     {event.ticketTypes.map((type) => {
-                      const available = type.quantityTotal - type.quantitySold;
+                      const available = Math.max(0, type.quantityTotal - type.quantitySold - type.quantityReserved);
                       return (
                         <option key={type.id} value={type.id}>
                           {type.name} - {formatPrice(type.price)} ({available} available)
@@ -361,6 +394,12 @@ export default function EventDetailPage() {
               {processing ? 'Processing...' : 'Proceed to Payment'}
             </button>
 
+            {formError && (
+              <p className="mt-3 text-sm" style={{ color: 'var(--color-danger)' }}>
+                {formError}
+              </p>
+            )}
+
             <p className="mt-3 text-xs text-center" style={{ color: 'var(--color-stone-mid)' }}>
               Secure payments powered by Paystack
             </p>
@@ -374,6 +413,20 @@ export default function EventDetailPage() {
             </h3>
 
             <div className="mt-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold" style={{ color: 'var(--color-forest)' }}>
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  value={buyerName}
+                  onChange={(e) => setBuyerName(e.target.value)}
+                  placeholder="Your name"
+                  className="mt-2 w-full rounded border px-3 py-2"
+                  style={{ borderColor: 'var(--color-stone-mid)' }}
+                />
+              </div>
+
               <div>
                 <label className="block text-sm font-semibold" style={{ color: 'var(--color-forest)' }}>
                   Email Address
@@ -409,7 +462,7 @@ export default function EventDetailPage() {
                   Attendee Details
                 </h4>
                 <p className="mt-1 text-sm" style={{ color: 'var(--color-stone)' }}>
-                  Provide information for each attendee
+                  Leave the first one blank to use your own details.
                 </p>
 
                 <div className="mt-4 space-y-6">

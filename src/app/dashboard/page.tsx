@@ -1,15 +1,27 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
-import { BarChart3, Users, DollarSign, Ticket, Plus, Settings, LogOut } from 'lucide-react';
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
+import {
+  ArrowRight,
+  BarChart3,
+  Check,
+  CreditCard,
+  QrCode,
+  Ticket,
+  TrendingUp,
+  UserPlus,
+  Users,
+  Wallet,
+} from "lucide-react";
 
-interface Event {
+interface EventSummary {
   id: string;
   title: string;
   slug: string;
   startDatetime: string;
+  status: string;
 }
 
 interface EventMetrics {
@@ -26,26 +38,28 @@ interface EventMetrics {
   }>;
 }
 
+const naira = (value: number) =>
+  `₦${Math.round(value).toLocaleString("en-NG")}`;
+
 export default function DashboardPage() {
-  const [events, setEvents] = useState<Event[]>([]);
+  const { data: session } = useSession();
+  const [events, setEvents] = useState<EventSummary[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<EventMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [metricsLoading, setMetricsLoading] = useState(false);
 
-  // Fetch organizer's events
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const response = await fetch('/api/dashboard/events');
+        const response = await fetch("/api/dashboard/events");
         const data = await response.json();
-
-        if (data.events && data.events.length > 0) {
+        if (Array.isArray(data.events) && data.events.length > 0) {
           setEvents(data.events);
           setSelectedEventId(data.events[0].id);
         }
       } catch (error) {
-        console.error('Failed to fetch events:', error);
+        console.error("Failed to fetch events:", error);
       } finally {
         setLoading(false);
       }
@@ -54,18 +68,20 @@ export default function DashboardPage() {
     fetchEvents();
   }, []);
 
-  // Fetch metrics for selected event
   useEffect(() => {
     if (!selectedEventId) return;
 
     const fetchMetrics = async () => {
       setMetricsLoading(true);
       try {
-        const response = await fetch(`/api/dashboard/metrics?eventId=${selectedEventId}`);
+        const response = await fetch(
+          `/api/dashboard/metrics?eventId=${selectedEventId}`
+        );
         const data = await response.json();
-        setMetrics(data);
+        setMetrics(response.ok ? data : null);
       } catch (error) {
-        console.error('Failed to fetch metrics:', error);
+        console.error("Failed to fetch metrics:", error);
+        setMetrics(null);
       } finally {
         setMetricsLoading(false);
       }
@@ -74,276 +90,378 @@ export default function DashboardPage() {
     fetchMetrics();
   }, [selectedEventId]);
 
+  const firstName = session?.user?.name?.trim().split(" ")[0];
+  const selectedEvent = events.find((e) => e.id === selectedEventId);
+
+  const hasEvent = events.length > 0;
+  const hasPublished = events.some((e) => e.status === "published");
+  const hasSale = (metrics?.ticketsSold ?? 0) > 0;
+
+  const steps = [
+    {
+      done: hasEvent,
+      title: "Create your first event",
+      body: "Name it, set the date, add your ticket tiers.",
+      cta: "Create event",
+      href: "/dashboard/events/new",
+    },
+    {
+      done: hasPublished,
+      title: "Publish it",
+      body: "Publishing gives you a public link people can buy from.",
+      cta: "Go to events",
+      href: "/dashboard/events",
+    },
+    {
+      done: hasSale,
+      title: "Make your first sale",
+      body: "Share your event link — every ticket gets a scannable QR.",
+      cta: selectedEvent ? "View public page" : "Go to events",
+      href: selectedEvent ? `/events/${selectedEvent.slug}` : "/dashboard/events",
+    },
+  ];
+
+  const doneCount = steps.filter((s) => s.done).length;
+  const setupComplete = doneCount === steps.length;
+
+  const soldPct =
+    metrics && metrics.ticketsTotal > 0
+      ? Math.min(100, Math.round((metrics.ticketsSold / metrics.ticketsTotal) * 100))
+      : 0;
+  const checkedInPct =
+    metrics && metrics.ticketsSold > 0
+      ? Math.round((metrics.checkedIn / metrics.ticketsSold) * 100)
+      : 0;
+
   if (loading) {
     return (
-      <div className="min-h-screen" style={{ backgroundColor: 'var(--color-ivory)' }}>
-        <div className="flex items-center justify-center h-screen">
-          <p style={{ color: 'var(--color-stone)' }}>Loading dashboard...</p>
+      <div className="space-y-6">
+        <div className="h-9 w-64 animate-pulse rounded-lg bg-surface" />
+        <div className="h-32 animate-pulse rounded-2xl bg-surface" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface" />
+          ))}
         </div>
       </div>
     );
   }
 
-  const selectedEvent = events.find((e) => e.id === selectedEventId);
-
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--color-ivory)' }}>
-      {/* Header */}
-      <header className="border-b" style={{ borderColor: 'var(--color-stone-mid)' }}>
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-2">
-              <Image src="/logo.png" alt="Ticket Buddy" width={40} height={40} className="h-10 w-10" />
-              <span className="font-bold" style={{ color: 'var(--color-forest)' }}>
-                Ticket Buddy
-              </span>
-            </Link>
-            <Link
-              href="/api/auth/signout"
-              className="flex items-center gap-2 px-4 py-2 rounded text-sm font-medium transition-opacity hover:opacity-75"
-              style={{ backgroundColor: 'var(--color-sage-pale)', color: 'var(--color-forest)' }}
-            >
-              <LogOut className="h-4 w-4" />
-              Sign Out
-            </Link>
-          </div>
-        </div>
-      </header>
+    <div className="space-y-8">
+      {/* Greeting */}
+      <section>
+        <h1 className="text-3xl font-bold tracking-tight text-on-dark">
+          Hey {firstName || "there"} <span aria-hidden>👋</span>
+        </h1>
+        <p className="mt-1 text-on-dark-2">
+          Here&apos;s your money and what&apos;s next.
+        </p>
+      </section>
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Events Selector & Navigation */}
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-2">
-            <p style={{ color: 'var(--color-stone-mid)' }} className="text-sm">
-              Your Events
-            </p>
-            {events.length > 0 ? (
-              <select
-                value={selectedEventId || ''}
-                onChange={(e) => setSelectedEventId(e.target.value)}
-                className="rounded border px-4 py-2 font-semibold"
-                style={{ borderColor: 'var(--color-stone-mid)', color: 'var(--color-forest)' }}
+      {/* Setup checklist */}
+      {!setupComplete && (
+        <section className="rounded-2xl border border-line-dark bg-surface p-6">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-on-dark">Get set up</h2>
+              <p className="text-sm text-on-dark-2">
+                A few quick steps and you&apos;re selling.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full border border-line-dark px-3 py-1 text-sm font-medium text-on-dark-2">
+              {doneCount}/{steps.length} done
+            </span>
+          </div>
+
+          <ol className="space-y-3">
+            {steps.map((step) => (
+              <li
+                key={step.title}
+                className="flex flex-col gap-3 rounded-xl border border-line-dark bg-canvas p-4 sm:flex-row sm:items-center sm:justify-between"
               >
-                {events.map((event) => (
-                  <option key={event.id} value={event.id}>
-                    {event.title}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p style={{ color: 'var(--color-stone)' }}>No events yet</p>
-            )}
-          </div>
+                <div className="flex items-start gap-3">
+                  <span
+                    aria-hidden
+                    className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                      step.done
+                        ? "border-gold bg-gold text-canvas"
+                        : "border-line-dark text-transparent"
+                    }`}
+                  >
+                    <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                  </span>
+                  <div>
+                    <p
+                      className={`font-semibold ${
+                        step.done ? "text-on-dark-3 line-through" : "text-on-dark"
+                      }`}
+                    >
+                      {step.title}
+                    </p>
+                    <p className="text-sm text-on-dark-2">{step.body}</p>
+                  </div>
+                </div>
 
-          <Link
-            href="/events/create"
-            className="flex items-center gap-2 rounded px-6 py-2 font-semibold transition-opacity text-white hover:opacity-90"
-            style={{ backgroundColor: 'var(--color-forest)' }}
+                {!step.done && (
+                  <Link
+                    href={step.href}
+                    className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg bg-gold px-3.5 py-2 text-sm font-semibold text-canvas transition-colors hover:bg-gold-deep sm:self-auto"
+                  >
+                    {step.cta}
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {/* Event switcher */}
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <label
+            htmlFor="event-switcher"
+            className="mb-1.5 block text-sm text-on-dark-2"
           >
-            <Plus className="h-5 w-5" />
-            Create Event
-          </Link>
+            Showing numbers for
+          </label>
+          {hasEvent ? (
+            <select
+              id="event-switcher"
+              value={selectedEventId ?? ""}
+              onChange={(e) => setSelectedEventId(e.target.value)}
+              className="rounded-lg border border-line-dark bg-surface px-3.5 py-2.5 font-semibold text-on-dark focus:outline-none focus:ring-2 focus:ring-gold"
+            >
+              {events.map((event) => (
+                <option key={event.id} value={event.id}>
+                  {event.title}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="font-semibold text-on-dark-3">No events yet</p>
+          )}
         </div>
 
-        {events.length === 0 ? (
-          <div className="rounded-lg border p-12 text-center" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-            <Ticket className="mx-auto h-12 w-12 mb-4" style={{ color: 'var(--color-sage)' }} />
-            <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--color-forest)' }}>
-              No events yet
-            </h2>
-            <p className="mb-6" style={{ color: 'var(--color-stone)' }}>
-              Create your first event to get started
-            </p>
-            <Link
-              href="/events/create"
-              className="inline-flex items-center gap-2 rounded px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90"
-              style={{ backgroundColor: 'var(--color-forest)' }}
-            >
-              <Plus className="h-5 w-5" />
-              Create Your First Event
-            </Link>
-          </div>
-        ) : metricsLoading ? (
-          <div className="rounded-lg border p-8 text-center" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-            <p style={{ color: 'var(--color-stone)' }}>Loading metrics...</p>
-          </div>
-        ) : metrics ? (
-          <>
-            {/* Top Metrics Grid */}
-            <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {/* Tickets Sold */}
-              <div className="rounded-lg border p-6" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-stone-mid)' }}>
-                      Tickets Sold
-                    </p>
-                    <p className="mt-2 text-3xl font-bold" style={{ color: 'var(--color-forest)' }}>
-                      {metrics.ticketsSold}
-                    </p>
-                    <p className="mt-1 text-xs" style={{ color: 'var(--color-stone)' }}>
-                      of {metrics.ticketsTotal}
-                    </p>
-                  </div>
-                  <Ticket className="h-8 w-8" style={{ color: 'var(--color-sage)' }} />
-                </div>
-              </div>
+        <Link
+          href="/dashboard/events/new"
+          className="inline-flex items-center gap-2 self-start rounded-lg bg-gold px-4 py-2.5 font-semibold text-canvas transition-colors hover:bg-gold-deep"
+        >
+          <Ticket className="h-4 w-4" />
+          Create event
+        </Link>
+      </section>
 
-              {/* Revenue */}
-              <div className="rounded-lg border p-6" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-stone-mid)' }}>
-                      Revenue
-                    </p>
-                    <p className="mt-2 text-3xl font-bold" style={{ color: 'var(--color-forest)' }}>
-                      ₦{metrics.revenue.toLocaleString()}
-                    </p>
-                  </div>
-                  <DollarSign className="h-8 w-8" style={{ color: 'var(--color-sage)' }} />
-                </div>
+      {!hasEvent ? (
+        <section className="rounded-2xl border border-line-dark bg-surface p-12 text-center">
+          <Ticket className="mx-auto mb-4 h-10 w-10 text-gold" />
+          <h2 className="mb-1 text-xl font-bold text-on-dark">
+            Your numbers land here
+          </h2>
+          <p className="mx-auto mb-6 max-w-sm text-on-dark-2">
+            Create an event and this page fills up with sales, revenue and
+            check-ins as they happen.
+          </p>
+          <Link
+            href="/dashboard/events/new"
+            className="inline-flex items-center gap-2 rounded-lg bg-gold px-5 py-2.5 font-semibold text-canvas transition-colors hover:bg-gold-deep"
+          >
+            Create your first event
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        </section>
+      ) : metricsLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface" />
+          ))}
+        </div>
+      ) : metrics ? (
+        <>
+          {/* Metrics */}
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border border-line-dark bg-surface p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-on-dark-2">Tickets sold</p>
+                <Ticket className="h-4 w-4 text-on-dark-3" />
               </div>
-
-              {/* Checked In */}
-              <div className="rounded-lg border p-6" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-stone-mid)' }}>
-                      Checked In
-                    </p>
-                    <p className="mt-2 text-3xl font-bold" style={{ color: 'var(--color-forest)' }}>
-                      {metrics.checkedIn}
-                    </p>
-                  </div>
-                  <Users className="h-8 w-8" style={{ color: 'var(--color-sage)' }} />
-                </div>
-              </div>
-
-              {/* Remaining */}
-              <div className="rounded-lg border p-6" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-stone-mid)' }}>
-                      Remaining
-                    </p>
-                    <p className="mt-2 text-3xl font-bold" style={{ color: 'var(--color-forest)' }}>
-                      {metrics.ticketsTotal - metrics.ticketsSold}
-                    </p>
-                  </div>
-                  <BarChart3 className="h-8 w-8" style={{ color: 'var(--color-sage)' }} />
-                </div>
+              <p className="text-3xl font-bold text-on-dark">
+                {metrics.ticketsSold}
+                <span className="ml-1 text-base font-medium text-on-dark-3">
+                  / {metrics.ticketsTotal}
+                </span>
+              </p>
+              <div
+                className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-canvas"
+                role="img"
+                aria-label={`${soldPct}% of tickets sold`}
+              >
+                <div
+                  className="h-full rounded-full bg-gold"
+                  style={{ width: `${soldPct}%` }}
+                />
               </div>
             </div>
 
-            {/* Ticket Breakdown Table */}
-            <div className="mb-8 rounded-lg border" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-              <div className="border-b px-6 py-4" style={{ borderColor: 'var(--color-stone-mid)' }}>
-                <h2 className="text-lg font-bold" style={{ color: 'var(--color-forest)' }}>
-                  Ticket Breakdown
-                </h2>
+            <div className="rounded-2xl border border-line-dark bg-surface p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-on-dark-2">Revenue</p>
+                <TrendingUp className="h-4 w-4 text-on-dark-3" />
               </div>
+              <p className="text-3xl font-bold text-gold">
+                {naira(metrics.revenue)}
+              </p>
+              <p className="mt-3 text-xs text-on-dark-3">Paid orders only</p>
+            </div>
 
+            <div className="rounded-2xl border border-line-dark bg-surface p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-on-dark-2">Checked in</p>
+                <QrCode className="h-4 w-4 text-on-dark-3" />
+              </div>
+              <p className="text-3xl font-bold text-on-dark">{metrics.checkedIn}</p>
+              <p className="mt-3 text-xs text-on-dark-3">
+                {checkedInPct}% of tickets sold
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-line-dark bg-surface p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-on-dark-2">
+                  Still available
+                </p>
+                <BarChart3 className="h-4 w-4 text-on-dark-3" />
+              </div>
+              <p className="text-3xl font-bold text-on-dark">
+                {Math.max(0, metrics.ticketsTotal - metrics.ticketsSold)}
+              </p>
+              <p className="mt-3 text-xs text-on-dark-3">Across all tiers</p>
+            </div>
+          </section>
+
+          {/* Breakdown */}
+          <section className="overflow-hidden rounded-2xl border border-line-dark bg-surface">
+            <div className="border-b border-line-dark px-6 py-4">
+              <h2 className="font-bold text-on-dark">Ticket breakdown</h2>
+            </div>
+
+            {metrics.ticketBreakdown.length === 0 ? (
+              <p className="px-6 py-8 text-center text-on-dark-2">
+                No ticket tiers on this event yet.
+              </p>
+            ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full text-left">
                   <thead>
-                    <tr style={{ backgroundColor: 'var(--color-ivory)' }}>
-                      <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
-                        Tier
-                      </th>
-                      <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
-                        Sold
-                      </th>
-                      <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
+                    <tr className="bg-canvas text-xs uppercase tracking-wide text-on-dark-3">
+                      <th className="px-6 py-3 font-semibold">Tier</th>
+                      <th className="px-6 py-3 text-right font-semibold">Sold</th>
+                      <th className="px-6 py-3 text-right font-semibold">
                         Remaining
                       </th>
-                      <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
+                      <th className="px-6 py-3 text-right font-semibold">
                         Revenue
                       </th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {metrics.ticketBreakdown.map((breakdown, index) => (
-                      <tr key={index} style={{ borderBottom: `1px solid var(--color-stone-mid)` }}>
-                        <td className="px-6 py-4 font-medium" style={{ color: 'var(--color-forest)' }}>
-                          {breakdown.tier}
+                  <tbody className="divide-y divide-line-dark">
+                    {metrics.ticketBreakdown.map((row) => (
+                      <tr key={row.tier}>
+                        <td className="px-6 py-4 font-medium text-on-dark">
+                          {row.tier}
                         </td>
-                        <td className="px-6 py-4" style={{ color: 'var(--color-stone)' }}>
-                          {breakdown.sold}
+                        <td className="px-6 py-4 text-right tabular-nums text-on-dark-2">
+                          {row.sold}
                         </td>
-                        <td className="px-6 py-4" style={{ color: 'var(--color-stone)' }}>
-                          {breakdown.remaining}
+                        <td className="px-6 py-4 text-right tabular-nums text-on-dark-2">
+                          {row.remaining}
                         </td>
-                        <td className="px-6 py-4 font-semibold" style={{ color: 'var(--color-forest)' }}>
-                          ₦{breakdown.revenue.toLocaleString()}
+                        <td className="px-6 py-4 text-right font-semibold tabular-nums text-gold">
+                          {naira(row.revenue)}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+            )}
+          </section>
+
+          {/* Quick actions */}
+          <section>
+            <h2 className="mb-4 font-bold text-on-dark">Event tools</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                {
+                  href: `/dashboard/events/${selectedEventId}/attendees`,
+                  icon: Users,
+                  title: "Attendees",
+                  body: "Search and manage the guest list",
+                },
+                {
+                  href: `/dashboard/events/${selectedEventId}/check-in`,
+                  icon: QrCode,
+                  title: "Check-in",
+                  body: "Scan tickets at the gate",
+                },
+                {
+                  href: `/dashboard/events/${selectedEventId}/payouts`,
+                  icon: Wallet,
+                  title: "Payouts",
+                  body: "Track what lands in your bank",
+                },
+                {
+                  href: `/dashboard/events/${selectedEventId}/team`,
+                  icon: UserPlus,
+                  title: "Team",
+                  body: "Invite staff and set roles",
+                },
+              ].map((action) => (
+                <Link
+                  key={action.href}
+                  href={action.href}
+                  className="group rounded-2xl border border-line-dark bg-surface p-5 transition-colors hover:border-gold hover:bg-surface-2"
+                >
+                  <action.icon className="mb-3 h-6 w-6 text-gold" />
+                  <p className="font-semibold text-on-dark">{action.title}</p>
+                  <p className="mt-1 text-sm text-on-dark-2">{action.body}</p>
+                </Link>
+              ))}
             </div>
+          </section>
 
-            {/* Quick Actions */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {selectedEvent && (
+            <section className="flex flex-col gap-3 rounded-2xl border border-line-dark bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <CreditCard className="mt-0.5 h-5 w-5 shrink-0 text-gold" />
+                <div>
+                  <p className="font-semibold text-on-dark">
+                    Share your event link
+                  </p>
+                  <p className="text-sm text-on-dark-2">
+                    This is the page your buyers see.
+                  </p>
+                </div>
+              </div>
               <Link
-                href={`/events/${selectedEvent?.slug}`}
-                className="rounded-lg border p-6 text-center transition-opacity hover:opacity-75"
-                style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}
+                href={`/events/${selectedEvent.slug}`}
+                className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-lg border border-line-dark px-4 py-2 text-sm font-semibold text-on-dark transition-colors hover:border-gold hover:text-gold sm:self-auto"
               >
-                <Ticket className="mx-auto mb-3 h-8 w-8" style={{ color: 'var(--color-sage)' }} />
-                <h3 className="font-semibold" style={{ color: 'var(--color-forest)' }}>
-                  View Event
-                </h3>
-                <p className="mt-1 text-sm" style={{ color: 'var(--color-stone-mid)' }}>
-                  See event details
-                </p>
+                View public page
+                <ArrowRight className="h-4 w-4" />
               </Link>
-
-              <Link
-                href={`/dashboard/events/${selectedEventId}/attendees`}
-                className="rounded-lg border p-6 text-center transition-opacity hover:opacity-75"
-                style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}
-              >
-                <Users className="mx-auto mb-3 h-8 w-8" style={{ color: 'var(--color-sage)' }} />
-                <h3 className="font-semibold" style={{ color: 'var(--color-forest)' }}>
-                  Manage Attendees
-                </h3>
-                <p className="mt-1 text-sm" style={{ color: 'var(--color-stone-mid)' }}>
-                  View attendee list
-                </p>
-              </Link>
-
-              <Link
-                href={`/dashboard/events/${selectedEventId}/check-in`}
-                className="rounded-lg border p-6 text-center transition-opacity hover:opacity-75"
-                style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}
-              >
-                <BarChart3 className="mx-auto mb-3 h-8 w-8" style={{ color: 'var(--color-sage)' }} />
-                <h3 className="font-semibold" style={{ color: 'var(--color-forest)' }}>
-                  Check-In
-                </h3>
-                <p className="mt-1 text-sm" style={{ color: 'var(--color-stone-mid)' }}>
-                  Scan and verify
-                </p>
-              </Link>
-
-              <Link
-                href={`/dashboard/events/${selectedEventId}/settings`}
-                className="rounded-lg border p-6 text-center transition-opacity hover:opacity-75"
-                style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}
-              >
-                <Settings className="mx-auto mb-3 h-8 w-8" style={{ color: 'var(--color-sage)' }} />
-                <h3 className="font-semibold" style={{ color: 'var(--color-forest)' }}>
-                  Settings
-                </h3>
-                <p className="mt-1 text-sm" style={{ color: 'var(--color-stone-mid)' }}>
-                  Manage event
-                </p>
-              </Link>
-            </div>
-          </>
-        ) : null}
-      </main>
+            </section>
+          )}
+        </>
+      ) : (
+        <section className="rounded-2xl border border-line-dark bg-surface p-8 text-center">
+          <p className="text-on-dark-2">
+            Couldn&apos;t load metrics for this event. Try again in a moment.
+          </p>
+        </section>
+      )}
     </div>
   );
 }

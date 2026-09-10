@@ -2,12 +2,23 @@
 
 import { useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { GoogleIcon } from "@/components/google-icon";
 
 function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Only ever follow a same-site path, so ?callbackUrl= can't be used to
+  // bounce someone to another domain after they log in.
+  const requested = searchParams.get("callbackUrl");
+  const destination =
+    requested && requested.startsWith("/") && !requested.startsWith("//")
+      ? requested
+      : "/dashboard";
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +42,7 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
       return;
     }
 
-    router.push("/dashboard/events");
+    router.push(destination);
     router.refresh();
   }
 
@@ -39,9 +50,7 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
     <main className="min-h-screen flex items-center justify-center bg-ivory px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-forest text-ivory font-bold text-xl mb-4">
-            TB
-          </div>
+          <Image src="/logo.png" alt="Ticket Buddy" width={48} height={48} className="mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-charcoal">Welcome back</h1>
           <p className="text-secondary-text text-sm mt-1">
             Log in to manage your events.
@@ -98,7 +107,7 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
 
               <button
                 type="button"
-                onClick={() => signIn("google", { callbackUrl: "/dashboard/events" })}
+                onClick={() => signIn("google", { callbackUrl: destination })}
                 className="w-full flex items-center justify-center gap-2 rounded-lg border border-border py-2.5 font-semibold text-charcoal hover:bg-ivory transition-colors"
               >
                 <GoogleIcon />

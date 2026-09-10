@@ -3,12 +3,8 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { events } from "@/db/schema";
-import {
-  canDeleteEvent,
-  canManageEvents,
-  getMembership,
-  getSessionUserId,
-} from "@/lib/authz";
+import { getEventRole, getSessionUserId } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 
 const updateEventSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -34,8 +30,8 @@ async function loadEventAndMembership(eventId: string, userId: string) {
 
   if (!event) return { event: null, membership: null };
 
-  const membership = await getMembership(userId, event.organizationId);
-  return { event, membership };
+  const role = await getEventRole(userId, event);
+  return { event, membership: role ? { role } : null };
 }
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -68,7 +64,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!event) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (!membership || !canManageEvents(membership.role)) {
+  if (!membership || !can(membership.role, "event:edit")) {
     return NextResponse.json(
       { error: "You do not have permission to edit this event." },
       { status: 403 }
@@ -114,7 +110,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (!event) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (!membership || !canDeleteEvent(membership.role)) {
+  if (!membership || !can(membership.role, "event:delete")) {
     return NextResponse.json(
       { error: "Only the organization owner can delete events." },
       { status: 403 }

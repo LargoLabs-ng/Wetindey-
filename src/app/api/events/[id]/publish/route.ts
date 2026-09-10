@@ -3,7 +3,8 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { events } from "@/db/schema";
-import { canManageEvents, getMembership, getSessionUserId } from "@/lib/authz";
+import { getEventRole, getSessionUserId } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 
 const publishSchema = z.object({
   publish: z.boolean(),
@@ -27,8 +28,8 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const membership = await getMembership(userId, event.organizationId);
-  if (!membership || !canManageEvents(membership.role)) {
+  const role = await getEventRole(userId, event);
+  if (!role || !can(role, "event:edit")) {
     return NextResponse.json(
       { error: "You do not have permission to publish this event." },
       { status: 403 }

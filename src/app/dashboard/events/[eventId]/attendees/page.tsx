@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Download, Search, Filter, Eye, ArrowLeft } from 'lucide-react';
 
@@ -15,7 +16,9 @@ interface Attendee {
   ticketId: string;
 }
 
-export default function AttendeesPage({ params }: { params: { eventId: string } }) {
+export default function AttendeesPage() {
+  const routeParams = useParams();
+  const eventId = routeParams.eventId as string;
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [filteredAttendees, setFilteredAttendees] = useState<Attendee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +33,7 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
     const fetchAttendees = async () => {
       try {
         const response = await fetch(
-          `/api/dashboard/attendees?eventId=${params.eventId}`
+          `/api/dashboard/attendees?eventId=${eventId}`
         );
         const data = await response.json();
 
@@ -45,7 +48,7 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
     };
 
     fetchAttendees();
-  }, [params.eventId]);
+  }, [eventId]);
 
   // Filter and search
   useEffect(() => {
@@ -75,7 +78,7 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
     setExporting(true);
     try {
       const response = await fetch(
-        `/api/dashboard/attendees/export?eventId=${params.eventId}`
+        `/api/dashboard/attendees/export?eventId=${eventId}`
       );
       const blob = await response.blob();
 
@@ -103,7 +106,7 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
       case 'cancelled':
         return { bg: 'rgba(239, 68, 68, 0.1)', text: '#ef4444' };
       default:
-        return { bg: 'var(--color-ivory)', text: 'var(--color-stone)' };
+        return { bg: 'var(--color-surface-2)', text: 'var(--color-on-dark-2)' };
     }
   };
 
@@ -123,28 +126,28 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--color-ivory)' }}>
+    <div>
       {/* Header */}
-      <header className="border-b" style={{ borderColor: 'var(--color-stone-mid)' }}>
-        <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
+      <header className="mb-6">
+        <div className="">
           <div className="flex items-center justify-between">
             <Link
               href={`/dashboard`}
               className="flex items-center gap-2 hover:opacity-75"
             >
-              <ArrowLeft className="h-5 w-5" style={{ color: 'var(--color-forest)' }} />
-              <span className="font-semibold" style={{ color: 'var(--color-forest)' }}>
+              <ArrowLeft className="h-5 w-5" style={{ color: 'var(--color-on-dark)' }} />
+              <span className="font-semibold" style={{ color: 'var(--color-on-dark)' }}>
                 Back
               </span>
             </Link>
-            <h1 className="text-xl font-bold" style={{ color: 'var(--color-forest)' }}>
+            <h1 className="text-xl font-bold" style={{ color: 'var(--color-on-dark)' }}>
               Attendees
             </h1>
             <button
               onClick={handleExportCSV}
               disabled={exporting}
-              className="flex items-center gap-2 rounded px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              style={{ backgroundColor: 'var(--color-sage)' }}
+              className="flex items-center gap-2 rounded px-4 py-2 text-sm font-semibold text-canvas transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: 'var(--color-gold)' }}
             >
               <Download className="h-4 w-4" />
               {exporting ? 'Exporting...' : 'Export CSV'}
@@ -153,28 +156,28 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="">
         {/* Search & Filter */}
         <div className="mb-8 grid gap-4 sm:grid-cols-2">
           <div className="relative">
-            <Search className="absolute left-3 top-3 h-5 w-5" style={{ color: 'var(--color-stone-mid)' }} />
+            <Search className="absolute left-3 top-3 h-5 w-5" style={{ color: 'var(--color-on-dark-3)' }} />
             <input
               type="text"
               placeholder="Search by name, email, or ticket ID"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full rounded border pl-10 pr-4 py-2"
-              style={{ borderColor: 'var(--color-stone-mid)' }}
+              style={{ borderColor: 'var(--color-line-dark)' }}
             />
           </div>
 
           <div className="flex items-center gap-2">
-            <Filter className="h-5 w-5" style={{ color: 'var(--color-stone-mid)' }} />
+            <Filter className="h-5 w-5" style={{ color: 'var(--color-on-dark-3)' }} />
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="flex-1 rounded border px-3 py-2"
-              style={{ borderColor: 'var(--color-stone-mid)' }}
+              style={{ borderColor: 'var(--color-line-dark)' }}
             >
               <option value="all">All Status</option>
               <option value="checked_in">Checked In</option>
@@ -186,40 +189,40 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
         </div>
 
         {/* Results Count */}
-        <p className="mb-4 text-sm" style={{ color: 'var(--color-stone-mid)' }}>
+        <p className="mb-4 text-sm" style={{ color: 'var(--color-on-dark-3)' }}>
           Showing {filteredAttendees.length} of {attendees.length} attendees
         </p>
 
         {loading ? (
-          <div className="rounded-lg border p-8 text-center" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-            <p style={{ color: 'var(--color-stone)' }}>Loading attendees...</p>
+          <div className="rounded-lg border p-8 text-center" style={{ borderColor: 'var(--color-line-dark)', backgroundColor: 'var(--color-surface)' }}>
+            <p style={{ color: 'var(--color-on-dark-2)' }}>Loading attendees...</p>
           </div>
         ) : filteredAttendees.length === 0 ? (
-          <div className="rounded-lg border p-8 text-center" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-            <p style={{ color: 'var(--color-stone)' }}>No attendees found</p>
+          <div className="rounded-lg border p-8 text-center" style={{ borderColor: 'var(--color-line-dark)', backgroundColor: 'var(--color-surface)' }}>
+            <p style={{ color: 'var(--color-on-dark-2)' }}>No attendees found</p>
           </div>
         ) : (
-          <div className="rounded-lg border" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
+          <div className="rounded-lg border" style={{ borderColor: 'var(--color-line-dark)', backgroundColor: 'var(--color-surface)' }}>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr style={{ backgroundColor: 'var(--color-ivory)' }}>
-                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
+                  <tr style={{ backgroundColor: 'var(--color-canvas)' }}>
+                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-on-dark-2)' }}>
                       Name
                     </th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
+                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-on-dark-2)' }}>
                       Email
                     </th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
+                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-on-dark-2)' }}>
                       Ticket Type
                     </th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
+                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-on-dark-2)' }}>
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
+                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-on-dark-2)' }}>
                       Purchased
                     </th>
-                    <th className="px-6 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
+                    <th className="px-6 py-3 text-center text-sm font-semibold" style={{ color: 'var(--color-on-dark-2)' }}>
                       Action
                     </th>
                   </tr>
@@ -231,16 +234,16 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
                       <tr
                         key={attendee.id}
                         style={{
-                          borderBottom: index < filteredAttendees.length - 1 ? `1px solid var(--color-stone-mid)` : 'none',
+                          borderBottom: index < filteredAttendees.length - 1 ? `1px solid var(--color-line-dark)` : 'none',
                         }}
                       >
-                        <td className="px-6 py-4 font-medium" style={{ color: 'var(--color-forest)' }}>
+                        <td className="px-6 py-4 font-medium" style={{ color: 'var(--color-on-dark)' }}>
                           {attendee.name}
                         </td>
-                        <td className="px-6 py-4 text-sm" style={{ color: 'var(--color-stone)' }}>
+                        <td className="px-6 py-4 text-sm" style={{ color: 'var(--color-on-dark-2)' }}>
                           {attendee.email}
                         </td>
-                        <td className="px-6 py-4 text-sm" style={{ color: 'var(--color-stone)' }}>
+                        <td className="px-6 py-4 text-sm" style={{ color: 'var(--color-on-dark-2)' }}>
                           {attendee.ticketType}
                         </td>
                         <td className="px-6 py-4">
@@ -251,14 +254,14 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
                             {getStatusLabel(attendee.status)}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm" style={{ color: 'var(--color-stone)' }}>
+                        <td className="px-6 py-4 text-sm" style={{ color: 'var(--color-on-dark-2)' }}>
                           {new Date(attendee.purchaseTime).toLocaleDateString()}
                         </td>
                         <td className="px-6 py-4 text-center">
                           <button
                             onClick={() => setSelectedAttendee(attendee)}
                             className="inline-flex items-center gap-1 rounded px-3 py-1 text-sm transition-opacity hover:opacity-75"
-                            style={{ color: 'var(--color-forest)' }}
+                            style={{ color: 'var(--color-on-dark)' }}
                           >
                             <Eye className="h-4 w-4" />
                           </button>
@@ -271,7 +274,7 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
             </div>
           </div>
         )}
-      </main>
+      </div>
 
       {/* Detail Modal */}
       {selectedAttendee && (
@@ -281,29 +284,29 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
         >
           <div
             className="rounded-lg p-6 max-w-md w-full"
-            style={{ backgroundColor: 'white' }}
+            style={{ backgroundColor: 'var(--color-surface)' }}
           >
-            <h2 className="text-xl font-bold mb-4" style={{ color: 'var(--color-forest)' }}>
+            <h2 className="text-xl font-bold mb-4" style={{ color: 'var(--color-on-dark)' }}>
               {selectedAttendee.name}
             </h2>
 
             <div className="space-y-3 mb-6">
               <div>
-                <p className="text-xs font-semibold" style={{ color: 'var(--color-stone-mid)' }}>
+                <p className="text-xs font-semibold" style={{ color: 'var(--color-on-dark-3)' }}>
                   EMAIL
                 </p>
-                <p style={{ color: 'var(--color-stone)' }}>{selectedAttendee.email}</p>
+                <p style={{ color: 'var(--color-on-dark-2)' }}>{selectedAttendee.email}</p>
               </div>
 
               <div>
-                <p className="text-xs font-semibold" style={{ color: 'var(--color-stone-mid)' }}>
+                <p className="text-xs font-semibold" style={{ color: 'var(--color-on-dark-3)' }}>
                   TICKET TYPE
                 </p>
-                <p style={{ color: 'var(--color-stone)' }}>{selectedAttendee.ticketType}</p>
+                <p style={{ color: 'var(--color-on-dark-2)' }}>{selectedAttendee.ticketType}</p>
               </div>
 
               <div>
-                <p className="text-xs font-semibold" style={{ color: 'var(--color-stone-mid)' }}>
+                <p className="text-xs font-semibold" style={{ color: 'var(--color-on-dark-3)' }}>
                   STATUS
                 </p>
                 <span
@@ -318,30 +321,30 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
               </div>
 
               <div>
-                <p className="text-xs font-semibold" style={{ color: 'var(--color-stone-mid)' }}>
+                <p className="text-xs font-semibold" style={{ color: 'var(--color-on-dark-3)' }}>
                   PURCHASED
                 </p>
-                <p style={{ color: 'var(--color-stone)' }}>
+                <p style={{ color: 'var(--color-on-dark-2)' }}>
                   {new Date(selectedAttendee.purchaseTime).toLocaleString()}
                 </p>
               </div>
 
               {selectedAttendee.checkedInAt && (
                 <div>
-                  <p className="text-xs font-semibold" style={{ color: 'var(--color-stone-mid)' }}>
+                  <p className="text-xs font-semibold" style={{ color: 'var(--color-on-dark-3)' }}>
                     CHECKED IN
                   </p>
-                  <p style={{ color: 'var(--color-stone)' }}>
+                  <p style={{ color: 'var(--color-on-dark-2)' }}>
                     {new Date(selectedAttendee.checkedInAt).toLocaleString()}
                   </p>
                 </div>
               )}
 
               <div>
-                <p className="text-xs font-semibold" style={{ color: 'var(--color-stone-mid)' }}>
+                <p className="text-xs font-semibold" style={{ color: 'var(--color-on-dark-3)' }}>
                   TICKET ID
                 </p>
-                <p className="font-mono text-xs" style={{ color: 'var(--color-stone)' }}>
+                <p className="font-mono text-xs" style={{ color: 'var(--color-on-dark-2)' }}>
                   {selectedAttendee.ticketId.slice(0, 8)}...
                 </p>
               </div>
@@ -349,8 +352,8 @@ export default function AttendeesPage({ params }: { params: { eventId: string } 
 
             <button
               onClick={() => setSelectedAttendee(null)}
-              className="w-full rounded px-4 py-2 font-semibold text-white transition-opacity hover:opacity-90"
-              style={{ backgroundColor: 'var(--color-forest)' }}
+              className="w-full rounded px-4 py-2 font-semibold text-canvas transition-opacity hover:opacity-90"
+              style={{ backgroundColor: 'var(--color-gold)' }}
             >
               Close
             </button>

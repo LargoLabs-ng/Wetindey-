@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { db } from '@/db';
-import { events, ticketTypes, orders, payments } from '@/db/schema';
+import { ticketTypes, orders } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { requireEventCapability } from '@/lib/authz';
 
 const PLATFORM_FEE_PERCENTAGE = 0.06; // 6% platform fee
 
@@ -12,37 +12,15 @@ const PLATFORM_FEE_PERCENTAGE = 0.06; // 6% platform fee
  */
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth();
-
-    if (!session || !session.user?.email) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    const access = await requireEventCapability(
+      request.nextUrl.searchParams.get('eventId'),
+      'finance:view'
+    );
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
-
-    const eventId = request.nextUrl.searchParams.get('eventId');
-
-    if (!eventId) {
-      return NextResponse.json(
-        { error: 'Missing eventId' },
-        { status: 400 }
-      );
-    }
-
-    // Fetch event
-    const event = await db.query.events.findFirst({
-      where: eq(events.id, eventId),
-    });
-
-    if (!event) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // TODO: Verify user is member of the event's organization
+    const { event } = access;
+    const eventId = event.id;
 
     // Fetch ticket types for event
     const ticketTypesData = await db.query.ticketTypes.findMany({

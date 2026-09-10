@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
 import { orders } from '@/db/schema';
 
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
+
+    // Platform-admin only. Previously any signed-in organizer could read
+    // every organization's revenue through these endpoints.
+    if (!(await isPlatformAdmin())) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     if (!session || !session.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

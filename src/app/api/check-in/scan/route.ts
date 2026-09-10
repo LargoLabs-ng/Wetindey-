@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { requireEventCapability } from '@/lib/authz';
 import { db } from '@/db';
 import { tickets, checkIns } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -29,6 +30,14 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // Gate: the caller must belong to the organization that owns this event.
+    // Without this, any signed-in account could check in another
+    // organizer's attendees.
+    const access = await requireEventCapability(eventId, 'checkin:perform');
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     // Find ticket by QR token
@@ -79,6 +88,7 @@ export async function POST(request: NextRequest) {
       .set({
         status: 'checked_in',
         checkedInAt: now,
+        checkedInBy: access.userId,
       })
       .where(eq(tickets.id, ticket.id));
 
@@ -88,7 +98,7 @@ export async function POST(request: NextRequest) {
       ticketId: ticket.id,
       eventId,
       checkedInAt: now,
-      checkedInBy: session.user.id || undefined,
+      checkedInBy: access.userId,
       method: 'qr_scan',
     });
 

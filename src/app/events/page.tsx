@@ -23,6 +23,7 @@ interface Event {
     price: string;
     quantityTotal: number;
     quantitySold: number;
+    quantityReserved: number;
   }>;
 }
 
@@ -81,7 +82,7 @@ export default function EventsPage() {
   };
 
   const getTicketStatus = (ticketType: Event['ticketTypes'][0]) => {
-    const available = ticketType.quantityTotal - ticketType.quantitySold;
+    const available = Math.max(0, ticketType.quantityTotal - ticketType.quantitySold - ticketType.quantityReserved);
     if (available === 0) return { text: 'Sold Out', color: 'bg-red-500' };
     if (available < 10) return { text: `${available} left`, color: 'bg-yellow-500' };
     return { text: 'Available', color: 'bg-green-500' };
@@ -292,7 +293,7 @@ export default function EventsPage() {
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between text-white">
             <div className="flex items-center gap-2">
-              <Image src="/logo.png" alt="Ticket Buddy" width={40} height={40} className="h-10 w-10" />
+              <Image src="/logo-reversed.png" alt="Ticket Buddy" width={40} height={40} className="h-10 w-10" />
               <span className="font-bold">Ticket Buddy</span>
             </div>
             <p className="text-sm opacity-75">© 2026 Ticket Buddy. All rights reserved.</p>

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
 import { db } from '@/db';
-import { events, tickets, orders, ticketTypes } from '@/db/schema';
+import { tickets, orders, ticketTypes } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { requireEventCapability } from '@/lib/authz';
 
 /**
  * GET /api/dashboard/metrics?eventId=xyz
@@ -10,39 +10,15 @@ import { eq, and } from 'drizzle-orm';
  */
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth();
-
-    if (!session || !session.user?.email) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    const access = await requireEventCapability(
+      request.nextUrl.searchParams.get('eventId'),
+      'event:view'
+    );
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
-
-    const eventId = request.nextUrl.searchParams.get('eventId');
-
-    if (!eventId) {
-      return NextResponse.json(
-        { error: 'Missing eventId parameter' },
-        { status: 400 }
-      );
-    }
-
-    // Fetch event - verify membership will be done via organization check
-    const event = await db.query.events.findFirst({
-      where: eq(events.id, eventId),
-      with: { organization: true },
-    });
-
-    if (!event) {
-      return NextResponse.json(
-        { error: 'Event not found' },
-        { status: 404 }
-      );
-    }
-
-    // TODO: Verify user is member of the event's organization
-    // For now, we skip the authorization check to unblock the build
+    const { event } = access;
+    const eventId = event.id;
 
     // Fetch ticket types for this event
     const eventTicketTypes = await db.query.ticketTypes.findMany({

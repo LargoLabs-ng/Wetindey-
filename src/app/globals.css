@@ -38,6 +38,20 @@
   --color-danger-soft: #FAE9E8;
   --color-error: #EF4444;
   --color-info: #3B82F6;
+
+  /* Gold accent — CTAs on the organizer dashboard */
+  --color-gold: #E3B341;
+  --color-gold-deep: #C9972B;
+  --color-gold-soft: #3E3417;
+
+  /* Organizer dashboard surfaces — deep forest green shell */
+  --color-canvas: #08190F;
+  --color-surface: #0F2E20;
+  --color-surface-2: #16402D;
+  --color-line-dark: #23543C;
+  --color-on-dark: #F1F6F2;
+  --color-on-dark-2: #A8C7B8;
+  --color-on-dark-3: #789C89;
 }
 
 @theme inline {
@@ -73,6 +87,17 @@
   --color-danger-soft: var(--color-danger-soft);
   --color-error: var(--color-error);
   --color-info: var(--color-info);
+
+  --color-gold: var(--color-gold);
+  --color-gold-deep: var(--color-gold-deep);
+  --color-gold-soft: var(--color-gold-soft);
+  --color-canvas: var(--color-canvas);
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-line-dark: var(--color-line-dark);
+  --color-on-dark: var(--color-on-dark);
+  --color-on-dark-2: var(--color-on-dark-2);
+  --color-on-dark-3: var(--color-on-dark-3);
 }
 
 body {

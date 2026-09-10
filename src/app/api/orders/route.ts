@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { events, orders, tickets, payments, ticketTypes } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import {
+  availableQuantity,
+  releaseExpiredReservations,
+  releaseOrderReservation,
+} from '@/lib/inventory';
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -22,6 +27,10 @@ function generateQRToken(): string {
 
 export async function POST(request: NextRequest) {
   try {
+    // Hand back inventory from checkouts that were abandoned past their
+    // 15-minute hold, before we decide what's available.
+    await releaseExpiredReservations();
+
     const body: CreateOrderRequest = await request.json();
     const { eventId, ticketTypeId, quantity, buyerEmail, buyerPhone, attendees } = body;
 
@@ -65,7 +74,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const available = ticketType.quantityTotal - ticketType.quantitySold - ticketType.quantityReserved;
+    const available = availableQuantity(ticketType);
     if (available < quantity) {
       return NextResponse.json(
         { error: `Only ${available} tickets available` },
@@ -120,16 +129,27 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(ticketTypes.id, ticketTypeId));
 
-    const paystackResponse = await initializePaystackPayment({
-      amount: Math.round(total * 100),
-      email: buyerEmail,
-      reference: `TB-${order.id.slice(0, 8)}-${Date.now()}`,
-      orderId: order.id,
-      eventTitle: event.title,
-      ticketCount: quantity,
-    });
+    // Any failure past this point must give the reserved inventory back,
+    // including a thrown Paystack error — previously a throw skipped the
+    // rollback entirely and the tickets stayed reserved forever.
+    let paystackResponse;
+    try {
+      paystackResponse = await initializePaystackPayment({
+        amount: Math.round(total * 100),
+        email: buyerEmail,
+        reference: `TB-${order.id.slice(0, 8)}-${Date.now()}`,
+        orderId: order.id,
+        eventTitle: event.title,
+        ticketCount: quantity,
+      });
+    } catch (paymentError) {
+      await releaseOrderReservation(order.id);
+      await db.delete(orders).where(eq(orders.id, order.id));
+      throw paymentError;
+    }
 
     if (!paystackResponse.status) {
+      await releaseOrderReservation(order.id);
       await db.delete(orders).where(eq(orders.id, order.id));
       throw new Error('Failed to initialize payment');
     }

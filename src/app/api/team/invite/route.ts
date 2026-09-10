@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { organizationMembers } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { sendEmail } from '@/lib/email-service';
+import { requireOrgAccess } from '@/lib/authz';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,10 +13,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { organizationId, inviteeEmail, role } = await request.json();
-    if (!organizationId || !inviteeEmail || !role) {
+    const body = await request.json();
+    const { inviteeEmail, role } = body;
+    if (!inviteeEmail || !role) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
+
+    // The team screen is event-scoped, so it sends eventId; accept either.
+    // Without this gate anyone signed in could invite themselves into
+    // someone else's organization as owner.
+    const access = await requireOrgAccess({
+      eventId: body.eventId,
+      organizationId: body.organizationId,
+    });
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+    if (access.role !== 'owner') {
+      return NextResponse.json(
+        { error: 'Only the organization owner can invite team members.' },
+        { status: 403 }
+      );
+    }
+    const organizationId = access.organizationId;
 
     const validRoles = ['owner', 'event_manager', 'gate_staff', 'finance'];
     if (!validRoles.includes(role)) {
@@ -47,7 +67,7 @@ export async function POST(request: NextRequest) {
       invitedBy: session.user.email,
     });
 
-    const inviteUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/team/accept-invite?token=${inviteToken}`;
+    const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/team/accept-invite?token=${inviteToken}`;
 
     await sendEmail({
       to: inviteeEmail,
