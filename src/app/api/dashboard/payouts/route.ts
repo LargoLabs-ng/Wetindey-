@@ -4,7 +4,9 @@ import { ticketTypes, orders } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireEventCapability } from '@/lib/authz';
 
-const PLATFORM_FEE_PERCENTAGE = 0.06; // 6% platform fee
+import { PLATFORM_FEE_RATE } from '@/lib/fees';
+
+const PLATFORM_FEE_PERCENTAGE = PLATFORM_FEE_RATE;
 
 /**
  * GET /api/dashboard/payouts?eventId=...

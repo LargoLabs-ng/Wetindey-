@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PLATFORM_FEE_RATE } from '@/lib/fees';
 import { auth } from '@/auth';
 import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
         const totalNum = typeof order.total === 'string' ? parseFloat(order.total) : order.total;
         dailyData[dateStr].revenue += totalNum;
         dailyData[dateStr].orders += 1;
-        dailyData[dateStr].platformFee += totalNum * 0.06;
+        dailyData[dateStr].platformFee += totalNum * PLATFORM_FEE_RATE;
       }
     });
 
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
       return sum + totalNum;
     }, 0);
     const totalOrders = relevantOrders.length;
-    const totalPlatformFee = totalRevenue * 0.06;
+    const totalPlatformFee = totalRevenue * PLATFORM_FEE_RATE;
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
     const prevPeriodStart = new Date(Date.now() - days * 2 * 24 * 60 * 60 * 1000);

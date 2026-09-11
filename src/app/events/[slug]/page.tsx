@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { quoteOrder, naira } from '@/lib/fees';
 import { ArrowLeft, Calendar, MapPin, Users, Clock, QrCode } from 'lucide-react';
 import { useParams } from 'next/navigation';
 
@@ -117,6 +118,12 @@ export default function EventDetailPage() {
       return next.slice(0, quantity);
     });
   }, [quantity]);
+
+  // Same calculation the order API uses, so the page and the payment screen
+  // can never quote different numbers.
+  const quote = quoteOrder(
+    parseFloat(selectedTicketType?.price || '0') * quantity
+  );
 
   const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value);
@@ -363,23 +370,38 @@ export default function EventDetailPage() {
 
                 <div className="border-t pt-4" style={{ borderColor: 'var(--color-stone-mid)' }}>
                   <div className="flex justify-between text-sm">
-                    <span style={{ color: 'var(--color-stone)' }}>Subtotal</span>
                     <span style={{ color: 'var(--color-stone)' }}>
-                      {formatPrice((parseFloat(selectedTicketType?.price || '0') * quantity).toString())}
+                      {quantity} {quantity === 1 ? 'ticket' : 'tickets'}
+                    </span>
+                    <span style={{ color: 'var(--color-stone)' }}>
+                      {naira(quote.subtotal)}
                     </span>
                   </div>
                   <div className="mt-2 flex justify-between text-sm">
-                    <span style={{ color: 'var(--color-stone)' }}>Processing Fee</span>
-                    <span style={{ color: 'var(--color-stone)' }}>Calculated at checkout</span>
+                    <span style={{ color: 'var(--color-stone)' }}>Service fee</span>
+                    <span style={{ color: 'var(--color-stone)' }}>
+                      {naira(quote.platformFee)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex justify-between text-sm">
+                    <span style={{ color: 'var(--color-stone)' }}>
+                      Payment processing
+                    </span>
+                    <span style={{ color: 'var(--color-stone)' }}>
+                      {naira(quote.processingFee)}
+                    </span>
                   </div>
                   <div className="mt-4 border-t pt-4 flex justify-between font-bold" style={{ borderColor: 'var(--color-stone-mid)' }}>
-                    <span style={{ color: 'var(--color-forest)' }}>Total</span>
+                    <span style={{ color: 'var(--color-forest)' }}>Total to pay</span>
                     <span style={{ color: 'var(--color-forest)' }}>
-                      {formatPrice((parseFloat(selectedTicketType?.price || '0') * quantity).toString())}*
+                      {naira(quote.buyerTotal)}
                     </span>
                   </div>
                   <p className="mt-2 text-xs" style={{ color: 'var(--color-stone-mid)' }}>
-                    *Final total shown at payment
+                    Processing is estimated for a card payment and may differ
+                    slightly by payment method. If a ticket is refunded you
+                    get the ticket price back; the service fee is
+                    non-refundable.
                   </p>
                 </div>
               </div>

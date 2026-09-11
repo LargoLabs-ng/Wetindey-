@@ -119,3 +119,20 @@ export function availableQuantity(tier: {
     tier.quantityTotal - tier.quantitySold - tier.quantityReserved
   );
 }
+
+/**
+ * A refunded ticket frees its seat again: the sale is undone, so the count
+ * of sold tickets has to come back down or the tier stays "sold out" to
+ * everyone else while a seat sits empty.
+ */
+export async function releaseRefundedTicket(ticketTypeId: string): Promise<void> {
+  await db
+    .update(ticketTypes)
+    .set({
+      quantitySold: sql`GREATEST(${ticketTypes.quantitySold} - 1, 0)`,
+      // A tier marked sold_out purely because it filled up should go back on
+      // sale; one that an organizer paused by hand stays paused.
+      status: sql`CASE WHEN ${ticketTypes.status} = 'sold_out' THEN 'active' ELSE ${ticketTypes.status} END`,
+    })
+    .where(eq(ticketTypes.id, ticketTypeId));
+}

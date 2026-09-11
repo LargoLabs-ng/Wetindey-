@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { tickets, ticketTypes, orders } from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 
 /**
  * GET /api/dashboard/attendees?eventId=...
@@ -52,7 +53,11 @@ export async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.purchaseTime.localeCompare(a.purchaseTime));
 
-    return NextResponse.json({ eventTitle: event.title, attendees });
+    return NextResponse.json({
+      eventTitle: event.title,
+      attendees,
+      canRefund: can(access.role, "refund:issue"),
+    });
   } catch (error) {
     console.error("Error fetching attendees:", error);
     return NextResponse.json(

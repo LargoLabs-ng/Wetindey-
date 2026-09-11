@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { appUrl } from "@/lib/app-url";
+import { quoteOrder } from "@/lib/fees";
 import { db } from '@/db';
 import { events, orders, tickets, payments, ticketTypes } from '@/db/schema';
 import { eq } from 'drizzle-orm';
@@ -9,7 +11,7 @@ import {
 } from '@/lib/inventory';
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
 
 interface CreateOrderRequest {
   eventId: string;
@@ -82,10 +84,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const subtotal = parseFloat(ticketType.price) * quantity;
-    const feePercent = 0.06;
-    const feeFlat = 0;
-    const fees = subtotal * feePercent + feeFlat;
+    const quote = quoteOrder(parseFloat(ticketType.price) * quantity);
+    const subtotal = quote.subtotal;
+    const fees = quote.platformFee;
     const total = subtotal + fees;
 
     const [order] = await db
@@ -201,7 +202,7 @@ async function initializePaystackPayment(params: {
         eventTitle: params.eventTitle,
         ticketCount: params.ticketCount,
       },
-      callback_url: `${APP_URL}/payment/callback`,
+      callback_url: appUrl('/payment/callback'),
     }),
   });
 

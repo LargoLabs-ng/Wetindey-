@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { appUrl } from "@/lib/app-url";
 import { auth } from '@/auth';
 import { db } from '@/db';
 import { organizationMembers } from '@/db/schema';
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
       invitedBy: session.user.email,
     });
 
-    const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/team/accept-invite?token=${inviteToken}`;
+    const inviteUrl = appUrl(`/team/accept-invite?token=${inviteToken}`);
 
     await sendEmail({
       to: inviteeEmail,

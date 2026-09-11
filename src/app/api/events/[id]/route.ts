@@ -89,6 +89,22 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
+  // Publishing requires a venue and a city. Editing must not be a back door
+  // that strips them off an event that is already live and selling.
+  if (event.status === "published") {
+    const nextVenue = parsed.data.venueName ?? event.venueName;
+    const nextCity = parsed.data.city ?? event.city;
+    if (!nextVenue?.trim() || !nextCity?.trim()) {
+      return NextResponse.json(
+        {
+          error:
+            "A published event needs a venue and a city. Unpublish it first if you need to clear them.",
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const [updated] = await db
     .update(events)
     .set({ ...parsed.data, updatedAt: new Date() })

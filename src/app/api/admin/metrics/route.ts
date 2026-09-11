@@ -4,7 +4,9 @@ import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
 import { events, orders, tickets } from '@/db/schema';
 
-const PLATFORM_FEE = 0.06;
+import { PLATFORM_FEE_RATE } from '@/lib/fees';
+
+const PLATFORM_FEE = PLATFORM_FEE_RATE;
 
 export async function GET(request: NextRequest) {
   try {

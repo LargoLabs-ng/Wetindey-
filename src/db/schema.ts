@@ -401,3 +401,35 @@ export const eventStaffRelations = relations(eventStaff, ({ one }) => ({
   }),
   user: one(users, { fields: [eventStaff.userId], references: [users.id] }),
 }));
+
+// ─── Refunds ─────────────────────────────────────────────────────────────
+//
+// Money leaving the system deserves its own record. Ticket and order status
+// say *what* state something is in; this says who refunded what, when, for
+// how much, and what the provider called it — the trail you need when an
+// attendee disputes a charge months later.
+export const refunds = pgTable("refunds", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ticketId: uuid("ticket_id")
+    .references(() => tickets.id, { onDelete: "cascade" })
+    .notNull(),
+  orderId: uuid("order_id")
+    .references(() => orders.id, { onDelete: "cascade" })
+    .notNull(),
+  eventId: uuid("event_id")
+    .references(() => events.id, { onDelete: "cascade" })
+    .notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
+  reason: text("reason"),
+  providerReference: varchar("provider_reference", { length: 150 }),
+  providerResponse: jsonb("provider_response"),
+  refundedBy: uuid("refunded_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const refundsRelations = relations(refunds, ({ one }) => ({
+  ticket: one(tickets, { fields: [refunds.ticketId], references: [tickets.id] }),
+  order: one(orders, { fields: [refunds.orderId], references: [orders.id] }),
+  event: one(events, { fields: [refunds.eventId], references: [events.id] }),
+}));

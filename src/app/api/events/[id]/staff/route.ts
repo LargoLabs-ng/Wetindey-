@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { appUrl } from "@/lib/app-url";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -102,8 +103,7 @@ export async function POST(request: Request, context: RouteContext) {
     })
     .returning();
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const inviteUrl = `${appUrl}/team/accept-invite?token=${inviteToken}`;
+  const inviteUrl = appUrl(`/team/accept-invite?token=${inviteToken}`);
 
   const sent = await sendEmailWithResult({
     to: email,

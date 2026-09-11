@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Download, Search, Filter, Eye, ArrowLeft } from 'lucide-react';
+import { Download, Search, Filter, Eye, ArrowLeft, Undo2, X } from 'lucide-react';
 
 interface Attendee {
   id: string;
@@ -27,6 +27,11 @@ export default function AttendeesPage() {
   const [selectedAttendee, setSelectedAttendee] = useState<Attendee | null>(null);
   const [exporting, setExporting] = useState(false);
   const [eventTitle, setEventTitle] = useState('');
+  const [canRefund, setCanRefund] = useState(false);
+  const [refundingId, setRefundingId] = useState<string | null>(null);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [refundNote, setRefundNote] = useState<string | null>(null);
 
   // Fetch attendees
   useEffect(() => {
@@ -39,6 +44,7 @@ export default function AttendeesPage() {
 
         setAttendees(data.attendees || []);
         setEventTitle(data.eventTitle || 'Event');
+        setCanRefund(Boolean(data.canRefund));
         setFilteredAttendees(data.attendees || []);
       } catch (error) {
         console.error('Failed to fetch attendees:', error);
@@ -49,6 +55,41 @@ export default function AttendeesPage() {
 
     fetchAttendees();
   }, [eventId]);
+
+  const issueRefund = async (ticketId: string) => {
+    setRefundBusy(true);
+    setRefundNote(null);
+    try {
+      const response = await fetch(`/api/tickets/${ticketId}/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: refundReason.trim() || undefined }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setRefundNote(data.error || 'The refund could not be completed.');
+        return;
+      }
+      setRefundNote(
+        `Refunded \u20a6${Number(data.amount).toLocaleString('en-NG')}.` +
+          (data.emailSent
+            ? ' The attendee has been emailed.'
+            : " We couldn't email the attendee — tell them yourself.")
+      );
+      setRefundingId(null);
+      setRefundReason('');
+      // Re-read so the status badge and the seat count are truthful.
+      const refreshed = await fetch(
+        `/api/dashboard/attendees?eventId=${eventId}`
+      ).then((r) => r.json());
+      setAttendees(refreshed.attendees || []);
+      setFilteredAttendees(refreshed.attendees || []);
+    } catch {
+      setRefundNote('Network error — try again.');
+    } finally {
+      setRefundBusy(false);
+    }
+  };
 
   // Filter and search
   useEffect(() => {
@@ -192,6 +233,84 @@ export default function AttendeesPage() {
         <p className="mb-4 text-sm" style={{ color: 'var(--color-on-dark-3)' }}>
           Showing {filteredAttendees.length} of {attendees.length} attendees
         </p>
+        {refundNote && (
+          <p
+            className="mb-4 rounded-lg px-4 py-3 text-sm"
+            style={{
+              border: '1px solid var(--color-line-dark)',
+              backgroundColor: 'var(--color-surface)',
+              color: 'var(--color-on-dark)',
+            }}
+          >
+            {refundNote}
+          </p>
+        )}
+
+        {refundingId && (() => {
+          const target = attendees.find((a) => a.id === refundingId);
+          if (!target) return null;
+          return (
+            <div
+              className="mb-4 rounded-lg p-5"
+              style={{
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              }}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-semibold" style={{ color: 'var(--color-on-dark)' }}>
+                    Refund {target.name}&apos;s ticket?
+                  </p>
+                  <p className="mt-1 text-sm" style={{ color: 'var(--color-on-dark-2)' }}>
+                    The ticket price goes back to the card they paid with and
+                    the ticket stops working at the door. Your 3% service fee
+                    is kept. Paystack does not return its processing fee on a
+                    refund, so that part is a cost to you. This cannot be
+                    undone.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setRefundingId(null)}
+                  style={{ color: 'var(--color-on-dark-2)' }}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <input
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                placeholder="Reason (optional) — shown to the attendee"
+                className="mt-4 w-full rounded px-3 py-2 text-sm"
+                style={{
+                  border: '1px solid var(--color-line-dark)',
+                  backgroundColor: 'var(--color-canvas)',
+                  color: 'var(--color-on-dark)',
+                }}
+              />
+
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={() => issueRefund(refundingId)}
+                  disabled={refundBusy}
+                  className="rounded px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  style={{ backgroundColor: 'var(--color-error)' }}
+                >
+                  {refundBusy ? 'Refunding\u2026' : 'Refund this ticket'}
+                </button>
+                <button
+                  onClick={() => setRefundingId(null)}
+                  className="text-sm"
+                  style={{ color: 'var(--color-on-dark-2)' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
 
         {loading ? (
           <div className="rounded-lg border p-8 text-center" style={{ borderColor: 'var(--color-line-dark)', backgroundColor: 'var(--color-surface)' }}>
@@ -257,14 +376,31 @@ export default function AttendeesPage() {
                         <td className="px-6 py-4 text-sm" style={{ color: 'var(--color-on-dark-2)' }}>
                           {new Date(attendee.purchaseTime).toLocaleDateString()}
                         </td>
-                        <td className="px-6 py-4 text-center">
+                        <td className="px-6 py-4 text-center whitespace-nowrap">
                           <button
                             onClick={() => setSelectedAttendee(attendee)}
+                            title="View details"
                             className="inline-flex items-center gap-1 rounded px-3 py-1 text-sm transition-opacity hover:opacity-75"
                             style={{ color: 'var(--color-on-dark)' }}
                           >
                             <Eye className="h-4 w-4" />
                           </button>
+                          {canRefund &&
+                            (attendee.status === 'valid' ||
+                              attendee.status === 'checked_in') && (
+                              <button
+                                onClick={() => {
+                                  setRefundingId(attendee.id);
+                                  setRefundReason('');
+                                  setRefundNote(null);
+                                }}
+                                title="Refund this ticket"
+                                className="inline-flex items-center gap-1 rounded px-3 py-1 text-sm transition-opacity hover:opacity-75"
+                                style={{ color: 'var(--color-gold)' }}
+                              >
+                                <Undo2 className="h-4 w-4" />
+                              </button>
+                            )}
                         </td>
                       </tr>
                     );

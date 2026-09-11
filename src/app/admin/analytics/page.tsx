@@ -190,7 +190,7 @@ export default function AdminAnalyticsPage() {
             </div>
             <div>
               <p className="text-sm font-semibold mb-2" style={{ color: 'var(--color-stone-mid)' }}>
-                Platform Fee (6%)
+                Platform Fee (3%)
               </p>
               <p className="text-2xl font-bold" style={{ color: 'var(--color-sage)' }}>
                 {formatCurrency(analytics.metrics.totalPlatformFee)}

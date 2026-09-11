@@ -17,6 +17,7 @@ export type Capability =
   | "attendees:view"    // guest list and CSV export
   | "checkin:perform"   // scan and manual check-in at the gate
   | "finance:view"      // payouts and revenue
+  | "refund:issue"      // send money back to a buyer
   | "team:manage";      // invite, re-role and remove staff
 
 const MATRIX: Record<OrgRole, Capability[]> = {
@@ -28,6 +29,7 @@ const MATRIX: Record<OrgRole, Capability[]> = {
     "attendees:view",
     "checkin:perform",
     "finance:view",
+    "refund:issue",
     "team:manage",
   ],
   event_manager: [
@@ -37,6 +39,7 @@ const MATRIX: Record<OrgRole, Capability[]> = {
     "attendees:view",
     "checkin:perform",
     "finance:view",
+    "refund:issue",
   ],
   // Deliberately narrow: someone handed a phone at the door should see
   // nothing but the scanner.

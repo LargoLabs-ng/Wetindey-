@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { ArrowLeft, CalendarDays, MapPin, QrCode, UserPlus, Users, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarDays, MapPin, Pencil, QrCode, UserPlus, Users, Wallet } from "lucide-react";
 import { db } from "@/db";
 import { ticketTypes } from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
@@ -86,7 +86,16 @@ export default async function EventDetailPage({
         </div>
 
         {can(role, "event:edit") && (
-          <PublishToggle eventId={event.id} status={event.status} />
+          <div className="flex flex-col items-start gap-3 sm:items-end">
+            <PublishToggle eventId={event.id} status={event.status} />
+            <Link
+              href={`/dashboard/events/${event.id}/edit`}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-on-dark-2 transition-colors hover:text-gold"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit details
+            </Link>
+          </div>
         )}
       </header>
 

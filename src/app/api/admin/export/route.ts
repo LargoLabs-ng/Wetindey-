@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PLATFORM_FEE_RATE } from '@/lib/fees';
 import { auth } from '@/auth';
 import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
@@ -65,13 +66,13 @@ export async function GET(request: NextRequest) {
         });
 
         csv =
-          'Order ID,Event,Amount,Fee (6%),Net Revenue,Status,Date,Organizer\n';
+          `Order ID,Event,Amount,Fee (${PLATFORM_FEE_RATE * 100}%),Net Revenue,Status,Date,Organizer\n`;
 
         for (const order of allOrders) {
           const successPayment = order.payments?.find((p) => p.status === 'success');
           if (successPayment) {
             const totalNum = typeof order.total === 'string' ? parseFloat(order.total) : order.total;
-            const fee = totalNum * 0.06;
+            const fee = totalNum * PLATFORM_FEE_RATE;
             const net = totalNum - fee;
             csv += `"${order.id}","${order.event?.title || 'N/A'}",${totalNum},${fee},${net},"${successPayment.status}","${order.createdAt}","${order.event?.organizationId || 'N/A'}"\n`;
           }

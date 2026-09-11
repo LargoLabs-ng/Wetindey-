@@ -22,7 +22,7 @@ export default function PayoutsPage() {
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [totalPlatformFee, setTotalPlatformFee] = useState(0);
   const [netRevenue, setNetRevenue] = useState(0);
-  const [feePercentage, setFeePercentage] = useState(6);
+  const [feePercentage, setFeePercentage] = useState(3);
   const [breakdown, setBreakdown] = useState<TicketTierBreakdown[]>([]);
 
   // Fetch payout data

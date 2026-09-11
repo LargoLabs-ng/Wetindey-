@@ -241,7 +241,7 @@ export default function AdminDashboard() {
                 {formatCurrency(metrics.financial.platformEarnings)}
               </p>
               <p className="text-xs mt-2" style={{ color: 'var(--color-stone)' }}>
-                6% of revenue
+                3% of revenue
               </p>
             </div>
 
