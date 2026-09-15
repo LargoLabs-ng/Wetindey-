@@ -201,14 +201,16 @@ export default function PaymentCallbackClient() {
           )}
         </div>
 
-        <div className="mt-8 text-center">
-          <p style={{ color: 'var(--color-stone)' }}>
-            Questions? Contact{' '}
-            <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold" style={{ color: 'var(--color-forest)' }}>
-              {SUPPORT_EMAIL}
-            </a>
-          </p>
-        </div>
+        {SUPPORT_EMAIL && (
+          <div className="mt-8 text-center">
+            <p style={{ color: 'var(--color-stone)' }}>
+              Questions? Contact{' '}
+              <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold" style={{ color: 'var(--color-forest)' }}>
+                {SUPPORT_EMAIL}
+              </a>
+            </p>
+          </div>
+        )}
       </main>
     </div>
   );

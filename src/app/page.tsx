@@ -2,9 +2,9 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { ChevronDown, CheckCircle2, Share2, QrCode } from 'lucide-react';
 import { appHost, SUPPORT_EMAIL } from '@/lib/app-url';
+import { WordMark } from "@/components/wordmark";
 
 const LandingPage = () => {
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
@@ -44,16 +44,7 @@ const LandingPage = () => {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-3 group">
-              <div className="w-10 h-10">
-                <Image
-                  src="/logo-reversed.png"
-                  alt="Wetin Dey"
-                  width={40}
-                  height={40}
-                  className="w-full h-full"
-                />
-              </div>
-              <span className="text-ivory font-semibold hidden sm:inline">Wetin Dey?</span>
+              <WordMark tone="dark" size="lg" asLink={false} />
             </Link>
 
             {/* Desktop Navigation */}
@@ -79,7 +70,7 @@ const LandingPage = () => {
               </Link>
               <Link
                 href="/signup"
-                className="px-4 py-2 bg-sage hover:bg-sage-light text-forest rounded-lg font-medium text-sm transition-colors"
+                className="px-4 py-2 bg-purple hover:bg-purple-deep text-white rounded-lg font-medium text-sm transition-colors"
               >
                 Sign up
               </Link>
@@ -99,14 +90,25 @@ const LandingPage = () => {
             <span className="text-purple-lift">this weekend?</span>
           </h1>
           <p className="text-lg md:text-xl text-sage max-w-2xl mx-auto mb-8">
-            Create your event, share your link, and start selling tickets. Every buyer gets a secure QR ticket, making payments, entry, and check-in simple for everyone.
+            Parties, seminars, career fairs, match days — everything happening around your campus, in one place. Find it, grab your spot, don't miss am.
           </p>
-          <Link
-            href="/signup"
-            className="inline-block px-8 py-4 bg-sage hover:bg-sage-light text-forest font-semibold rounded-lg transition-colors text-lg"
-          >
-            Create your event
-          </Link>
+          {/* Discovery leads. A student landing here wants to see what's on,
+              not to open an organizer account — organizers are the smaller
+              audience and they arrive knowing what they came for. */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link
+              href="/events"
+              className="inline-block w-full sm:w-auto px-8 py-4 bg-purple hover:bg-purple-deep text-white font-semibold rounded-lg transition-colors text-lg"
+            >
+              See wetin dey
+            </Link>
+            <Link
+              href="/signup"
+              className="inline-block w-full sm:w-auto px-8 py-4 border border-forest-mid/60 hover:border-sage text-ivory font-semibold rounded-lg transition-colors text-lg"
+            >
+              I&apos;m hosting something
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -234,7 +236,7 @@ const LandingPage = () => {
 
             <Link
               href="/signup"
-              className="inline-block mt-8 px-8 py-4 bg-sage hover:bg-sage-light text-forest font-semibold rounded-lg transition-colors"
+              className="inline-block mt-8 px-8 py-4 bg-purple hover:bg-purple-deep text-white font-semibold rounded-lg transition-colors"
             >
               Start selling in less than 5 minutes
             </Link>
@@ -321,7 +323,7 @@ const LandingPage = () => {
         </h2>
         <Link
           href="/signup"
-          className="inline-block px-8 py-4 bg-sage hover:bg-sage-light text-forest font-semibold rounded-lg transition-colors text-lg"
+          className="inline-block px-8 py-4 bg-purple hover:bg-purple-deep text-white font-semibold rounded-lg transition-colors text-lg"
         >
           Create your event
         </Link>
@@ -334,18 +336,9 @@ const LandingPage = () => {
             {/* Brand */}
             <div>
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10">
-                  <Image
-                    src="/logo-reversed.png"
-                    alt="Wetin Dey"
-                    width={40}
-                    height={40}
-                    className="w-full h-full"
-                  />
-                </div>
-                <span className="text-ivory font-semibold">Wetin Dey?</span>
+                <WordMark tone="dark" size="lg" asLink={false} />
               </div>
-              <p className="text-sage/60 text-sm">Events made simple</p>
+              <p className="text-sage/60 text-sm">Your plug for what&apos;s happening</p>
               <div className="flex gap-4 mt-6">
                 <a href="#" className="text-sage/50 hover:text-sage transition-colors">
                   Twitter
@@ -399,16 +392,17 @@ const LandingPage = () => {
             <div>
               <h4 className="text-ivory font-semibold mb-4">Contact</h4>
               <ul className="space-y-2 text-sm">
-                <li>
-                  <a
-                    href={`mailto:${SUPPORT_EMAIL}`}
-                    className="text-sage/60 hover:text-sage transition-colors"
-                  >
-                    {SUPPORT_EMAIL}
-                  </a>
-                </li>
-                <li className="text-sage/60">+234 (0) XXX XXX XXXX</li>
-                <li className="text-sage/60">Lagos, Nigeria</li>
+                {SUPPORT_EMAIL && (
+                  <li>
+                    <a
+                      href={`mailto:${SUPPORT_EMAIL}`}
+                      className="text-sage/60 hover:text-sage transition-colors"
+                    >
+                      {SUPPORT_EMAIL}
+                    </a>
+                  </li>
+                )}
+                <li className="text-sage/60">Calabar, Nigeria</li>
               </ul>
             </div>
           </div>

@@ -24,10 +24,12 @@ export function appHost(): string {
 
 /**
  * Public support address shown to buyers and printed in ticket emails.
- * Override with NEXT_PUBLIC_SUPPORT_EMAIL; defaults to the brand domain.
+ *
+ * Deliberately has NO fallback. It used to default to an address on a domain
+ * nobody owns, which meant every ticket email told a buyer to write to a
+ * mailbox that did not exist — worse than showing no address at all. Set
+ * NEXT_PUBLIC_SUPPORT_EMAIL once there is a real inbox; until then every
+ * surface hides its contact line instead of printing a dead one.
  */
-export const BRAND_DOMAIN = "ticketbuddy.ng";
-
-export const SUPPORT_EMAIL =
-  (process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "").trim() ||
-  `support@${BRAND_DOMAIN}`;
+export const SUPPORT_EMAIL: string | null =
+  (process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "").trim() || null;

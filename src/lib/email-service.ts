@@ -234,7 +234,7 @@ export async function sendOrderConfirmation(data: {
 
             <!-- Support -->
             <p style="color: #6b7280; font-size: 13px; margin: 24px 0 0 0; border-top: 1px solid #e5e7eb; padding-top: 20px;">
-              Questions? Contact us at <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>
+              ${SUPPORT_EMAIL ? `Questions? Contact us at <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>` : "Questions? Reply to this email."}
             </p>
 
             <p style="color: #9ca3af; font-size: 12px; margin: 12px 0 0 0;">
