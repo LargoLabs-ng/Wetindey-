@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { events } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { requireEventAccess } from '@/lib/authz';
+import { can } from '@/lib/permissions';
 
 type RouteContext = { params: Promise<{ slug: string }> };
 
@@ -21,6 +23,16 @@ export async function GET(
 
     if (!event) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    }
+
+    // This endpoint is public, so a draft must not be readable just because
+    // someone guessed the slug. The organizer's own team still gets it, which
+    // is what makes "preview before publishing" work.
+    if (event.status !== 'published') {
+      const access = await requireEventAccess(event.id);
+      if (!access.ok || !can(access.role, 'event:view')) {
+        return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+      }
     }
 
     return NextResponse.json(event);

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { CheckCircle, XCircle, Clock, QrCode } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { SUPPORT_EMAIL } from '@/lib/app-url';
 
 const QRCodeDisplay = dynamic(
   () => import('@/components/qr-code-display').then((mod) => mod.QRCodeDisplay),
@@ -203,8 +204,8 @@ export default function PaymentCallbackClient() {
         <div className="mt-8 text-center">
           <p style={{ color: 'var(--color-stone)' }}>
             Questions? Contact{' '}
-            <a href="mailto:support@ticketbuddy.com" className="font-semibold" style={{ color: 'var(--color-forest)' }}>
-              support@ticketbuddy.com
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold" style={{ color: 'var(--color-forest)' }}>
+              {SUPPORT_EMAIL}
             </a>
           </p>
         </div>

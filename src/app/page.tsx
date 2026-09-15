@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ChevronDown, CheckCircle2, Share2, QrCode } from 'lucide-react';
+import { appHost, SUPPORT_EMAIL } from '@/lib/app-url';
 
 const LandingPage = () => {
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
@@ -164,7 +165,7 @@ const LandingPage = () => {
             </div>
             <h3 className="text-xl font-bold text-ivory mb-3">Share</h3>
             <p className="text-sage">
-              The moment you publish, you get one link: ticketbuddy.com/e/your-event. Drop it on WhatsApp, Instagram, Twitter.
+              The moment you publish, you get one link: {appHost()}/e/your-event. Drop it on WhatsApp, Instagram, Twitter.
             </p>
           </div>
 
@@ -401,7 +402,14 @@ const LandingPage = () => {
             <div>
               <h4 className="text-ivory font-semibold mb-4">Contact</h4>
               <ul className="space-y-2 text-sm">
-                <li className="text-sage/60">support@ticketbuddy.ng</li>
+                <li>
+                  <a
+                    href={`mailto:${SUPPORT_EMAIL}`}
+                    className="text-sage/60 hover:text-sage transition-colors"
+                  >
+                    {SUPPORT_EMAIL}
+                  </a>
+                </li>
                 <li className="text-sage/60">+234 (0) XXX XXX XXXX</li>
                 <li className="text-sage/60">Lagos, Nigeria</li>
               </ul>

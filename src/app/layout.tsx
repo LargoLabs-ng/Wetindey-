@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Providers } from "./providers";
 import "./globals.css";
+import { appUrl } from "@/lib/app-url";
 
 // Ticket Buddy brand typeface (see brand system: Manrope)
 const manrope = localFont({
@@ -11,6 +12,9 @@ const manrope = localFont({
 });
 
 export const metadata: Metadata = {
+  // Without this, every relative Open Graph / Twitter image URL resolves
+  // against localhost, so shared event links render blank on WhatsApp.
+  metadataBase: new URL(appUrl()),
   title: "Ticket Buddy",
   description:
     "Your event journey starts here. Discover events, book tickets securely, and experience more of what matters.",
