@@ -26,11 +26,11 @@ export async function generateMetadata({
     });
   } catch {
     // A metadata failure must never take the page down with it.
-    return { title: `Event · ${BRAND_NAME}` };
+    return { title: "Event" };
   }
 
   if (!event || event.status !== "published") {
-    return { title: `Event · ${BRAND_NAME}`, robots: { index: false } };
+    return { title: "Event", robots: { index: false } };
   }
 
   const where = [event.venueName, event.city].filter(Boolean).join(", ");
@@ -57,7 +57,10 @@ export async function generateMetadata({
     : undefined;
 
   return {
-    title: `${event.title} · ${BRAND_NAME}`,
+    // Bare title: the root layout's metadata template already appends
+    // the brand name, and returning it here produced "<event> · Wetin Dey ·
+    // Wetin Dey" in the tab and in every shared link preview.
+    title: event.title,
     description,
     alternates: { canonical: url },
     openGraph: {
