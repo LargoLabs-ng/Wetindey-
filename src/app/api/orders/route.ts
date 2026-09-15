@@ -88,10 +88,11 @@ export async function POST(request: NextRequest) {
     // event page quoted and what we record; `paystackAmount` is what the
     // transaction is initialized for, which differs when the organizer
     // absorbs the fee (the account adds its cut on top of whatever we send).
-    const quote = quoteOrder(
-      parseFloat(ticketType.price) * quantity,
-      event.feeStrategy
-    );
+    const quote = quoteOrder(parseFloat(ticketType.price) * quantity, {
+      platformFeePaidBy: event.platformFeePaidBy,
+      processingFeePaidBy:
+        event.feeStrategy === "buyer_pays" ? "buyer" : "organizer",
+    });
     const subtotal = quote.subtotal;
     const fees = quote.platformFee;
     const total = quote.buyerTotal;

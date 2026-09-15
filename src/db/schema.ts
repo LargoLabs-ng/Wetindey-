@@ -64,6 +64,10 @@ export const feeStrategyEnum = pgEnum("fee_strategy", [
   "buyer_pays",
 ]);
 
+// Who carries a given fee. Used for the platform's own cut; the card fee
+// still uses feeStrategyEnum above.
+export const feeBearerEnum = pgEnum("fee_bearer", ["organizer", "buyer"]);
+
 export const payoutStatusEnum = pgEnum("payout_status", [
   "pending",
   "processing",
@@ -196,9 +200,14 @@ export const events = pgTable("events", {
   salesStart: timestamp("sales_start"),
   salesEnd: timestamp("sales_end"),
   status: eventStatusEnum("status").default("draft").notNull(),
-  // Who carries Paystack's processing fee. The platform fee always comes
-  // from the buyer; this only moves the ~1.5% processing charge.
+  // Who carries Paystack's processing charge.
   feeStrategy: feeStrategyEnum("fee_strategy").default("buyer_pays").notNull(),
+  // Who carries our platform cut. Defaults to the organizer — the buyer
+  // seeing the sticker price is the friendlier default for a student market
+  // — but an organizer can pass it on.
+  platformFeePaidBy: feeBearerEnum("platform_fee_paid_by")
+    .default("organizer")
+    .notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

@@ -34,13 +34,20 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // discards the right answer and falls back to a far worse one.
 const floor2 = (n: number) => Math.floor(n * 100) / 100;
 
-/**
- * Who carries Paystack's processing fee.
- *
- * The platform fee always comes from the buyer either way — this only moves
- * the processing charge.
- */
+/** Who carries Paystack's processing charge. */
 export type FeeStrategy = "buyer_pays" | "organizer_absorbs";
+
+/** Who carries a given fee. */
+export type FeeBearer = "organizer" | "buyer";
+
+/**
+ * What the platform keeps when a ticket is refunded.
+ *
+ * A refund still costs us the work already done — the sale, the QR, the
+ * email, the support — but not all of it, so half the usual cut is returned
+ * with the ticket price. Whoever paid the fee gets that half back.
+ */
+export const REFUND_RETAINED_RATE = 0.04;
 
 /**
  * What Paystack charges the buyer so that `amount` reaches the merchant,
@@ -106,23 +113,35 @@ export type Quote = {
    * buyerTotal: the account adds its fee on top of whatever we send.
    */
   paystackAmount: number;
-  /** Which side carries the processing fee. */
-  strategy: FeeStrategy;
+  /** Which side carries the platform fee. */
+  platformFeePaidBy: FeeBearer;
+  /** Which side carries Paystack's card charge. */
+  processingFeePaidBy: FeeBearer;
 };
 
 /**
- * Two fees, two different payers, and they are not interchangeable.
+ * Two fees, and each one can sit on either side.
  *
- * The platform fee is ours and comes out of the organizer's money — the
- * buyer never sees a line for it, and the ticket price they are quoted is
- * the ticket price. Paystack's processing fee is the only one the strategy
- * moves: by default the buyer carries it, or the organizer can choose to
- * absorb it so the buyer pays exactly the sticker price.
+ * - The platform fee is ours. By default it comes out of the organizer's
+ *   payout so the buyer pays the sticker price, but an organizer can pass
+ *   it on, in which case it is added to the buyer's bill and the organizer
+ *   receives the ticket price whole.
+ * - Paystack's card charge works the same way, independently.
+ *
+ * Whatever the combination, `buyerTotal` is the number the event page shows
+ * and the number the buyer is actually charged — there are no hidden
+ * additions at the payment screen.
  */
 export function quoteOrder(
   subtotal: number,
-  strategy: FeeStrategy = "buyer_pays"
+  options: {
+    platformFeePaidBy?: FeeBearer;
+    processingFeePaidBy?: FeeBearer;
+  } = {}
 ): Quote {
+  const platformFeePaidBy = options.platformFeePaidBy ?? "organizer";
+  const processingFeePaidBy = options.processingFeePaidBy ?? "buyer";
+
   const platformFee = round2(subtotal * PLATFORM_FEE_RATE);
 
   // A free ticket has no fees of any kind and never touches Paystack.
@@ -134,37 +153,89 @@ export function quoteOrder(
       buyerTotal: 0,
       organizerNet: 0,
       paystackAmount: 0,
-      strategy,
+      platformFeePaidBy,
+      processingFeePaidBy,
     };
   }
 
-  if (strategy === "buyer_pays") {
-    // The face value has to settle to us intact, so Paystack's cut is added
-    // on top of it and the buyer pays the difference.
-    const buyerTotal = paystackGrossUp(subtotal);
+  // What the charge has to cover before Paystack is considered.
+  const base =
+    platformFeePaidBy === "buyer" ? round2(subtotal + platformFee) : round2(subtotal);
+
+  // The organizer's starting position: the ticket price, less our cut when
+  // they are the one carrying it.
+  const netBeforeCard =
+    platformFeePaidBy === "buyer" ? round2(subtotal) : round2(subtotal - platformFee);
+
+  if (processingFeePaidBy === "buyer") {
+    // Paystack's cut is added on top, so `base` settles to us intact.
+    const buyerTotal = paystackGrossUp(base);
     return {
       subtotal: round2(subtotal),
       platformFee,
-      processingFee: round2(buyerTotal - subtotal),
+      processingFee: round2(buyerTotal - base),
       buyerTotal,
-      organizerNet: round2(subtotal - platformFee),
-      paystackAmount: round2(subtotal),
-      strategy,
+      organizerNet: netBeforeCard,
+      paystackAmount: base,
+      platformFeePaidBy,
+      processingFeePaidBy,
     };
   }
 
-  // organizer_absorbs: the buyer pays the sticker price exactly, so we
-  // initialize for less and Paystack's cut comes out of what settles.
-  const paystackAmount = paystackReverseGrossUp(subtotal);
-  const processingFee = round2(subtotal - paystackAmount);
+  // The organizer absorbs it: the buyer pays `base` exactly, so we initialize
+  // for less and Paystack's cut comes out of what settles.
+  const paystackAmount = paystackReverseGrossUp(base);
+  const processingFee = round2(base - paystackAmount);
   return {
     subtotal: round2(subtotal),
     platformFee,
     processingFee,
-    buyerTotal: round2(subtotal),
-    organizerNet: round2(subtotal - platformFee - processingFee),
+    buyerTotal: base,
+    organizerNet: round2(netBeforeCard - processingFee),
     paystackAmount,
-    strategy,
+    platformFeePaidBy,
+    processingFeePaidBy,
+  };
+}
+
+/**
+ * What a refund returns and what we keep.
+ *
+ * The buyer always gets the ticket price back. If they also paid the
+ * platform fee, they get the refundable half of that too — we retain
+ * REFUND_RETAINED_RATE either way, from whoever originally paid it.
+ */
+export function quoteRefund(
+  faceValue: number,
+  platformFeePaidBy: FeeBearer = "organizer"
+): {
+  /** Cash returned to the buyer. */
+  buyerRefund: number;
+  /** What the platform keeps on this refunded sale. */
+  platformKeeps: number;
+  /** What the organizer is charged for it (zero when the buyer paid). */
+  organizerCharged: number;
+} {
+  const retained = round2(faceValue * REFUND_RETAINED_RATE);
+  const fullFee = round2(faceValue * PLATFORM_FEE_RATE);
+
+  if (faceValue <= 0) {
+    return { buyerRefund: 0, platformKeeps: 0, organizerCharged: 0 };
+  }
+
+  if (platformFeePaidBy === "buyer") {
+    // The buyer paid our fee, so the refundable half goes back to them.
+    return {
+      buyerRefund: round2(faceValue + fullFee - retained),
+      platformKeeps: retained,
+      organizerCharged: 0,
+    };
+  }
+
+  return {
+    buyerRefund: round2(faceValue),
+    platformKeeps: retained,
+    organizerCharged: retained,
   };
 }
 

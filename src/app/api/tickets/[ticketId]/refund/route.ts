@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { orders, payments, refunds, tickets } from "@/db/schema";
 import { requireEventCapability, isUuid } from "@/lib/authz";
 import { releaseRefundedTicket } from "@/lib/inventory";
-import { naira } from "@/lib/fees";
+import { naira, quoteRefund } from "@/lib/fees";
 import { sendEmailWithResult } from "@/lib/email-service";
 
 type RouteContext = { params: Promise<{ ticketId: string }> };
@@ -76,20 +76,20 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    // One ticket's face value. The platform service fee is deliberately NOT
-    // returned — it is disclosed as non-refundable at checkout — so a refund
-    // gives back the ticket price, not the whole charge.
+    // One ticket's face value, and what a refund actually returns.
     const siblings = await db
       .select({ id: tickets.id })
       .from(tickets)
       .where(eq(tickets.orderId, order.id));
     const shareCount = Math.max(1, siblings.length);
-    const amount = round2(Number(order.subtotal) / shareCount);
-    // Our platform fee is charged to the ORGANIZER, not the buyer, so this
-    // is not withheld from the refund — the buyer gets the full ticket price
-    // back. It is recorded because the organizer still owes it on a refunded
-    // sale, which is what the payout has to reflect.
-    const serviceFeeKept = round2(Number(order.fees) / shareCount);
+    const faceValue = round2(Number(order.subtotal) / shareCount);
+
+    // A refunded sale costs the platform half its usual cut, not all of it.
+    // If the buyer paid our fee, the returned half goes back to them with
+    // the ticket price; if the organizer paid it, they are charged half.
+    const refund = quoteRefund(faceValue, access.event.platformFeePaidBy);
+    const amount = refund.buyerRefund;
+    const serviceFeeKept = refund.platformKeeps;
 
     const [payment] = await db
       .select()

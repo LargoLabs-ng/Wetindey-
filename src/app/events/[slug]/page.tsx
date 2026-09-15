@@ -26,6 +26,7 @@ interface Event {
   description: string | null;
   coverImage: string | null;
   feeStrategy: 'buyer_pays' | 'organizer_absorbs';
+  platformFeePaidBy: 'organizer' | 'buyer';
   category: string | null;
   venueName: string | null;
   venueAddress: string | null;
@@ -122,10 +123,10 @@ export default function EventDetailPage() {
 
   // Same calculation the order API uses, so the page and the payment screen
   // can never quote different numbers.
-  const quote = quoteOrder(
-    parseFloat(selectedTicketType?.price || '0') * quantity,
-    event?.feeStrategy ?? 'buyer_pays'
-  );
+  const quote = quoteOrder(parseFloat(selectedTicketType?.price || '0') * quantity, {
+    platformFeePaidBy: event?.platformFeePaidBy ?? 'organizer',
+    processingFeePaidBy: event?.feeStrategy === 'organizer_absorbs' ? 'organizer' : 'buyer',
+  });
 
   const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value);
@@ -379,10 +380,18 @@ export default function EventDetailPage() {
                       {naira(quote.subtotal)}
                     </span>
                   </div>
-                  {/* No platform-fee line: our cut comes out of the
-                      organiser's payout, so the buyer is never charged for
-                      it and must not be shown it. */}
-                  {quote.strategy === 'buyer_pays' && (
+                  {/* Each fee only appears when the buyer is actually
+                      paying it. A line for money they are not being charged
+                      is worse than no line at all. */}
+                  {quote.platformFeePaidBy === 'buyer' && (
+                    <div className="mt-2 flex justify-between text-sm">
+                      <span style={{ color: 'var(--color-stone)' }}>Service fee</span>
+                      <span style={{ color: 'var(--color-stone)' }}>
+                        {naira(quote.platformFee)}
+                      </span>
+                    </div>
+                  )}
+                  {quote.processingFeePaidBy === 'buyer' && (
                     <div className="mt-2 flex justify-between text-sm">
                       <span style={{ color: 'var(--color-stone)' }}>
                         Payment processing
@@ -399,10 +408,13 @@ export default function EventDetailPage() {
                     </span>
                   </div>
                   <p className="mt-2 text-xs" style={{ color: 'var(--color-stone-mid)' }}>
-                    {quote.strategy === 'buyer_pays'
+                    {quote.processingFeePaidBy === 'buyer'
                       ? 'Processing is estimated for a card payment and may differ slightly by payment method. '
                       : 'The organiser covers the payment processing fee on this event. '}
-                    If a ticket is refunded you get the ticket price back.
+                    If a ticket is refunded you get the ticket price back
+                    {quote.platformFeePaidBy === 'buyer'
+                      ? ', plus most of the service fee.'
+                      : '.'}
                   </p>
                 </div>
               </div>
