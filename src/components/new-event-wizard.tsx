@@ -434,12 +434,15 @@ export function NewEventWizard() {
       {step === 3 && eventId && (
         <div className="space-y-6">
           <div className="rounded-2xl border border-line-dark bg-surface p-6">
-            <h2 className="font-bold text-on-dark">Who pays the card fee?</h2>
+            <h2 className="font-bold text-on-dark">
+              Who pays the card fee?
+            </h2>
             <p className="mt-1 text-sm text-on-dark-2">
-              Our {Math.round(PLATFORM_FEE_RATE * 100)}% service fee always
-              comes from the buyer. This choice only moves Paystack&apos;s
-              processing charge, and either way the buyer sees the full total
-              before they pay — never a surprise on the payment screen.
+              Wetin Dey takes {Math.round(PLATFORM_FEE_RATE * 100)}% of your
+              ticket price out of your payout — buyers never see a line for
+              it. The only thing to decide here is Paystack&apos;s card
+              charge, and either way the buyer sees their full total before
+              they pay.
             </p>
 
             <div className="mt-5 space-y-3">
@@ -471,8 +474,8 @@ export function NewEventWizard() {
                         </span>
                         <span className="mt-1 block text-sm text-on-dark-2">
                           {s === "buyer_pays"
-                            ? "Your ticket price reaches you in full."
-                            : "Your price is what the buyer sees, and the fee comes out of your payout."}
+                            ? "Added on top at checkout, so your ticket price settles in full."
+                            : "The buyer pays your sticker price exactly, and the card fee comes out of your payout too."}
                         </span>
                         <dl className="mt-3 space-y-1 text-sm">
                           <div className="flex justify-between gap-4">
@@ -482,6 +485,22 @@ export function NewEventWizard() {
                             </dd>
                           </div>
                           <div className="flex justify-between gap-4">
+                            <dt className="text-on-dark-3">
+                              Card fee ({s === "buyer_pays" ? "buyer" : "you"})
+                            </dt>
+                            <dd className="tabular-nums text-on-dark-2">
+                              {naira(q.processingFee)}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-on-dark-3">
+                              Wetin Dey {Math.round(PLATFORM_FEE_RATE * 100)}%
+                            </dt>
+                            <dd className="tabular-nums text-on-dark-2">
+                              −{naira(q.platformFee)}
+                            </dd>
+                          </div>
+                          <div className="flex justify-between gap-4 border-t border-line-dark pt-1">
                             <dt className="text-on-dark-3">You receive</dt>
                             <dd className="font-semibold tabular-nums text-on-dark">
                               {naira(q.organizerNet)}

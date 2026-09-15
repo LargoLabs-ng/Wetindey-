@@ -88,9 +88,12 @@ export function paystackReverseGrossUp(target: number): number {
 }
 
 export type Quote = {
-  /** Face value of the tickets. */
+  /** Face value of the tickets — the price on the tin. */
   subtotal: number;
-  /** The platform's fee. Always paid by the buyer. */
+  /**
+   * The platform's cut. Deducted from the organizer's payout; it is NEVER
+   * added to what the buyer is charged.
+   */
   platformFee: number;
   /** Paystack's processing fee, estimated for a local card. */
   processingFee: number;
@@ -107,13 +110,20 @@ export type Quote = {
   strategy: FeeStrategy;
 };
 
+/**
+ * Two fees, two different payers, and they are not interchangeable.
+ *
+ * The platform fee is ours and comes out of the organizer's money — the
+ * buyer never sees a line for it, and the ticket price they are quoted is
+ * the ticket price. Paystack's processing fee is the only one the strategy
+ * moves: by default the buyer carries it, or the organizer can choose to
+ * absorb it so the buyer pays exactly the sticker price.
+ */
 export function quoteOrder(
   subtotal: number,
   strategy: FeeStrategy = "buyer_pays"
 ): Quote {
   const platformFee = round2(subtotal * PLATFORM_FEE_RATE);
-  // What has to reach us: the organizer's money plus our cut.
-  const merchantTotal = round2(subtotal + platformFee);
 
   // A free ticket has no fees of any kind and never touches Paystack.
   if (subtotal <= 0) {
@@ -129,28 +139,30 @@ export function quoteOrder(
   }
 
   if (strategy === "buyer_pays") {
-    const buyerTotal = paystackGrossUp(merchantTotal);
+    // The face value has to settle to us intact, so Paystack's cut is added
+    // on top of it and the buyer pays the difference.
+    const buyerTotal = paystackGrossUp(subtotal);
     return {
       subtotal: round2(subtotal),
       platformFee,
-      processingFee: round2(buyerTotal - merchantTotal),
+      processingFee: round2(buyerTotal - subtotal),
       buyerTotal,
-      organizerNet: round2(subtotal),
-      paystackAmount: merchantTotal,
+      organizerNet: round2(subtotal - platformFee),
+      paystackAmount: round2(subtotal),
       strategy,
     };
   }
 
-  // organizer_absorbs: the buyer pays the round number, and Paystack's cut
-  // is taken out of what settles, so the organizer nets less.
-  const paystackAmount = paystackReverseGrossUp(merchantTotal);
-  const processingFee = round2(merchantTotal - paystackAmount);
+  // organizer_absorbs: the buyer pays the sticker price exactly, so we
+  // initialize for less and Paystack's cut comes out of what settles.
+  const paystackAmount = paystackReverseGrossUp(subtotal);
+  const processingFee = round2(subtotal - paystackAmount);
   return {
     subtotal: round2(subtotal),
     platformFee,
     processingFee,
-    buyerTotal: merchantTotal,
-    organizerNet: round2(subtotal - processingFee),
+    buyerTotal: round2(subtotal),
+    organizerNet: round2(subtotal - platformFee - processingFee),
     paystackAmount,
     strategy,
   };

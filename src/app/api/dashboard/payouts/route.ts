@@ -52,8 +52,13 @@ export async function GET(request: NextRequest) {
     paidOrders.forEach((order) => {
       const hasSuccessPayment = order.payments?.some((p) => p.status === 'success');
       if (hasSuccessPayment) {
-        const orderTotal = typeof order.total === 'string' ? parseFloat(order.total) : order.total;
-        totalRevenue += orderTotal;
+        // Face value, not the buyer's total: when the buyer carries
+        // Paystack's fee their total is higher than the ticket price, and
+        // that difference is Paystack's money, never the organizer's. Basing
+        // the 8% on it would overcharge the organizer on every sale.
+        const faceValue =
+          typeof order.subtotal === 'string' ? parseFloat(order.subtotal) : order.subtotal;
+        totalRevenue += faceValue;
 
         // Group by ticket tier
         order.tickets.forEach((ticket) => {

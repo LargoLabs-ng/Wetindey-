@@ -379,12 +379,9 @@ export default function EventDetailPage() {
                       {naira(quote.subtotal)}
                     </span>
                   </div>
-                  <div className="mt-2 flex justify-between text-sm">
-                    <span style={{ color: 'var(--color-stone)' }}>Service fee</span>
-                    <span style={{ color: 'var(--color-stone)' }}>
-                      {naira(quote.platformFee)}
-                    </span>
-                  </div>
+                  {/* No platform-fee line: our cut comes out of the
+                      organiser's payout, so the buyer is never charged for
+                      it and must not be shown it. */}
                   {quote.strategy === 'buyer_pays' && (
                     <div className="mt-2 flex justify-between text-sm">
                       <span style={{ color: 'var(--color-stone)' }}>
@@ -405,8 +402,7 @@ export default function EventDetailPage() {
                     {quote.strategy === 'buyer_pays'
                       ? 'Processing is estimated for a card payment and may differ slightly by payment method. '
                       : 'The organiser covers the payment processing fee on this event. '}
-                    If a ticket is refunded you get the ticket price back; the
-                    service fee is non-refundable.
+                    If a ticket is refunded you get the ticket price back.
                   </p>
                 </div>
               </div>

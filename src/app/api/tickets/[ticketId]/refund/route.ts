@@ -85,6 +85,10 @@ export async function POST(request: Request, context: RouteContext) {
       .where(eq(tickets.orderId, order.id));
     const shareCount = Math.max(1, siblings.length);
     const amount = round2(Number(order.subtotal) / shareCount);
+    // Our platform fee is charged to the ORGANIZER, not the buyer, so this
+    // is not withheld from the refund — the buyer gets the full ticket price
+    // back. It is recorded because the organizer still owes it on a refunded
+    // sale, which is what the payout has to reflect.
     const serviceFeeKept = round2(Number(order.fees) / shareCount);
 
     const [payment] = await db
@@ -179,10 +183,6 @@ export async function POST(request: Request, context: RouteContext) {
           with — banks usually take a few working days.
         </p>
         ${reason ? `<p>Reason given: ${reason}</p>` : ""}
-        <p style="color:#6B6860;font-size:13px;">
-          The ${naira(serviceFeeKept)} service fee is non-refundable, as set
-          out when you bought.
-        </p>
         <p>This ticket will no longer be admitted at the door.</p>
       `,
     });
