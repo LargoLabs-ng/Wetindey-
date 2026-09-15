@@ -3,12 +3,14 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
+import { CoverImageField } from "@/components/cover-image-field";
 
 export type EditableEvent = {
   id: string;
   title: string;
   description: string | null;
   category: string | null;
+  coverImage: string | null;
   venueName: string | null;
   venueAddress: string | null;
   city: string | null;
@@ -44,6 +46,7 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
     startDatetime: toLocalInput(event.startDatetime),
     endDatetime: toLocalInput(event.endDatetime),
   });
+  const [coverImage, setCoverImage] = useState<string | null>(event.coverImage);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,6 +65,7 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
           title: form.title.trim(),
           description: form.description.trim(),
           category: form.category.trim(),
+          coverImage,
           venueName: form.venueName.trim(),
           venueAddress: form.venueAddress.trim(),
           city: form.city.trim(),
@@ -101,6 +105,13 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
       )}
 
       <div className="space-y-4 rounded-2xl border border-line-dark bg-surface p-6">
+        <CoverImageField
+          value={coverImage}
+          onChange={setCoverImage}
+          eventId={event.id}
+          slugHint={form.title}
+        />
+
         <div>
           <label className={label}>Event title</label>
           <input

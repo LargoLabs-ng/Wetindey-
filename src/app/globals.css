@@ -1,64 +1,161 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Wetin Dey — brand token system
+
+   Two layers on purpose:
+
+   1. The `--wd-*` scale below is the real palette. New code uses these.
+   2. Underneath, every token the old Ticket Buddy green/gold system used is
+      kept and REPOINTED at the new scale. There are ~400 references to those
+      names across 11k lines of components; repointing them re-skins the whole
+      app in one move instead of touching every file, and nothing breaks
+      mid-migration. They get retired gradually as screens are rebuilt.
+
+   Brand working values (per build document §5):
+     Electric Purple #6C3CFF — actions and brand moments, used sparingly
+     Deep Indigo     #0F0B1A — dark surfaces and hero areas
+     Warm Off-White  #F8F7F3 — main content background
+     Coral           #FF6B4A — limited supporting accent
+   ───────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --background: #F8F7F3; /* Warm Ivory */
-  --foreground: #1C1C1A; /* Ink */
+  /* ── Core brand ─────────────────────────────────────────────────────── */
+  --wd-purple: #6C3CFF;
+  --wd-purple-deep: #5326E8;   /* pressed / hover */
+  --wd-purple-lift: #8B65FF;   /* purple that still reads on a dark ground */
+  --wd-purple-soft: #EFE9FF;   /* tint on light surfaces */
+  --wd-purple-dim: #241B45;    /* tint on dark surfaces */
 
-  /* Ticket Buddy brand system — extended per design files */
-  --color-forest: #12372A;        /* Primary */
-  --color-forest-deep: #0A1F17;
-  --color-forest-mid: #2D6A4F;
-  --color-emerald: #1B4D3E;       /* Hover / Dark (kept for existing usage) */
-  --color-primary-soft: #E8F0EC;
-  --color-primary-pale: #D4E4DC;
+  --wd-indigo: #0F0B1A;        /* darkest surface */
+  --wd-indigo-2: #171130;      /* raised dark surface */
+  --wd-indigo-3: #221A3D;      /* raised twice */
+  --wd-indigo-line: #2A2340;   /* hairline on dark */
 
-  --color-sage: #A8C7B8;
-  --color-sage-light: #D4E6DC;
-  --color-sage-pale: #EBF4EF;
+  --wd-cream: #F8F7F3;         /* page ground */
+  --wd-cream-2: #F1EFE9;       /* sunk / striped rows */
+  --wd-cream-3: #E9E6DE;
 
-  --color-ivory: #F8F7F3;
-  --color-ivory-2: #F0EEE9;
-  --color-ivory-3: #E8E5DF;
+  --wd-coral: #FF6B4A;
+  --wd-coral-deep: #E0472A;
+  --wd-coral-soft: #FDEAE5;
 
-  --color-line: #E2DED8;
-  --color-line-2: #C8C4BC;
-  --color-border: #E2DED8; /* alias kept for existing components */
+  /* Neutrals carry a slight violet bias so they sit with the purple rather
+     than fighting it — a pure grey next to #6C3CFF reads as dirty. */
+  --wd-ink: #0F0B1A;
+  --wd-ink-2: #55506B;
+  --wd-ink-3: #8B8699;
+  --wd-line: #E3DFD7;
+  --wd-line-2: #CFCAC0;
 
-  --color-charcoal: #1C1C1A;      /* alias kept for existing components */
-  --color-ink: #1C1C1A;
-  --color-ink-2: #6B6860;
-  --color-ink-3: #9E9C98;
-  --color-secondary-text: #6B6860;
+  --wd-on-dark: #F4F2F7;
+  --wd-on-dark-2: #A8A2BD;
+  --wd-on-dark-3: #756E8C;
 
-  --color-success: #2D6A4F;
-  --color-caution: #B5912E;
-  --color-caution-soft: #FBF3E2;
-  --color-warning: #F59E0B;
-  --color-danger: #C0392B;
-  --color-danger-soft: #FAE9E8;
-  --color-error: #EF4444;
-  --color-info: #3B82F6;
+  /* Semantic state — deliberately NOT the accent hue, so "this worked" and
+     "this is a button" never look like the same thing. */
+  --wd-ok: #1F7A55;
+  --wd-ok-soft: #E3F3EC;
+  --wd-warn: #9A6B00;
+  --wd-warn-soft: #FBF1DC;
+  --wd-bad: #C8371C;
+  --wd-bad-soft: #FBE7E2;
 
-  /* Gold accent — CTAs on the organizer dashboard */
-  --color-gold: #E3B341;
-  --color-gold-deep: #C9972B;
-  --color-gold-soft: #3E3417;
+  --background: var(--wd-cream);
+  --foreground: var(--wd-ink);
 
-  /* Organizer dashboard surfaces — deep forest green shell */
-  --color-canvas: #08190F;
-  --color-surface: #0F2E20;
-  --color-surface-2: #16402D;
-  --color-line-dark: #23543C;
-  --color-on-dark: #F1F6F2;
-  --color-on-dark-2: #A8C7B8;
-  --color-on-dark-3: #789C89;
+  /* ── Compatibility layer: old names, new values ─────────────────────── */
+
+  /* `forest` was the primary dark used for headings and dark fills. It maps
+     to deep indigo, NOT to purple — mapping it to purple would have turned
+     every heading in the app purple, which §20 of the brief rules out. */
+  --color-forest: var(--wd-indigo);
+  --color-forest-deep: #070410;
+  --color-forest-mid: #3D3560;
+  --color-emerald: var(--wd-indigo-2);
+  --color-primary-soft: var(--wd-purple-soft);
+  --color-primary-pale: #DCD2FF;
+
+  /* `sage` was muted text, mostly on dark grounds. */
+  --color-sage: var(--wd-on-dark-2);
+  --color-sage-light: #C6C1D6;
+  --color-sage-pale: var(--wd-purple-soft);
+
+  --color-ivory: var(--wd-cream);
+  --color-ivory-2: var(--wd-cream-2);
+  --color-ivory-3: var(--wd-cream-3);
+
+  --color-line: var(--wd-line);
+  --color-line-2: var(--wd-line-2);
+  --color-border: var(--wd-line);
+
+  --color-charcoal: var(--wd-ink);
+  --color-ink: var(--wd-ink);
+  --color-ink-2: var(--wd-ink-2);
+  --color-ink-3: var(--wd-ink-3);
+  --color-secondary-text: var(--wd-ink-2);
+
+  /* `stone` and `stone-mid` were referenced 142 times across the admin and
+     dashboard screens but never actually declared — every one of those
+     references resolved to nothing, which is why those pages rendered with
+     default browser colours and no borders. Declared here. */
+  --color-stone: var(--wd-ink-2);
+  --color-stone-mid: var(--wd-ink-3);
+
+  --color-success: var(--wd-ok);
+  --color-caution: var(--wd-warn);
+  --color-caution-soft: var(--wd-warn-soft);
+  --color-warning: var(--wd-warn);
+  --color-danger: var(--wd-bad);
+  --color-danger-soft: var(--wd-bad-soft);
+  --color-error: var(--wd-coral-deep);
+  --color-info: var(--wd-purple);
+
+  /* `gold` was the organizer dashboard's CTA accent. This is the one place
+     the old system mapped cleanly onto the new one: accent → action. */
+  --color-gold: var(--wd-purple);
+  --color-gold-deep: var(--wd-purple-deep);
+  --color-gold-soft: var(--wd-purple-dim);
+
+  /* Organizer dashboard shell: forest green → deep indigo. */
+  --color-canvas: var(--wd-indigo);
+  --color-surface: var(--wd-indigo-2);
+  --color-surface-2: var(--wd-indigo-3);
+  --color-line-dark: var(--wd-indigo-line);
+  --color-on-dark: var(--wd-on-dark);
+  --color-on-dark-2: var(--wd-on-dark-2);
+  --color-on-dark-3: var(--wd-on-dark-3);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-manrope);
+  --font-sans: var(--font-jakarta);
 
+  /* New canonical names */
+  --color-purple: var(--wd-purple);
+  --color-purple-deep: var(--wd-purple-deep);
+  --color-purple-lift: var(--wd-purple-lift);
+  --color-purple-soft: var(--wd-purple-soft);
+  --color-purple-dim: var(--wd-purple-dim);
+  --color-indigo: var(--wd-indigo);
+  --color-indigo-2: var(--wd-indigo-2);
+  --color-indigo-3: var(--wd-indigo-3);
+  --color-indigo-line: var(--wd-indigo-line);
+  --color-cream: var(--wd-cream);
+  --color-cream-2: var(--wd-cream-2);
+  --color-cream-3: var(--wd-cream-3);
+  --color-coral: var(--wd-coral);
+  --color-coral-deep: var(--wd-coral-deep);
+  --color-coral-soft: var(--wd-coral-soft);
+  --color-ok: var(--wd-ok);
+  --color-ok-soft: var(--wd-ok-soft);
+  --color-warn: var(--wd-warn);
+  --color-warn-soft: var(--wd-warn-soft);
+  --color-bad: var(--wd-bad);
+  --color-bad-soft: var(--wd-bad-soft);
+
+  /* Compatibility names, still resolvable from Tailwind utilities */
   --color-forest: var(--color-forest);
   --color-forest-deep: var(--color-forest-deep);
   --color-forest-mid: var(--color-forest-mid);
@@ -78,6 +175,8 @@
   --color-ink: var(--color-ink);
   --color-ink-2: var(--color-ink-2);
   --color-ink-3: var(--color-ink-3);
+  --color-stone: var(--color-stone);
+  --color-stone-mid: var(--color-stone-mid);
   --color-secondary-text: var(--color-secondary-text);
   --color-success: var(--color-success);
   --color-caution: var(--color-caution);
@@ -87,7 +186,6 @@
   --color-danger-soft: var(--color-danger-soft);
   --color-error: var(--color-error);
   --color-info: var(--color-info);
-
   --color-gold: var(--color-gold);
   --color-gold-deep: var(--color-gold-deep);
   --color-gold-soft: var(--color-gold-soft);
@@ -103,4 +201,31 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Plus Jakarta Sans runs tight at display sizes; headings get negative
+   tracking so large type doesn't read as loose. */
+h1, h2, h3 {
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+::selection {
+  background: var(--wd-purple);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--wd-purple);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

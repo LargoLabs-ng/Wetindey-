@@ -10,7 +10,7 @@ const updateEventSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(5000).optional(),
   category: z.string().max(100).optional(),
-  coverImage: z.string().url().optional(),
+  coverImage: z.string().url().nullish(),
   venueName: z.string().max(200).optional(),
   venueAddress: z.string().optional(),
   city: z.string().max(100).optional(),

@@ -9,8 +9,15 @@
  * module — the page and the charge have to agree.
  */
 
-/** Ticket Buddy's cut of the ticket price. */
-export const PLATFORM_FEE_RATE = 0.03;
+/**
+ * The platform's cut of the ticket price, and the ONLY place it is defined.
+ *
+ * `organizations.fee_percent` exists in the schema with its own default and
+ * a comment claiming pricing lives there, but nothing reads that column.
+ * Until it is either wired up or dropped, this constant is the single
+ * source of truth — do not add a second one.
+ */
+export const PLATFORM_FEE_RATE = 0.08;
 
 // Paystack Nigeria, local cards: 1.5% + ₦100, the flat fee waived on small
 // transactions, the whole fee capped. Verified against a live test charge:
@@ -36,7 +43,7 @@ export function paystackGrossUp(amount: number): number {
 export type Quote = {
   /** Face value of the tickets. */
   subtotal: number;
-  /** Ticket Buddy's fee. */
+  /** The platform's fee. */
   platformFee: number;
   /** Paystack's processing fee, estimated for a local card. */
   processingFee: number;

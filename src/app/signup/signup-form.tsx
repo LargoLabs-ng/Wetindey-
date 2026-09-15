@@ -86,7 +86,7 @@ function SignupForm({ googleEnabled }: { googleEnabled: boolean }) {
         <div className="mb-8 text-center">
           <Image
             src="/logo.png"
-            alt="Ticket Buddy"
+            alt="Wetin Dey"
             width={48}
             height={48}
             className="mx-auto mb-4"

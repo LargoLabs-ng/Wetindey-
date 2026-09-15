@@ -1,9 +1,10 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ChevronDown, Calendar, MapPin, Ticket } from 'lucide-react';
+import { EventImage } from '@/components/event-image';
+import { WordMark } from "@/components/wordmark";
 
 interface Event {
   id: string;
@@ -95,9 +96,9 @@ export default function EventsPage() {
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
-              <Image src="/logo.png" alt="Ticket Buddy" width={40} height={40} className="h-10 w-10" />
+              <WordMark />
               <span className="font-bold" style={{ color: 'var(--color-forest)' }}>
-                Ticket Buddy
+                Wetin Dey
               </span>
             </Link>
             <nav className="flex items-center gap-6">
@@ -203,11 +204,11 @@ export default function EventsPage() {
                     {/* Image */}
                     <div className="relative h-48 overflow-hidden bg-gray-200">
                       {event.coverImage ? (
-                        <Image
+                        <EventImage
                           src={event.coverImage}
                           alt={event.title}
-                          fill
-                          className="object-cover transition-transform group-hover:scale-105"
+                          sizes="(max-width: 768px) 100vw, 33vw"
+                          className="transition-transform duration-500 group-hover:scale-105"
                         />
                       ) : (
                         <div
@@ -293,10 +294,10 @@ export default function EventsPage() {
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between text-white">
             <div className="flex items-center gap-2">
-              <Image src="/logo-reversed.png" alt="Ticket Buddy" width={40} height={40} className="h-10 w-10" />
-              <span className="font-bold">Ticket Buddy</span>
+              <WordMark tone="dark" asLink={false} />
+              <span className="font-bold">Wetin Dey</span>
             </div>
-            <p className="text-sm opacity-75">© 2026 Ticket Buddy. All rights reserved.</p>
+            <p className="text-sm opacity-75">© 2026 Wetin Dey. All rights reserved.</p>
           </div>
         </div>
       </footer>

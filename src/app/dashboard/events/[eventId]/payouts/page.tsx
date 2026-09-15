@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, DollarSign, TrendingUp, Percent, Download } from 'lucide-react';
+import { PLATFORM_FEE_RATE } from '@/lib/fees';
 
 interface TicketTierBreakdown {
   tierName: string;
@@ -22,7 +23,7 @@ export default function PayoutsPage() {
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [totalPlatformFee, setTotalPlatformFee] = useState(0);
   const [netRevenue, setNetRevenue] = useState(0);
-  const [feePercentage, setFeePercentage] = useState(3);
+  const [feePercentage, setFeePercentage] = useState(PLATFORM_FEE_RATE * 100);
   const [breakdown, setBreakdown] = useState<TicketTierBreakdown[]>([]);
 
   // Fetch payout data
@@ -38,7 +39,7 @@ export default function PayoutsPage() {
         setTotalRevenue(data.totalRevenue || 0);
         setTotalPlatformFee(data.totalPlatformFee || 0);
         setNetRevenue(data.netRevenue || 0);
-        setFeePercentage(data.platformFeePercentage || 6);
+        setFeePercentage(data.platformFeePercentage ?? PLATFORM_FEE_RATE * 100);
         setBreakdown(data.ticketTierBreakdown || []);
       } catch (error) {
         console.error('Failed to fetch payouts:', error);
@@ -238,7 +239,7 @@ export default function PayoutsPage() {
               }}
             >
               <p style={{ color: 'var(--color-on-dark-2)', fontSize: '14px' }}>
-                <strong>About Platform Fees:</strong> Ticket Buddy charges {feePercentage}% on each ticket sale to support event infrastructure, payment processing, and customer support. This fee is deducted from your gross revenue to calculate your net payout.
+                <strong>About Platform Fees:</strong> Wetin Dey charges {feePercentage}% on each ticket sale to support event infrastructure, payment processing, and customer support. This fee is deducted from your gross revenue to calculate your net payout.
               </p>
             </div>
           </>

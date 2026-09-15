@@ -3,12 +3,13 @@ import { db } from "@/db";
 import { events } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { appUrl } from "@/lib/app-url";
+import { BRAND_NAME } from "@/lib/brand";
 
 /**
  * The event page itself is a client component (it runs the checkout), so it
  * cannot export generateMetadata. This server layout wraps it purely to emit
  * the link preview: without it, every event link pasted into WhatsApp renders
- * as a bare "Ticket Buddy" card with no title, no date and no image, and
+ * as a bare site card with no title, no date and no image, and
  * search engines see an empty shell.
  */
 export async function generateMetadata({
@@ -25,11 +26,11 @@ export async function generateMetadata({
     });
   } catch {
     // A metadata failure must never take the page down with it.
-    return { title: "Event · Ticket Buddy" };
+    return { title: `Event · ${BRAND_NAME}` };
   }
 
   if (!event || event.status !== "published") {
-    return { title: "Event · Ticket Buddy", robots: { index: false } };
+    return { title: `Event · ${BRAND_NAME}`, robots: { index: false } };
   }
 
   const where = [event.venueName, event.city].filter(Boolean).join(", ");
@@ -46,7 +47,7 @@ export async function generateMetadata({
   const description =
     event.description?.slice(0, 200) ||
     [when, where].filter(Boolean).join(" · ") ||
-    "Get your tickets on Ticket Buddy.";
+    `Get in on ${BRAND_NAME}.`;
 
   const url = appUrl(`/events/${event.slug}`);
   const image = event.coverImage
@@ -56,7 +57,7 @@ export async function generateMetadata({
     : undefined;
 
   return {
-    title: `${event.title} · Ticket Buddy`,
+    title: `${event.title} · ${BRAND_NAME}`,
     description,
     alternates: { canonical: url },
     openGraph: {
@@ -64,7 +65,7 @@ export async function generateMetadata({
       title: event.title,
       description,
       url,
-      siteName: "Ticket Buddy",
+      siteName: BRAND_NAME,
       ...(image ? { images: [{ url: image }] } : {}),
     },
     twitter: {

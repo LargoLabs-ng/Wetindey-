@@ -30,6 +30,7 @@ const createEventSchema = z.object({
   title: z.string().trim().min(3, 'Give your event a title of at least 3 characters.'),
   description: z.string().trim().optional(),
   category: z.string().trim().optional(),
+  coverImage: z.string().url().nullish(),
   venueName: z.string().trim().optional(),
   city: z.string().trim().optional(),
   startDatetime: z.string().datetime('Pick a valid start date and time.'),
@@ -88,6 +89,7 @@ export async function POST(request: NextRequest) {
       .values({
         organizationId,
         title: data.title,
+        coverImage: data.coverImage ?? null,
         slug,
         description: data.description || null,
         category: data.category || null,

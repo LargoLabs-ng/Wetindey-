@@ -1,11 +1,11 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { quoteOrder, naira } from '@/lib/fees';
 import { ArrowLeft, Calendar, MapPin, Users, Clock, QrCode } from 'lucide-react';
 import { useParams } from 'next/navigation';
+import { EventImage } from '@/components/event-image';
 
 interface TicketType {
   id: string;
@@ -240,7 +240,7 @@ export default function EventDetailPage() {
         <div className="overflow-hidden rounded-lg border" style={{ borderColor: 'var(--color-stone-mid)' }}>
           <div className="relative h-96 w-full bg-gray-200">
             {event.coverImage ? (
-              <Image src={event.coverImage} alt={event.title} fill className="object-cover" />
+              <EventImage src={event.coverImage} alt={event.title} priority sizes="100vw" />
             ) : (
               <div className="flex h-full items-center justify-center" style={{ backgroundColor: 'var(--color-sage-light)' }}>
                 <QrCode className="h-16 w-16 opacity-20" />

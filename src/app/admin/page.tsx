@@ -11,6 +11,7 @@ import {
   Download,
   ArrowRight,
 } from 'lucide-react';
+import { PLATFORM_FEE_RATE } from '@/lib/fees';
 
 interface Metrics {
   overview: {
@@ -121,7 +122,7 @@ export default function AdminDashboard() {
                 className="text-2xl font-bold"
                 style={{ color: 'var(--color-forest)' }}
               >
-                Ticket Buddy Admin
+                Wetin Dey Admin
               </h1>
               <p
                 className="text-sm mt-1"
@@ -241,7 +242,7 @@ export default function AdminDashboard() {
                 {formatCurrency(metrics.financial.platformEarnings)}
               </p>
               <p className="text-xs mt-2" style={{ color: 'var(--color-stone)' }}>
-                3% of revenue
+                {PLATFORM_FEE_RATE * 100}% of revenue
               </p>
             </div>
 

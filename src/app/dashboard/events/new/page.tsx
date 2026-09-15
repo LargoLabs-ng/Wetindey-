@@ -3,11 +3,13 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { CoverImageField } from "@/components/cover-image-field";
 
 type FormState = {
   title: string;
   description: string;
   category: string;
+  coverImage: string | null;
   venueName: string;
   city: string;
   startDatetime: string;
@@ -18,6 +20,7 @@ const initialState: FormState = {
   title: "",
   description: "",
   category: "",
+  coverImage: null,
   venueName: "",
   city: "",
   startDatetime: "",
@@ -44,6 +47,8 @@ export default function NewEventPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...form,
+        // zod rejects null for an optional url; send nothing instead.
+        coverImage: form.coverImage ?? undefined,
         startDatetime: new Date(form.startDatetime).toISOString(),
         endDatetime: new Date(form.endDatetime).toISOString(),
       }),
@@ -79,6 +84,12 @@ export default function NewEventPage() {
       >
         {error && <p className="text-error text-sm">{error}</p>}
 
+        <CoverImageField
+          value={form.coverImage}
+          onChange={(url) => update("coverImage", url)}
+          slugHint={form.title}
+        />
+
         <div>
           <label className="block text-sm font-medium text-on-dark mb-1">
             Event title
@@ -87,7 +98,7 @@ export default function NewEventPage() {
             required
             value={form.title}
             onChange={(e) => update("title", e.target.value)}
-            placeholder="e.g. TEDx UNIUYO 2026"
+            placeholder="e.g. UNICROSS Freshers Night"
             className="w-full rounded-lg border border-line-dark bg-canvas text-on-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-gold"
           />
         </div>

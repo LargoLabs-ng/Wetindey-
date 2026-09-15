@@ -139,8 +139,12 @@ export const organizations = pgTable("organizations", {
     .references(() => users.id)
     .notNull(),
   // Platform fee config lives here so pricing changes never require engineering work.
+  // NOTE: dead column. Nothing reads fee_percent / fee_flat / fee_strategy —
+  // every calculation uses PLATFORM_FEE_RATE in lib/fees.ts. Wiring these up
+  // would silently change what every organizer is charged, so they stay
+  // unread until per-organization pricing is a deliberate feature.
   feePercent: numeric("fee_percent", { precision: 5, scale: 2 })
-    .default("6.00")
+    .default("8.00")
     .notNull(),
   feeFlat: numeric("fee_flat", { precision: 12, scale: 2 }).default("0.00").notNull(),
   feeStrategy: feeStrategyEnum("fee_strategy").default("buyer_pays").notNull(),

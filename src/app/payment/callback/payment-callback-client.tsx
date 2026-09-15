@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 import { CheckCircle, XCircle, Clock, QrCode } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { SUPPORT_EMAIL } from '@/lib/app-url';
+import { WordMark } from '@/components/wordmark';
 
 const QRCodeDisplay = dynamic(
   () => import('@/components/qr-code-display').then((mod) => mod.QRCodeDisplay),
@@ -87,7 +87,7 @@ export default function PaymentCallbackClient() {
       <header className="border-b" style={{ borderColor: 'var(--color-stone-mid)' }}>
         <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2">
-            <Image src="/logo.png" alt="Ticket Buddy" width={40} height={40} className="h-10 w-10" />
+            <WordMark />
             <span className="font-bold" style={{ color: 'var(--color-forest)' }}>
               Ticket Buddy
             </span>

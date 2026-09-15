@@ -38,6 +38,7 @@ export default async function EditEventPage({
           title: event.title,
           description: event.description,
           category: event.category,
+          coverImage: event.coverImage,
           venueName: event.venueName,
           venueAddress: event.venueAddress,
           city: event.city,

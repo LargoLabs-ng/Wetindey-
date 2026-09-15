@@ -47,13 +47,13 @@ const LandingPage = () => {
               <div className="w-10 h-10">
                 <Image
                   src="/logo-reversed.png"
-                  alt="Ticket Buddy"
+                  alt="Wetin Dey"
                   width={40}
                   height={40}
                   className="w-full h-full"
                 />
               </div>
-              <span className="text-ivory font-semibold hidden sm:inline">Ticket Buddy</span>
+              <span className="text-ivory font-semibold hidden sm:inline">Wetin Dey?</span>
             </Link>
 
             {/* Desktop Navigation */}
@@ -92,14 +92,11 @@ const LandingPage = () => {
       <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32">
         <div className="text-center mb-12">
           <p className="text-sage font-semibold text-sm uppercase tracking-wider mb-4">
-            Nigeria's fastest event ticketing platform
+            Your plug for what's happening
           </p>
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-ivory mb-6 leading-tight">
-            Your Event.{' '}
-            <span className="bg-gradient-to-r from-sage to-sage-light bg-clip-text text-transparent">
-              Your Crowd.
-            </span>
-            {' '}Your Ticket Buddy.
+            Wetin dey{' '}
+            <span className="text-purple-lift">this weekend?</span>
           </h1>
           <p className="text-lg md:text-xl text-sage max-w-2xl mx-auto mb-8">
             Create your event, share your link, and start selling tickets. Every buyer gets a secure QR ticket, making payments, entry, and check-in simple for everyone.
@@ -340,13 +337,13 @@ const LandingPage = () => {
                 <div className="w-10 h-10">
                   <Image
                     src="/logo-reversed.png"
-                    alt="Ticket Buddy"
+                    alt="Wetin Dey"
                     width={40}
                     height={40}
                     className="w-full h-full"
                   />
                 </div>
-                <span className="text-ivory font-semibold">Ticket Buddy</span>
+                <span className="text-ivory font-semibold">Wetin Dey?</span>
               </div>
               <p className="text-sage/60 text-sm">Events made simple</p>
               <div className="flex gap-4 mt-6">
@@ -418,7 +415,7 @@ const LandingPage = () => {
 
           <div className="border-t border-forest-mid/30 pt-8">
             <p className="text-sage/60 text-sm text-center">
-              © 2026 Ticket Buddy. All rights reserved.
+              © 2026 Wetin Dey. All rights reserved.
             </p>
           </div>
         </div>

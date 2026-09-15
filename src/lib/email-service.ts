@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { SUPPORT_EMAIL } from './app-url';
+import { BRAND_NAME } from './brand';
 
 /**
  * Email service for sending transactional emails
@@ -244,7 +245,7 @@ export async function sendOrderConfirmation(data: {
           <!-- Footer -->
           <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
             <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-              © Ticket Buddy. Your event infrastructure partner.
+              © ${BRAND_NAME} — your plug for what’s happening.
             </p>
           </div>
         </div>
@@ -302,7 +303,7 @@ export async function sendEventReminder(data: {
           </p>
 
           <p style="color: #9ca3af; font-size: 12px; margin: 24px 0 0 0; border-top: 1px solid #e5e7eb; padding-top: 20px;">
-            © Ticket Buddy
+            © ${BRAND_NAME}
           </p>
         </div>
       </body>

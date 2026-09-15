@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
       });
 
       const reportData = {
-        title: `Ticket Buddy Admin Report - ${type}`,
+        title: `Wetin Dey Admin Report - ${type}`,
         generatedAt: new Date().toLocaleString(),
         data: allEvents.map((e) => ({
           event: e.title,

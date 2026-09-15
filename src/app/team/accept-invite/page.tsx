@@ -18,7 +18,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         <div className="mb-8 text-center">
           <Image
             src="/logo.png"
-            alt="Ticket Buddy"
+            alt="Wetin Dey"
             width={48}
             height={48}
             className="mx-auto mb-4"
@@ -60,7 +60,7 @@ export default async function AcceptInvitePage({
           href="/"
           className="inline-block text-forest font-medium text-sm"
         >
-          Go to Ticket Buddy
+          Go to Wetin Dey
         </Link>
       </Shell>
     );

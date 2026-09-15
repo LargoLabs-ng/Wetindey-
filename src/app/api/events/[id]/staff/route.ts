@@ -110,7 +110,7 @@ export async function POST(request: Request, context: RouteContext) {
     subject: "You've been added to " + access.event.title,
     html: `
       <h2>You're on the team</h2>
-      <p>You've been invited to help run <strong>${access.event.title}</strong> on Ticket Buddy.</p>
+      <p>You've been invited to help run <strong>${access.event.title}</strong> on Wetin Dey.</p>
       <p>Role: <strong>${parsed.data.role.replace(/_/g, " ").toUpperCase()}</strong></p>
       <p>
         <a href="${inviteUrl}" style="background-color:#12372A;color:#ffffff;padding:10px 20px;border-radius:5px;text-decoration:none;display:inline-block;">

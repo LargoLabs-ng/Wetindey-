@@ -4,8 +4,8 @@ import { useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { GoogleIcon } from "@/components/google-icon";
+import { WordMark } from "@/components/wordmark";
 
 function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
   const router = useRouter();
@@ -50,7 +50,7 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
     <main className="min-h-screen flex items-center justify-center bg-ivory px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <Image src="/logo.png" alt="Ticket Buddy" width={48} height={48} className="mx-auto mb-4" />
+          <div className="mb-5"><WordMark size="lg" /></div>
           <h1 className="text-2xl font-bold text-charcoal">Welcome back</h1>
           <p className="text-secondary-text text-sm mt-1">
             Log in to manage your events.
