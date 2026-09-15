@@ -229,9 +229,16 @@ function TierForm({
 export function TicketTiers({
   eventId,
   tiers,
+  onChange,
 }: {
   eventId: string;
   tiers: Tier[];
+  /**
+   * Called after any successful change. The dashboard page is a server
+   * component and re-renders from router.refresh(), but the creation wizard
+   * holds its tiers in client state and needs telling.
+   */
+  onChange?: () => void;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -267,6 +274,7 @@ export function TicketTiers({
         return false;
       }
       router.refresh();
+      onChange?.();
       return true;
     } catch {
       setError("Network error — try again.");

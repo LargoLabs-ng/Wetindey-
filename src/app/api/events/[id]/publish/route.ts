@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { events } from "@/db/schema";
+import { events, ticketTypes } from "@/db/schema";
 import { getEventRole, getSessionUserId } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 
@@ -54,11 +54,23 @@ export async function POST(request: Request, context: RouteContext) {
     // (Ticket types are intentionally not required here — an organizer
     // may publish event details first and add tickets moments later.)
     const missing: string[] = [];
-    if (!event.venueName) missing.push("venueName");
-    if (!event.city) missing.push("city");
+    if (!event.venueName) missing.push("a venue");
+    if (!event.city) missing.push("a city");
+
+    // An event with no ticket types publishes a page with nothing on it —
+    // a student arrives at a live event and finds no way in. The creation
+    // flow now walks organizers through tiers before this point, so
+    // reaching here without one means something went wrong.
+    const [tier] = await db
+      .select({ id: ticketTypes.id })
+      .from(ticketTypes)
+      .where(eq(ticketTypes.eventId, event.id))
+      .limit(1);
+    if (!tier) missing.push("at least one ticket type");
+
     if (missing.length > 0) {
       return NextResponse.json(
-        { error: `Cannot publish — missing required fields: ${missing.join(", ")}` },
+        { error: `Cannot publish yet — this event still needs ${missing.join(", ")}.` },
         { status: 400 }
       );
     }

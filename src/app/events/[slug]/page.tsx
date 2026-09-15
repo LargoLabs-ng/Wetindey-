@@ -25,6 +25,7 @@ interface Event {
   slug: string;
   description: string | null;
   coverImage: string | null;
+  feeStrategy: 'buyer_pays' | 'organizer_absorbs';
   category: string | null;
   venueName: string | null;
   venueAddress: string | null;
@@ -122,7 +123,8 @@ export default function EventDetailPage() {
   // Same calculation the order API uses, so the page and the payment screen
   // can never quote different numbers.
   const quote = quoteOrder(
-    parseFloat(selectedTicketType?.price || '0') * quantity
+    parseFloat(selectedTicketType?.price || '0') * quantity,
+    event?.feeStrategy ?? 'buyer_pays'
   );
 
   const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -383,14 +385,16 @@ export default function EventDetailPage() {
                       {naira(quote.platformFee)}
                     </span>
                   </div>
-                  <div className="mt-2 flex justify-between text-sm">
-                    <span style={{ color: 'var(--color-stone)' }}>
-                      Payment processing
-                    </span>
-                    <span style={{ color: 'var(--color-stone)' }}>
-                      {naira(quote.processingFee)}
-                    </span>
-                  </div>
+                  {quote.strategy === 'buyer_pays' && (
+                    <div className="mt-2 flex justify-between text-sm">
+                      <span style={{ color: 'var(--color-stone)' }}>
+                        Payment processing
+                      </span>
+                      <span style={{ color: 'var(--color-stone)' }}>
+                        {naira(quote.processingFee)}
+                      </span>
+                    </div>
+                  )}
                   <div className="mt-4 border-t pt-4 flex justify-between font-bold" style={{ borderColor: 'var(--color-stone-mid)' }}>
                     <span style={{ color: 'var(--color-forest)' }}>Total to pay</span>
                     <span style={{ color: 'var(--color-forest)' }}>
@@ -398,10 +402,11 @@ export default function EventDetailPage() {
                     </span>
                   </div>
                   <p className="mt-2 text-xs" style={{ color: 'var(--color-stone-mid)' }}>
-                    Processing is estimated for a card payment and may differ
-                    slightly by payment method. If a ticket is refunded you
-                    get the ticket price back; the service fee is
-                    non-refundable.
+                    {quote.strategy === 'buyer_pays'
+                      ? 'Processing is estimated for a card payment and may differ slightly by payment method. '
+                      : 'The organiser covers the payment processing fee on this event. '}
+                    If a ticket is refunded you get the ticket price back; the
+                    service fee is non-refundable.
                   </p>
                 </div>
               </div>

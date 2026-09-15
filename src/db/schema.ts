@@ -196,6 +196,9 @@ export const events = pgTable("events", {
   salesStart: timestamp("sales_start"),
   salesEnd: timestamp("sales_end"),
   status: eventStatusEnum("status").default("draft").notNull(),
+  // Who carries Paystack's processing fee. The platform fee always comes
+  // from the buyer; this only moves the ~1.5% processing charge.
+  feeStrategy: feeStrategyEnum("fee_strategy").default("buyer_pays").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

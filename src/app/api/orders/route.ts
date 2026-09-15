@@ -84,10 +84,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const quote = quoteOrder(parseFloat(ticketType.price) * quantity);
+    // The event decides who carries Paystack's fee. `buyerTotal` is what the
+    // event page quoted and what we record; `paystackAmount` is what the
+    // transaction is initialized for, which differs when the organizer
+    // absorbs the fee (the account adds its cut on top of whatever we send).
+    const quote = quoteOrder(
+      parseFloat(ticketType.price) * quantity,
+      event.feeStrategy
+    );
     const subtotal = quote.subtotal;
     const fees = quote.platformFee;
-    const total = subtotal + fees;
+    const total = quote.buyerTotal;
 
     const [order] = await db
       .insert(orders)
@@ -136,7 +143,7 @@ export async function POST(request: NextRequest) {
     let paystackResponse;
     try {
       paystackResponse = await initializePaystackPayment({
-        amount: Math.round(total * 100),
+        amount: Math.round(quote.paystackAmount * 100),
         email: buyerEmail,
         reference: `TB-${order.id.slice(0, 8)}-${Date.now()}`,
         orderId: order.id,
@@ -159,7 +166,7 @@ export async function POST(request: NextRequest) {
       orderId: order.id,
       provider: 'paystack',
       providerReference: paystackResponse.data.reference,
-      amount: total.toString(),
+      amount: quote.paystackAmount.toString(),
       status: 'initialized',
       rawProviderResponse: paystackResponse.data,
     });
