@@ -3,9 +3,20 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { quoteOrder, naira } from '@/lib/fees';
-import { ArrowLeft, Calendar, MapPin, Users, Clock, QrCode } from 'lucide-react';
+import {
+  ArrowLeft,
+  CalendarDays,
+  Check,
+  Link2,
+  MapPin,
+  Minus,
+  Plus,
+  Share2,
+  Ticket,
+} from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { EventImage } from '@/components/event-image';
+import { WordMark } from '@/components/wordmark';
 
 interface TicketType {
   id: string;
@@ -35,6 +46,7 @@ interface Event {
   startDatetime: string;
   endDatetime: string;
   ticketTypes: TicketType[];
+  organization?: { name: string } | null;
 }
 
 export default function EventDetailPage() {
@@ -52,6 +64,11 @@ export default function EventDetailPage() {
   const [buyerPhone, setBuyerPhone] = useState('');
   const [attendees, setAttendees] = useState<Array<{ name: string; email: string }>>([]);
   const [processing, setProcessing] = useState(false);
+  // The brief's primary call to action is "I'm In". Showing a name/email form
+  // to someone still deciding is what made the old page feel like a checkout
+  // screen rather than an event; the form arrives once they've said yes.
+  const [joining, setJoining] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const fetchEvent = async () => {
@@ -195,342 +212,457 @@ export default function EventDetailPage() {
     }
   };
 
+  // ── Presentation ──────────────────────────────────────────────────────
+  //
+  // The event as a place, not a checkout screen. A full-bleed hero carries
+  // the artwork, the facts a student actually decides on sit directly under
+  // the title, and the ticket panel follows them down the page rather than
+  // being something to scroll back up to.
+
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: 'var(--color-ivory)' }}>
-        <div className="text-center">
-          <div
-            className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-gray-200"
-            style={{ borderTopColor: 'var(--color-forest)' }}
-          />
-          <p className="mt-4" style={{ color: 'var(--color-stone)' }}>
-            Loading event details...
-          </p>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-cream">
+        <p className="text-ink-3">Loading…</p>
       </div>
     );
   }
 
   if (error || !event) {
     return (
-      <div className="min-h-screen" style={{ backgroundColor: 'var(--color-ivory)' }}>
-        <div className="mx-auto max-w-4xl px-4 py-12">
-          <Link href="/events" className="inline-flex items-center gap-2" style={{ color: 'var(--color-forest)' }}>
-            <ArrowLeft className="h-5 w-5" />
-            Back to Events
+      <div className="min-h-screen bg-cream">
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+          <WordMark />
+        </div>
+        <div className="mx-auto max-w-lg px-4 py-16 text-center sm:px-6">
+          <p className="text-2xl font-extrabold tracking-[-0.02em] text-ink">
+            This one no dey again.
+          </p>
+          <p className="mt-2 text-ink-2">
+            The link might be wrong, or the organiser took it down.
+          </p>
+          <Link
+            href="/discover"
+            className="mt-6 inline-block rounded-xl bg-purple px-5 py-3 font-semibold text-white hover:bg-purple-deep"
+          >
+            See what else dey
           </Link>
-          <div className="mt-8 rounded-lg border border-red-300 bg-red-50 p-6 text-red-800">
-            <p className="font-semibold">Event not found</p>
-            <p className="text-sm">{error}</p>
-          </div>
         </div>
       </div>
     );
   }
 
+  const start = new Date(event.startDatetime);
+  const end = new Date(event.endDatetime);
+  const daysAway = Math.ceil((start.getTime() - Date.now()) / 86400000);
+  const hasStarted = start.getTime() <= Date.now();
+  const isOver = end.getTime() < Date.now();
+  const place = [event.venueName, event.city].filter(Boolean).join(', ');
+  const soldOut =
+    event.ticketTypes.length > 0 &&
+    event.ticketTypes.every((t) => t.quantityTotal - t.quantitySold - t.quantityReserved <= 0);
+
+  const countdown = isOver
+    ? 'This event don happen'
+    : hasStarted
+      ? 'Happening now'
+      : daysAway === 0
+        ? 'Today'
+        : daysAway === 1
+          ? 'Tomorrow'
+          : `In ${daysAway} days`;
+
+  const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const shareText = `${event.title} — ${start.toLocaleDateString('en-NG', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })}${place ? ` at ${place}` : ''}`;
+
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--color-ivory)' }}>
-      <header className="border-b" style={{ borderColor: 'var(--color-stone-mid)' }}>
-        <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6">
-          <Link href="/events" className="inline-flex items-center gap-2" style={{ color: 'var(--color-forest)' }}>
-            <ArrowLeft className="h-5 w-5" />
-            Back to Events
+    <div className="min-h-screen bg-cream">
+      <header className="absolute inset-x-0 top-0 z-10">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
+          <Link
+            href="/discover"
+            className="inline-flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-sm font-semibold text-white backdrop-blur"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
           </Link>
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
-        <div className="overflow-hidden rounded-lg border" style={{ borderColor: 'var(--color-stone-mid)' }}>
-          <div className="relative h-96 w-full bg-gray-200">
-            {event.coverImage ? (
-              <EventImage src={event.coverImage} alt={event.title} priority sizes="100vw" />
-            ) : (
-              <div className="flex h-full items-center justify-center" style={{ backgroundColor: 'var(--color-sage-light)' }}>
-                <QrCode className="h-16 w-16 opacity-20" />
+      {/* ── Hero ───────────────────────────────────────────────────────
+          Edge to edge, with the title sitting on the artwork rather than
+          in a card beneath it. */}
+      <section className="relative">
+        <div className="relative h-[54vw] max-h-[460px] min-h-[280px] w-full overflow-hidden bg-indigo">
+          {event.coverImage ? (
+            <EventImage src={event.coverImage} alt={event.title} priority sizes="100vw" />
+          ) : (
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  'linear-gradient(140deg, var(--color-indigo-3), var(--color-indigo))',
+              }}
+            />
+          )}
+          {/* Gradient so white type stays legible on any artwork. */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                'linear-gradient(to top, rgba(15,11,26,0.92) 0%, rgba(15,11,26,0.45) 45%, rgba(15,11,26,0.15) 100%)',
+            }}
+          />
+
+          <div className="absolute inset-x-0 bottom-0">
+            <div className="mx-auto max-w-5xl px-4 pb-6 sm:px-6 sm:pb-8">
+              <div className="flex flex-wrap items-center gap-2">
+                {event.category && (
+                  <span className="rounded-full bg-purple px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white">
+                    {event.category}
+                  </span>
+                )}
+                <span className="rounded-full bg-white/15 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur">
+                  {countdown}
+                </span>
+                {soldOut && !isOver && (
+                  <span className="rounded-full bg-coral px-2.5 py-1 text-xs font-bold text-white">
+                    Sold out
+                  </span>
+                )}
               </div>
-            )}
+              <h1 className="mt-3 text-3xl font-extrabold leading-[1.08] tracking-[-0.03em] text-white sm:text-5xl">
+                {event.title}
+              </h1>
+              {event.organization?.name && (
+                <p className="mt-2 text-sm text-white/75">
+                  by {event.organization.name}
+                </p>
+              )}
+            </div>
           </div>
         </div>
+      </section>
 
-        <div className="mt-8 grid gap-8 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            {event.category && (
-              <span
-                className="inline-block text-xs font-semibold uppercase tracking-wider"
-                style={{ color: 'var(--color-sage)' }}
-              >
-                {event.category}
-              </span>
-            )}
-
-            <h1 className="mt-2 text-4xl font-bold" style={{ color: 'var(--color-forest)' }}>
-              {event.title}
-            </h1>
+      <main className="mx-auto max-w-5xl px-4 pb-20 sm:px-6">
+        <div className="grid gap-10 pt-8 lg:grid-cols-[1fr_380px]">
+          {/* ── The event itself ───────────────────────────────────── */}
+          <div className="min-w-0">
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <div className="flex gap-3">
+                <CalendarDays className="mt-0.5 h-5 w-5 shrink-0 text-purple" />
+                <div>
+                  <dt className="text-sm font-semibold text-ink">
+                    {start.toLocaleDateString('en-NG', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                    })}
+                  </dt>
+                  <dd className="text-sm text-ink-2">
+                    {start.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}
+                    {' – '}
+                    {end.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}
+                  </dd>
+                </div>
+              </div>
+              {place && (
+                <div className="flex gap-3">
+                  <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-purple" />
+                  <div className="min-w-0">
+                    <dt className="text-sm font-semibold text-ink">{event.venueName}</dt>
+                    <dd className="text-sm text-ink-2">
+                      {event.venueAddress || event.city}
+                    </dd>
+                  </div>
+                </div>
+              )}
+            </dl>
 
             {event.description && (
-              <p className="mt-4 text-lg" style={{ color: 'var(--color-stone)' }}>
-                {event.description}
-              </p>
+              <section className="mt-8">
+                <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">
+                  What&apos;s happening
+                </h2>
+                <p className="mt-2 whitespace-pre-line leading-relaxed text-ink-2">
+                  {event.description}
+                </p>
+              </section>
             )}
 
-            <div className="mt-8 space-y-4 border-t pt-8" style={{ borderColor: 'var(--color-stone-mid)' }}>
-              <div className="flex gap-4">
-                <Calendar className="h-5 w-5 flex-shrink-0" style={{ color: 'var(--color-forest)' }} />
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
-                    Date & Time
-                  </p>
-                  <p className="mt-1" style={{ color: 'var(--color-stone)' }}>
-                    {formatDate(event.startDatetime)}
-                  </p>
-                </div>
+            {place && (
+              <section className="mt-8">
+                <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">
+                  Getting there
+                </h2>
+                <p className="mt-2 text-ink-2">
+                  {[event.venueName, event.venueAddress, event.city].filter(Boolean).join(', ')}
+                </p>
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                    [event.venueName, event.venueAddress, event.city, event.country]
+                      .filter(Boolean)
+                      .join(', ')
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block text-sm font-semibold text-purple"
+                >
+                  Open in Maps →
+                </a>
+              </section>
+            )}
+
+            {/* Sharing is how this product spreads, so it is a real section
+                and WhatsApp comes first — that is where the link goes. */}
+            <section className="mt-8">
+              <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">
+                Tell somebody
+              </h2>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-ink hover:border-ink-3"
+                >
+                  <Share2 className="h-4 w-4" />
+                  Share on WhatsApp
+                </a>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(shareUrl);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    } catch {
+                      setCopied(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-ink hover:border-ink-3"
+                >
+                  {copied ? <Check className="h-4 w-4 text-ok" /> : <Link2 className="h-4 w-4" />}
+                  {copied ? 'Link copied' : 'Copy link'}
+                </button>
               </div>
-
-              {event.venueName && (
-                <div className="flex gap-4">
-                  <MapPin className="h-5 w-5 flex-shrink-0" style={{ color: 'var(--color-forest)' }} />
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
-                      Venue
-                    </p>
-                    <p className="mt-1" style={{ color: 'var(--color-stone)' }}>
-                      {event.venueName}
-                    </p>
-                    {event.venueAddress && (
-                      <p className="mt-1 text-sm" style={{ color: 'var(--color-stone-mid)' }}>
-                        {event.venueAddress}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {event.ticketTypes.length > 0 && (
-                <div className="flex gap-4">
-                  <Users className="h-5 w-5 flex-shrink-0" style={{ color: 'var(--color-forest)' }} />
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
-                      Ticket Types
-                    </p>
-                    <p className="mt-1" style={{ color: 'var(--color-stone)' }}>
-                      {event.ticketTypes.length} type{event.ticketTypes.length !== 1 ? 's' : ''} available
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
+            </section>
           </div>
 
-          <div className="rounded-lg border p-6" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-            <h2 className="text-2xl font-bold" style={{ color: 'var(--color-forest)' }}>
-              Get Tickets
-            </h2>
-
-            {event.ticketTypes.length === 0 ? (
-              <p className="mt-4" style={{ color: 'var(--color-stone)' }}>
-                No tickets available yet
-              </p>
-            ) : (
-              <div className="mt-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold" style={{ color: 'var(--color-forest)' }}>
-                    Ticket Type
-                  </label>
-                  <select
-                    value={selectedTicket || ''}
-                    onChange={(e) => setSelectedTicket(e.target.value)}
-                    className="mt-2 w-full rounded border px-3 py-2"
-                    style={{ borderColor: 'var(--color-stone-mid)' }}
+          {/* ── Tickets ─────────────────────────────────────────────── */}
+          <aside className="lg:sticky lg:top-6 lg:self-start">
+            <div className="rounded-2xl border border-line bg-white p-5">
+              {isOver ? (
+                <>
+                  <p className="font-extrabold text-ink">This event don happen</p>
+                  <p className="mt-1 text-sm text-ink-2">
+                    Check what else dey on.
+                  </p>
+                  <Link
+                    href="/discover"
+                    className="mt-4 block rounded-xl bg-purple py-3 text-center font-semibold text-white hover:bg-purple-deep"
                   >
-                    {event.ticketTypes.map((type) => {
-                      const available = Math.max(0, type.quantityTotal - type.quantitySold - type.quantityReserved);
+                    See what else dey
+                  </Link>
+                </>
+              ) : event.ticketTypes.length === 0 ? (
+                <>
+                  <p className="font-extrabold text-ink">Tickets not up yet</p>
+                  <p className="mt-1 text-sm text-ink-2">
+                    The organiser hasn&apos;t put tickets on sale. Save the link
+                    and check back.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 className="flex items-center gap-2 font-extrabold text-ink">
+                    <Ticket className="h-4 w-4 text-purple" />
+                    Tickets
+                  </h2>
+
+                  <div className="mt-3 space-y-2">
+                    {event.ticketTypes.map((t) => {
+                      const left = t.quantityTotal - t.quantitySold - t.quantityReserved;
+                      const gone = left <= 0 || t.status === 'sold_out';
+                      const paused = t.status === 'paused';
+                      const disabled = gone || paused;
+                      const selected = selectedTicket === t.id;
                       return (
-                        <option key={type.id} value={type.id}>
-                          {type.name} - {formatPrice(type.price)} ({available} available)
-                        </option>
+                        <button
+                          key={t.id}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => {
+                            setSelectedTicket(t.id);
+                            setQuantity(1);
+                          }}
+                          className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${
+                            selected ? 'border-purple bg-purple-soft' : 'border-line hover:border-ink-3'
+                          }`}
+                        >
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span className="font-semibold text-ink">{t.name}</span>
+                            <span className="font-bold tabular-nums text-ink">
+                              {Number(t.price) === 0 ? 'Free' : naira(Number(t.price))}
+                            </span>
+                          </div>
+                          {t.description && (
+                            <span className="mt-0.5 block text-xs text-ink-2">{t.description}</span>
+                          )}
+                          <span className="mt-1 block text-xs text-ink-3">
+                            {paused
+                              ? 'Not on sale'
+                              : gone
+                                ? 'Sold out'
+                                : left <= 10
+                                  ? `Only ${left} left`
+                                  : `${left} available`}
+                          </span>
+                        </button>
                       );
                     })}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold" style={{ color: 'var(--color-forest)' }}>
-                    Quantity
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max={Math.min(available, selectedTicketType?.maxPerOrder || 10)}
-                    value={quantity}
-                    onChange={handleQuantityChange}
-                    className="mt-2 w-full rounded border px-3 py-2"
-                    style={{ borderColor: 'var(--color-stone-mid)' }}
-                  />
-                  <p className="mt-1 text-xs" style={{ color: 'var(--color-stone-mid)' }}>
-                    {available} tickets available
-                  </p>
-                </div>
-
-                <div className="border-t pt-4" style={{ borderColor: 'var(--color-stone-mid)' }}>
-                  <div className="flex justify-between text-sm">
-                    <span style={{ color: 'var(--color-stone)' }}>
-                      {quantity} {quantity === 1 ? 'ticket' : 'tickets'}
-                    </span>
-                    <span style={{ color: 'var(--color-stone)' }}>
-                      {naira(quote.subtotal)}
-                    </span>
                   </div>
-                  {/* Each fee only appears when the buyer is actually
-                      paying it. A line for money they are not being charged
-                      is worse than no line at all. */}
-                  {quote.platformFeePaidBy === 'buyer' && (
-                    <div className="mt-2 flex justify-between text-sm">
-                      <span style={{ color: 'var(--color-stone)' }}>Service fee</span>
-                      <span style={{ color: 'var(--color-stone)' }}>
-                        {naira(quote.platformFee)}
-                      </span>
-                    </div>
-                  )}
-                  {quote.processingFeePaidBy === 'buyer' && (
-                    <div className="mt-2 flex justify-between text-sm">
-                      <span style={{ color: 'var(--color-stone)' }}>
-                        Payment processing
-                      </span>
-                      <span style={{ color: 'var(--color-stone)' }}>
-                        {naira(quote.processingFee)}
-                      </span>
-                    </div>
-                  )}
-                  <div className="mt-4 border-t pt-4 flex justify-between font-bold" style={{ borderColor: 'var(--color-stone-mid)' }}>
-                    <span style={{ color: 'var(--color-forest)' }}>Total to pay</span>
-                    <span style={{ color: 'var(--color-forest)' }}>
-                      {naira(quote.buyerTotal)}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs" style={{ color: 'var(--color-stone-mid)' }}>
-                    {quote.processingFeePaidBy === 'buyer'
-                      ? 'Processing is estimated for a card payment and may differ slightly by payment method. '
-                      : 'The organiser covers the payment processing fee on this event. '}
-                    If a ticket is refunded you get the ticket price back
-                    {quote.platformFeePaidBy === 'buyer'
-                      ? ', plus most of the service fee.'
-                      : '.'}
-                  </p>
-                </div>
-              </div>
-            )}
 
-            <button
-              onClick={handleCheckout}
-              disabled={!selectedTicket || processing || available === 0 || event.ticketTypes.length === 0}
-              className="mt-6 w-full rounded py-2 font-semibold text-white transition-opacity disabled:opacity-50"
-              style={{ backgroundColor: 'var(--color-forest)' }}
-            >
-              {processing ? 'Processing...' : 'Proceed to Payment'}
-            </button>
-
-            {formError && (
-              <p className="mt-3 text-sm" style={{ color: 'var(--color-danger)' }}>
-                {formError}
-              </p>
-            )}
-
-            <p className="mt-3 text-xs text-center" style={{ color: 'var(--color-stone-mid)' }}>
-              Secure payments powered by Paystack
-            </p>
-          </div>
-        </div>
-
-        {selectedTicket && event.ticketTypes.length > 0 && (
-          <div className="mt-12 rounded-lg border p-6" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
-            <h3 className="text-xl font-bold" style={{ color: 'var(--color-forest)' }}>
-              Buyer Information
-            </h3>
-
-            <div className="mt-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold" style={{ color: 'var(--color-forest)' }}>
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  value={buyerName}
-                  onChange={(e) => setBuyerName(e.target.value)}
-                  placeholder="Your name"
-                  className="mt-2 w-full rounded border px-3 py-2"
-                  style={{ borderColor: 'var(--color-stone-mid)' }}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold" style={{ color: 'var(--color-forest)' }}>
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  value={buyerEmail}
-                  onChange={(e) => setBuyerEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  className="mt-2 w-full rounded border px-3 py-2"
-                  style={{ borderColor: 'var(--color-stone-mid)' }}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold" style={{ color: 'var(--color-forest)' }}>
-                  Phone Number
-                </label>
-                <input
-                  type="tel"
-                  value={buyerPhone}
-                  onChange={(e) => setBuyerPhone(e.target.value)}
-                  placeholder="+234..."
-                  className="mt-2 w-full rounded border px-3 py-2"
-                  style={{ borderColor: 'var(--color-stone-mid)' }}
-                />
-              </div>
-            </div>
-
-            {quantity > 1 && (
-              <div className="mt-8">
-                <h4 className="text-lg font-semibold" style={{ color: 'var(--color-forest)' }}>
-                  Attendee Details
-                </h4>
-                <p className="mt-1 text-sm" style={{ color: 'var(--color-stone)' }}>
-                  Leave the first one blank to use your own details.
-                </p>
-
-                <div className="mt-4 space-y-6">
-                  {attendees.map((_, index) => (
-                    <div key={index} className="border-t pt-4" style={{ borderColor: 'var(--color-stone-mid)' }}>
-                      <p className="text-sm font-semibold" style={{ color: 'var(--color-stone)' }}>
-                        Attendee {index + 1}
-                      </p>
-                      <div className="mt-3 space-y-3">
-                        <input
-                          type="text"
-                          value={attendees[index]?.name || ''}
-                          onChange={(e) => updateAttendee(index, 'name', e.target.value)}
-                          placeholder="Full Name"
-                          className="w-full rounded border px-3 py-2"
-                          style={{ borderColor: 'var(--color-stone-mid)' }}
-                        />
-                        <input
-                          type="email"
-                          value={attendees[index]?.email || ''}
-                          onChange={(e) => updateAttendee(index, 'email', e.target.value)}
-                          placeholder="Email Address"
-                          className="w-full rounded border px-3 py-2"
-                          style={{ borderColor: 'var(--color-stone-mid)' }}
-                        />
+                  {selectedTicketType && (
+                    <>
+                      <div className="mt-4 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-ink">How many?</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            aria-label="One fewer"
+                            onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                            disabled={quantity <= 1}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-ink disabled:opacity-40"
+                          >
+                            <Minus className="h-4 w-4" />
+                          </button>
+                          <span className="w-9 text-center font-bold tabular-nums text-ink">
+                            {quantity}
+                          </span>
+                          <button
+                            type="button"
+                            aria-label="One more"
+                            onClick={() =>
+                              setQuantity((q) =>
+                                Math.min(Math.min(available, selectedTicketType.maxPerOrder), q + 1)
+                              )
+                            }
+                            disabled={quantity >= Math.min(available, selectedTicketType.maxPerOrder)}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-ink disabled:opacity-40"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+
+                      <dl className="mt-4 space-y-1.5 border-t border-line pt-4 text-sm">
+                        <div className="flex justify-between">
+                          <dt className="text-ink-2">
+                            {quantity} {quantity === 1 ? 'ticket' : 'tickets'}
+                          </dt>
+                          <dd className="tabular-nums text-ink-2">{naira(quote.subtotal)}</dd>
+                        </div>
+                        {quote.platformFeePaidBy === 'buyer' && (
+                          <div className="flex justify-between">
+                            <dt className="text-ink-2">Service fee</dt>
+                            <dd className="tabular-nums text-ink-2">{naira(quote.platformFee)}</dd>
+                          </div>
+                        )}
+                        {quote.processingFeePaidBy === 'buyer' && (
+                          <div className="flex justify-between">
+                            <dt className="text-ink-2">Card fee</dt>
+                            <dd className="tabular-nums text-ink-2">{naira(quote.processingFee)}</dd>
+                          </div>
+                        )}
+                        <div className="flex justify-between border-t border-line pt-2 text-base font-extrabold">
+                          <dt className="text-ink">Total</dt>
+                          <dd className="tabular-nums text-ink">{naira(quote.buyerTotal)}</dd>
+                        </div>
+                      </dl>
+
+                      {!joining ? (
+                        <button
+                          type="button"
+                          onClick={() => setJoining(true)}
+                          disabled={available === 0}
+                          className="mt-4 w-full rounded-xl bg-purple py-3.5 text-base font-bold text-white transition-colors hover:bg-purple-deep disabled:opacity-50"
+                        >
+                          {Number(selectedTicketType.price) === 0 ? "I'm in" : `I'm in · ${naira(quote.buyerTotal)}`}
+                        </button>
+                      ) : (
+                        <div className="mt-4 space-y-3 border-t border-line pt-4">
+                          <p className="text-sm font-semibold text-ink">Who&apos;s coming?</p>
+                          {formError && <p className="text-sm text-coral">{formError}</p>}
+
+                          <input
+                            value={buyerName}
+                            onChange={(e) => setBuyerName(e.target.value)}
+                            placeholder="Full name"
+                            className="w-full rounded-lg border border-line px-3 py-2.5 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
+                          />
+                          <input
+                            type="email"
+                            value={buyerEmail}
+                            onChange={(e) => setBuyerEmail(e.target.value)}
+                            placeholder="Email — your ticket goes here"
+                            className="w-full rounded-lg border border-line px-3 py-2.5 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
+                          />
+                          <input
+                            type="tel"
+                            value={buyerPhone}
+                            onChange={(e) => setBuyerPhone(e.target.value)}
+                            placeholder="Phone number"
+                            className="w-full rounded-lg border border-line px-3 py-2.5 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
+                          />
+
+                          {quantity > 1 && (
+                            <div className="space-y-2 rounded-xl bg-cream-2 p-3">
+                              <p className="text-xs font-semibold text-ink-2">
+                                Names for the other {quantity - 1}{' '}
+                                {quantity - 1 === 1 ? 'ticket' : 'tickets'}
+                              </p>
+                              {attendees.slice(1).map((a, i) => (
+                                <input
+                                  key={i}
+                                  value={a.name}
+                                  onChange={(e) => updateAttendee(i + 1, 'name', e.target.value)}
+                                  placeholder={`Guest ${i + 2} name`}
+                                  className="w-full rounded-lg border border-line px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          <button
+                            onClick={handleCheckout}
+                            disabled={processing || available === 0}
+                            className="w-full rounded-xl bg-purple py-3.5 text-base font-bold text-white transition-colors hover:bg-purple-deep disabled:opacity-50"
+                          >
+                            {processing
+                              ? 'Taking you to payment…'
+                              : Number(selectedTicketType.price) === 0
+                                ? 'Confirm my spot'
+                                : `Pay ${naira(quote.buyerTotal)}`}
+                          </button>
+                          <p className="text-center text-xs text-ink-3">
+                            {quote.processingFeePaidBy === 'organizer'
+                              ? 'The organiser covers the card fee. '
+                              : ''}
+                            Secure payment by Paystack. Your QR ticket arrives by email.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </aside>
+        </div>
       </main>
     </div>
   );

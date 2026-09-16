@@ -230,14 +230,8 @@ export default function AdminDashboard() {
         {/* The brand's question mark, used once and quietly. */}
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute select-none font-extrabold leading-none"
-          style={{
-            color: 'var(--color-purple-lift)',
-            opacity: 0.16,
-            fontSize: '13rem',
-            right: '-0.5rem',
-            top: '-3.5rem',
-          }}
+          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 select-none text-[9rem] font-extrabold leading-none sm:right-6 sm:text-[12rem]"
+          style={{ color: 'var(--color-purple-lift)', opacity: 0.14 }}
         >
           ?
         </span>

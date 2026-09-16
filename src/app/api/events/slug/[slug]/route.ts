@@ -18,6 +18,9 @@ export async function GET(
       where: eq(events.slug, slug),
       with: {
         ticketTypes: true,
+        // The event page names who is running it — "published by the Faculty
+        // of Law" is a large part of whether a student trusts a link.
+        organization: true,
       },
     });
 

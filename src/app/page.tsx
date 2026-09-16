@@ -1,110 +1,117 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { ChevronDown, CheckCircle2, Share2, QrCode } from 'lucide-react';
-import { appHost, SUPPORT_EMAIL } from '@/lib/app-url';
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Search } from "lucide-react";
 import { WordMark } from "@/components/wordmark";
+import { EventRail, FeaturedCard, type CardEvent } from "@/components/event-card";
 
-const LandingPage = () => {
-  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+/**
+ * The front door.
+ *
+ * It used to be a ticketing SaaS landing page — hero, features, dashboard
+ * screenshot, FAQ, pricing — selling software to organizers. But organizers
+ * are the smaller audience and they arrive already knowing why they came.
+ * The larger one is a student with no idea what's on, and the honest way to
+ * convince them is to show them what's on.
+ *
+ * So: real events above everything else. The pitch to organizers survives as
+ * one strip near the bottom, which is roughly the attention it deserves.
+ */
+export default function HomePage() {
+  const [events, setEvents] = useState<CardEvent[] | null>(null);
 
-  const faqItems = [
-    {
-      q: "Do I need an app to scan tickets?",
-      a: "No. The scanner opens in any phone browser. Works on the cheapest Android in the room."
-    },
-    {
-      q: "What if there's no internet at my venue?",
-      a: "Your QR codes work offline. Download the check-in list before the event, and scan without connectivity."
-    },
-    {
-      q: "Can I sell free tickets?",
-      a: "Yes. Free, paid, VIP — mix and match however you want."
-    },
-    {
-      q: "How fast do I get paid?",
-      a: "Payouts settle within 24 hours to your bank account via Paystack."
-    },
-    {
-      q: "How do my buyers pay?",
-      a: "Bank transfer through Paystack. Fast, secure, and trackable."
-    },
-    {
-      q: "Can I record cash sales from the door?",
-      a: "Yes. Add cash tickets manually from your dashboard, and track everything in one place."
-    }
-  ];
+  useEffect(() => {
+    fetch("/api/discover")
+      .then((r) => r.json())
+      .then((d) => setEvents(d.events ?? []))
+      .catch(() => setEvents([]));
+  }, []);
+
+  const now = Date.now();
+  const soon = (events ?? []).filter(
+    (e) => new Date(e.startDatetime).getTime() - now < 14 * 86400000
+  );
+  const justDropped = [...(events ?? [])]
+    .sort((a, b) => ((a.createdAt ?? "") < (b.createdAt ?? "") ? 1 : -1))
+    .slice(0, 8);
+  const free = (events ?? []).filter((e) => e.isFree);
+  const lead = (events ?? [])[0];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-forest via-forest-deep to-forest">
-      {/* Header/Navigation */}
-      <header className="sticky top-0 z-50 bg-forest/95 backdrop-blur border-b border-forest-mid/30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-3 group">
-              <WordMark tone="dark" size="lg" asLink={false} />
+    <div className="min-h-screen bg-cream">
+      {/* ── Nav ──────────────────────────────────────────────────────── */}
+      <header className="border-b border-line">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
+          <WordMark />
+          <nav className="flex items-center gap-2">
+            <Link
+              href="/login"
+              className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
+            >
+              Sign in
             </Link>
-
-            {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-8">
-              <a href="#how-it-works" className="text-sage hover:text-ivory transition-colors text-sm">
-                How it works
-              </a>
-              <a href="#organizers" className="text-sage hover:text-ivory transition-colors text-sm">
-                For organizers
-              </a>
-              <a href="#attendees" className="text-sage hover:text-ivory transition-colors text-sm">
-                For attendees
-              </a>
-            </nav>
-
-            {/* Auth Links */}
-            <div className="flex items-center gap-3">
-              <Link
-                href="/login"
-                className="text-sage hover:text-ivory transition-colors text-sm font-medium"
-              >
-                Sign in
-              </Link>
-              <Link
-                href="/signup"
-                className="px-4 py-2 bg-purple hover:bg-purple-deep text-white rounded-lg font-medium text-sm transition-colors"
-              >
-                Sign up
-              </Link>
-            </div>
-          </div>
+            <Link
+              href="/signup"
+              className="rounded-lg bg-purple px-3.5 py-2 text-sm font-semibold text-white hover:bg-purple-deep"
+            >
+              Sign up
+            </Link>
+          </nav>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32">
-        <div className="text-center mb-12">
-          <p className="text-sage font-semibold text-sm uppercase tracking-wider mb-4">
-            Your plug for what's happening
+      {/* ── Hero ─────────────────────────────────────────────────────── */}
+      <section
+        className="relative overflow-hidden"
+        style={{ backgroundColor: "var(--color-indigo)" }}
+      >
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 select-none text-[13rem] font-extrabold leading-none sm:right-6 sm:text-[20rem]"
+          style={{ color: "var(--color-purple-lift)", opacity: 0.16 }}
+        >
+          ?
+        </span>
+
+        <div className="relative mx-auto max-w-5xl px-4 py-14 sm:px-6 sm:py-20">
+          <p
+            className="text-xs font-bold uppercase tracking-[0.14em]"
+            style={{ color: "var(--color-purple-lift)" }}
+          >
+            Your plug for what&apos;s happening
           </p>
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-ivory mb-6 leading-tight">
-            Wetin dey{' '}
-            <span className="text-purple-lift">this weekend?</span>
+          <h1
+            className="mt-4 text-4xl font-extrabold leading-[1.05] tracking-[-0.035em] sm:text-6xl"
+            style={{ color: "var(--color-on-dark)" }}
+          >
+            Wetin dey
+            <br />
+            this weekend?
           </h1>
-          <p className="text-lg md:text-xl text-sage max-w-2xl mx-auto mb-8">
-            Parties, seminars, career fairs, match days — everything happening around your campus, in one place. Find it, grab your spot, don't miss am.
+          <p
+            className="mt-5 max-w-lg text-lg"
+            style={{ color: "var(--color-on-dark-2)" }}
+          >
+            Parties, seminars, career fairs, match days — everything happening
+            around your campus. Find it, grab your spot, no miss am.
           </p>
-          {/* Discovery leads. A student landing here wants to see what's on,
-              not to open an organizer account — organizers are the smaller
-              audience and they arrive knowing what they came for. */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link
-              href="/events"
-              className="inline-block w-full sm:w-auto px-8 py-4 bg-purple hover:bg-purple-deep text-white font-semibold rounded-lg transition-colors text-lg"
+              href="/discover"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-purple px-6 py-3.5 text-base font-semibold text-white transition-colors hover:bg-purple-deep"
             >
+              <Search className="h-4 w-4" />
               See wetin dey
             </Link>
             <Link
               href="/signup"
-              className="inline-block w-full sm:w-auto px-8 py-4 border border-forest-mid/60 hover:border-sage text-ivory font-semibold rounded-lg transition-colors text-lg"
+              className="inline-flex items-center justify-center rounded-xl border px-6 py-3.5 text-base font-semibold transition-colors"
+              style={{
+                borderColor: "var(--color-indigo-line)",
+                color: "var(--color-on-dark)",
+              }}
             >
               I&apos;m hosting something
             </Link>
@@ -112,310 +119,91 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 border-y border-forest-mid/30">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-          <div className="text-center">
-            <div className="text-3xl md:text-4xl font-bold text-sage mb-2">0</div>
-            <p className="text-sage/60 text-sm">Events hosted</p>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl md:text-4xl font-bold text-sage mb-2">0</div>
-            <p className="text-sage/60 text-sm">Tickets issued</p>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl md:text-4xl font-bold text-sage mb-2">0</div>
-            <p className="text-sage/60 text-sm">Organizers</p>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl md:text-4xl font-bold text-sage mb-2">100%</div>
-            <p className="text-sage/60 text-sm">Secure</p>
-          </div>
-        </div>
-      </section>
-
-      {/* How It Works */}
-      <section id="how-it-works" className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <div className="text-center mb-16">
-          <p className="text-sage font-semibold text-sm uppercase tracking-wider mb-4">
-            The process
-          </p>
-          <h2 className="text-4xl md:text-5xl font-bold text-ivory mb-4">
-            Three steps. No spreadsheets.
-          </h2>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-12">
-          {/* Create */}
-          <div className="bg-forest-deep/50 border border-forest-mid/30 rounded-xl p-8 hover:border-sage/50 transition-colors">
-            <div className="w-12 h-12 bg-sage/20 rounded-lg flex items-center justify-center mb-6">
-              <CheckCircle2 className="w-6 h-6 text-sage" />
-            </div>
-            <h3 className="text-xl font-bold text-ivory mb-3">Create</h3>
-            <p className="text-sage">
-              Set your event name, date, venue, and ticket tiers. Free tickets, paid tiers, VIP — however you want to organize it.
+      {/* ── Real events ──────────────────────────────────────────────── */}
+      <div className="mx-auto max-w-5xl px-4 pb-16 sm:px-6">
+        {events === null ? (
+          <p className="pt-12 text-ink-3">Loading what&apos;s on…</p>
+        ) : events.length === 0 ? (
+          <div className="mt-12 rounded-2xl border border-line bg-white p-10 text-center">
+            <p className="text-xl font-extrabold text-ink">Nothing dey here yet.</p>
+            <p className="mx-auto mt-2 max-w-sm text-ink-2">
+              No events posted yet. If you&apos;re running something, you can be
+              the first — it takes about two minutes.
             </p>
-          </div>
-
-          {/* Share */}
-          <div className="bg-forest-deep/50 border border-forest-mid/30 rounded-xl p-8 hover:border-sage/50 transition-colors">
-            <div className="w-12 h-12 bg-sage/20 rounded-lg flex items-center justify-center mb-6">
-              <Share2 className="w-6 h-6 text-sage" />
-            </div>
-            <h3 className="text-xl font-bold text-ivory mb-3">Share</h3>
-            <p className="text-sage">
-              The moment you publish, you get one link: {appHost()}/e/your-event. Drop it on WhatsApp, Instagram, Twitter.
-            </p>
-          </div>
-
-          {/* Scan */}
-          <div className="bg-forest-deep/50 border border-forest-mid/30 rounded-xl p-8 hover:border-sage/50 transition-colors">
-            <div className="w-12 h-12 bg-sage/20 rounded-lg flex items-center justify-center mb-6">
-              <QrCode className="w-6 h-6 text-sage" />
-            </div>
-            <h3 className="text-xl font-bold text-ivory mb-3">Scan</h3>
-            <p className="text-sage">
-              Attendees show their QR code at the door. Gate staff scan, ticket is marked used, and you have a real-time headcount.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* For Organizers */}
-      <section id="organizers" className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <div className="grid md:grid-cols-2 gap-16 items-center">
-          <div>
-            <p className="text-sage font-semibold text-sm uppercase tracking-wider mb-4">
-              Organizer dashboard
-            </p>
-            <h2 className="text-4xl md:text-5xl font-bold text-ivory mb-8">
-              Everything you need to run the door, in one dashboard.
-            </h2>
-
-            <div className="space-y-6">
-              <div className="flex gap-4">
-                <div className="w-2 h-2 bg-sage rounded-full mt-2 flex-shrink-0" />
-                <div>
-                  <h3 className="text-xl font-bold text-ivory mb-2">Real-time sales</h3>
-                  <p className="text-sage">
-                    Watch tickets sell as they happen, broken down by tier and payment method.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="w-2 h-2 bg-sage rounded-full mt-2 flex-shrink-0" />
-                <div>
-                  <h3 className="text-xl font-bold text-ivory mb-2">Your own link</h3>
-                  <p className="text-sage">
-                    One URL per event, brandable, shareable, and tracked for you.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="w-2 h-2 bg-sage rounded-full mt-2 flex-shrink-0" />
-                <div>
-                  <h3 className="text-xl font-bold text-ivory mb-2">Team access</h3>
-                  <p className="text-sage">
-                    Invite gate staff with scan-only access. They see tickets, not your revenue.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="w-2 h-2 bg-sage rounded-full mt-2 flex-shrink-0" />
-                <div>
-                  <h3 className="text-xl font-bold text-ivory mb-2">Payouts you can track</h3>
-                  <p className="text-sage">
-                    See exactly what's pending and when it lands in your account.
-                  </p>
-                </div>
-              </div>
-            </div>
-
             <Link
               href="/signup"
-              className="inline-block mt-8 px-8 py-4 bg-purple hover:bg-purple-deep text-white font-semibold rounded-lg transition-colors"
+              className="mt-5 inline-block rounded-lg bg-purple px-5 py-2.5 text-sm font-semibold text-white hover:bg-purple-deep"
             >
-              Start selling in less than 5 minutes
+              Post your event
             </Link>
           </div>
+        ) : (
+          <>
+            {lead && (
+              <section className="pt-12">
+                <h2 className="mb-4 text-lg font-extrabold tracking-[-0.02em] text-ink">
+                  Next one up
+                </h2>
+                <FeaturedCard e={lead} />
+              </section>
+            )}
 
-          {/* Placeholder for dashboard image */}
-          <div className="bg-gradient-to-br from-forest-deep to-forest-mid rounded-xl border border-forest-mid/30 h-80 flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-sage/30 text-6xl mb-4">📊</div>
-              <p className="text-sage/50">Dashboard preview</p>
-            </div>
-          </div>
-        </div>
-      </section>
+            <EventRail
+              title="Happening soon"
+              note="In the next two weeks"
+              events={soon}
+              href="/discover"
+            />
+            <EventRail title="Just dropped" events={justDropped} href="/discover" />
+            <EventRail
+              title="Free entry"
+              note="No ticket money required"
+              events={free}
+              href="/discover"
+            />
 
-      {/* For Attendees */}
-      <section id="attendees" className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <div className="bg-gradient-to-r from-forest-deep/50 to-sage/10 border border-forest-mid/30 rounded-2xl p-12">
-          <p className="text-sage font-semibold text-sm uppercase tracking-wider mb-4">
-            Attendee experience
-          </p>
-          <h2 className="text-4xl md:text-5xl font-bold text-ivory mb-6">
-            Buy once. Show up. That's it.
-          </h2>
-          <p className="text-lg text-sage/80 mb-12 max-w-2xl">
-            Pick your ticket, pay by bank transfer, and it lands in your inbox with a QR code that's yours alone. No app needed. No extra steps.
-          </p>
-
-          <div className="grid sm:grid-cols-2 gap-8">
-            <div className="bg-forest-deep/50 border border-forest-mid/30 rounded-lg p-6">
-              <p className="text-sage font-semibold mb-2">💳 Bank transfer</p>
-              <p className="text-sage/70">Fast, secure payments via Paystack</p>
-            </div>
-            <div className="bg-forest-deep/50 border border-forest-mid/30 rounded-lg p-6">
-              <p className="text-sage font-semibold mb-2">💵 Cash at the door</p>
-              <p className="text-sage/70">Manual entry and tracking included</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <div className="text-center mb-16">
-          <p className="text-sage font-semibold text-sm uppercase tracking-wider mb-4">
-            Questions
-          </p>
-          <h2 className="text-4xl md:text-5xl font-bold text-ivory">
-            Frequently asked questions
-          </h2>
-        </div>
-
-        <div className="space-y-4">
-          {faqItems.map((item, idx) => (
-            <div
-              key={idx}
-              className="bg-forest-deep/50 border border-forest-mid/30 rounded-lg overflow-hidden hover:border-sage/50 transition-colors"
-            >
-              <button
-                onClick={() => setExpandedFaq(expandedFaq === idx ? null : idx)}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-forest-mid/20 transition-colors"
+            <div className="mt-12 text-center">
+              <Link
+                href="/discover"
+                className="inline-block rounded-xl border border-line bg-white px-6 py-3 font-semibold text-ink hover:border-ink-3"
               >
-                <h3 className="text-ivory font-semibold text-left">{item.q}</h3>
-                <ChevronDown
-                  className={`w-5 h-5 text-sage transition-transform flex-shrink-0 ml-4 ${
-                    expandedFaq === idx ? 'rotate-180' : ''
-                  }`}
-                />
-              </button>
-              {expandedFaq === idx && (
-                <div className="px-6 py-4 bg-forest-mid/20 border-t border-forest-mid/30">
-                  <p className="text-sage/80">{item.a}</p>
-                </div>
-              )}
+                See everything
+              </Link>
             </div>
-          ))}
-        </div>
-      </section>
+          </>
+        )}
+      </div>
 
-      {/* Final CTA */}
-      <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
-        <h2 className="text-4xl md:text-5xl font-bold text-ivory mb-8">
-          Your next event doesn't need a spreadsheet.
-        </h2>
-        <Link
-          href="/signup"
-          className="inline-block px-8 py-4 bg-purple hover:bg-purple-deep text-white font-semibold rounded-lg transition-colors text-lg"
-        >
-          Create your event
-        </Link>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-forest border-t border-forest-mid/30 mt-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="grid md:grid-cols-4 gap-12 mb-12">
-            {/* Brand */}
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <WordMark tone="dark" size="lg" asLink={false} />
-              </div>
-              <p className="text-sage/60 text-sm">Your plug for what&apos;s happening</p>
-              <div className="flex gap-4 mt-6">
-                <a href="#" className="text-sage/50 hover:text-sage transition-colors">
-                  Twitter
-                </a>
-                <a href="#" className="text-sage/50 hover:text-sage transition-colors">
-                  Instagram
-                </a>
-              </div>
-            </div>
-
-            {/* Product */}
-            <div>
-              <h4 className="text-ivory font-semibold mb-4">Product</h4>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <a href="#how-it-works" className="text-sage/60 hover:text-sage transition-colors">
-                    How it works
-                  </a>
-                </li>
-                <li>
-                  <a href="#organizers" className="text-sage/60 hover:text-sage transition-colors">
-                    For organizers
-                  </a>
-                </li>
-                <li>
-                  <a href="#attendees" className="text-sage/60 hover:text-sage transition-colors">
-                    For attendees
-                  </a>
-                </li>
-              </ul>
-            </div>
-
-            {/* Legal */}
-            <div>
-              <h4 className="text-ivory font-semibold mb-4">Legal</h4>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <a href="#" className="text-sage/60 hover:text-sage transition-colors">
-                    Terms
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="text-sage/60 hover:text-sage transition-colors">
-                    Privacy
-                  </a>
-                </li>
-              </ul>
-            </div>
-
-            {/* Contact */}
-            <div>
-              <h4 className="text-ivory font-semibold mb-4">Contact</h4>
-              <ul className="space-y-2 text-sm">
-                {SUPPORT_EMAIL && (
-                  <li>
-                    <a
-                      href={`mailto:${SUPPORT_EMAIL}`}
-                      className="text-sage/60 hover:text-sage transition-colors"
-                    >
-                      {SUPPORT_EMAIL}
-                    </a>
-                  </li>
-                )}
-                <li className="text-sage/60">Calabar, Nigeria</li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="border-t border-forest-mid/30 pt-8">
-            <p className="text-sage/60 text-sm text-center">
-              © 2026 Wetin Dey. All rights reserved.
+      {/* ── For organisers, kept to its proper size ───────────────────── */}
+      <section className="border-y border-line bg-white">
+        <div className="mx-auto flex max-w-5xl flex-col items-start justify-between gap-6 px-4 py-12 sm:flex-row sm:items-center sm:px-6">
+          <div>
+            <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink">
+              Running something?
+            </h2>
+            <p className="mt-1 max-w-md text-ink-2">
+              Set your tiers, share one link, scan people in at the door. You
+              keep the ticket price; we take 5%.
             </p>
           </div>
+          <Link
+            href="/signup"
+            className="shrink-0 rounded-xl bg-purple px-5 py-3 font-semibold text-white hover:bg-purple-deep"
+          >
+            Post an event
+          </Link>
         </div>
+      </section>
+
+      <footer className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <WordMark asLink={false} />
+          <p className="text-sm text-ink-3">Calabar, Nigeria</p>
+        </div>
+        <p className="mt-6 text-sm text-ink-3">
+          © {new Date().getFullYear()} Wetin Dey. All rights reserved.
+        </p>
       </footer>
     </div>
   );
-};
-
-export default LandingPage;
+}
