@@ -24,13 +24,20 @@ export const PLATFORM_FEE_RATE = 0.05;
 
 // Paystack Nigeria, local cards: 1.5% + ₦100, the flat fee waived on small
 // transactions, the whole fee capped. Verified against a live test charge:
-// ₦5,300 was charged as ₦5,482.24, exactly (5300 + 100) / (1 - 0.015).
+// ₦5,300 was charged as ₦5,482.24 — (5300 + 100) / (1 - 0.015) rounded UP to
+// the kobo, which is how they do it.
 const PAYSTACK_RATE = 0.015;
 const PAYSTACK_FLAT = 100;
 const PAYSTACK_FLAT_WAIVED_BELOW = 2500;
 const PAYSTACK_FEE_CAP = 2000;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// Paystack rounds its own charge UP to the kobo, not to nearest: a ₦5,300
+// settlement was charged as ₦5,482.24 where the formula gives ₦5,482.2335.
+// Rounding to nearest under-quotes by a kobo, which is small money but makes
+// "the page and the charge agree" quietly untrue.
+const ceil2 = (n: number) => Math.ceil(n * 100 - 1e-9) / 100;
 
 // Settlement amounts are rounded DOWN to the kobo. Rounding to nearest can
 // raise the amount by half a kobo, which is enough to push the resulting
@@ -60,9 +67,9 @@ export const REFUND_RETAINED_RATE = 0.025;
  */
 export function paystackGrossUp(amount: number): number {
   const flat = amount < PAYSTACK_FLAT_WAIVED_BELOW ? 0 : PAYSTACK_FLAT;
-  let charged = (amount + flat) / (1 - PAYSTACK_RATE);
-  if (charged - amount > PAYSTACK_FEE_CAP) charged = amount + PAYSTACK_FEE_CAP;
-  return round2(charged);
+  let charged = ceil2((amount + flat) / (1 - PAYSTACK_RATE));
+  if (charged - amount > PAYSTACK_FEE_CAP) charged = round2(amount + PAYSTACK_FEE_CAP);
+  return charged;
 }
 
 /**
