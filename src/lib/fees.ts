@@ -11,12 +11,16 @@
 /**
  * The platform's cut of the ticket price, and the ONLY place it is defined.
  *
+ * Flat, every event, no launch exceptions: a 0% promo would not have made
+ * anything free anyway, since Paystack still charges on every sale, so the
+ * per-event rate machinery it needed was complexity buying nothing.
+ *
  * `organizations.fee_percent` exists in the schema with its own default and
  * a comment claiming pricing lives there, but nothing reads that column.
  * Until it is either wired up or dropped, this constant is the single
  * source of truth — do not add a second one.
  */
-export const PLATFORM_FEE_RATE = 0.08;
+export const PLATFORM_FEE_RATE = 0.05;
 
 // Paystack Nigeria, local cards: 1.5% + ₦100, the flat fee waived on small
 // transactions, the whole fee capped. Verified against a live test charge:
@@ -45,9 +49,10 @@ export type FeeBearer = "organizer" | "buyer";
  *
  * A refund still costs us the work already done — the sale, the QR, the
  * email, the support — but not all of it, so half the usual cut is returned
- * with the ticket price. Whoever paid the fee gets that half back.
+ * with the ticket price. Whoever paid the fee gets that half back. Keep this
+ * at half of PLATFORM_FEE_RATE unless there is a reason not to.
  */
-export const REFUND_RETAINED_RATE = 0.04;
+export const REFUND_RETAINED_RATE = 0.025;
 
 /**
  * What Paystack charges the buyer so that `amount` reaches the merchant,
