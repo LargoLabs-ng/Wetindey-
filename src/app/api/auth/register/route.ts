@@ -9,6 +9,7 @@ import {
   departments,
 } from "@/db/schema";
 import { hashPassword } from "@/lib/password";
+import { createAccount } from "@/lib/register";
 import { generateUniqueSlug } from "@/lib/slug";
 
 /**
@@ -110,74 +111,21 @@ export async function POST(request: Request) {
       })
     : null;
 
-  const result = await db.transaction(async (tx) => {
-    const [user] = await tx
-      .insert(users)
-      .values({
-        firstName,
-        lastName,
-        name: `${firstName} ${lastName}`,
-        email,
-        phone,
-        passwordHash,
-        universityId: universityId ?? null,
-        campusId: campusId ?? null,
-        departmentId: departmentId ?? null,
-      })
-      .returning();
-
-    // "My department isn't listed." Save it as pending: theirs straight
-    // away, but invisible to everyone else's picker until it's reviewed,
-    // so one typo can't become a permanent option for the whole university.
-    if (!departmentId && newDepartmentName && universityId) {
-      const slug = slugify(newDepartmentName);
-      const [already] = await tx
-        .select({ id: departments.id })
-        .from(departments)
-        .where(
-          and(
-            eq(departments.universityId, universityId),
-            eq(departments.slug, slug)
-          )
-        )
-        .limit(1);
-
-      const id =
-        already?.id ??
-        (
-          await tx
-            .insert(departments)
-            .values({
-              universityId,
-              facultyId: null,
-              name: newDepartmentName,
-              slug,
-              status: "pending",
-              suggestedBy: user.id,
-            })
-            .returning({ id: departments.id })
-        )[0].id;
-
-      await tx.update(users).set({ departmentId: id }).where(eq(users.id, user.id));
-    }
-
-    if (organizationName && orgSlug) {
-      const [organization] = await tx
-        .insert(organizations)
-        .values({ name: organizationName, slug: orgSlug, ownerId: user.id })
-        .returning();
-
-      await tx.insert(organizationMembers).values({
-        organizationId: organization.id,
-        userId: user.id,
-        role: "owner",
-      });
-
-      return { user, organization };
-    }
-
-    return { user, organization: null };
-  });
+  const result = await db.transaction((tx) =>
+    createAccount(tx, {
+      firstName,
+      lastName,
+      email,
+      phone,
+      passwordHash,
+      universityId,
+      campusId,
+      departmentId,
+      newDepartmentName,
+      organizationName,
+      organizationSlug: orgSlug ?? undefined,
+    })
+  );
 
   return NextResponse.json(
     {
