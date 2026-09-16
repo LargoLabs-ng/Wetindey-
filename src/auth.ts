@@ -57,34 +57,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         ]
       : []),
   ],
-  events: {
-    async createUser({ user }) {
-      if (!user.id) return;
-
-      const baseName = user.name?.trim() || user.email?.split("@")[0] || "My";
-      const orgName = `${baseName}'s Organization`;
-
-      const slug = await generateUniqueSlug(orgName, async (candidate) => {
-        const [existing] = await db
-          .select({ id: organizations.id })
-          .from(organizations)
-          .where(eq(organizations.slug, candidate))
-          .limit(1);
-        return !!existing;
-      });
-
-      const [organization] = await db
-        .insert(organizations)
-        .values({ name: orgName, slug, ownerId: user.id })
-        .returning();
-
-      await db.insert(organizationMembers).values({
-        organizationId: organization.id,
-        userId: user.id,
-        role: "owner",
-      });
-    },
-  },
+  // No `createUser` event any more. It used to create an organization for
+  // every new account, which made sense when every account was an organizer.
+  // Students have accounts now, and an empty company attached to each one
+  // breaks the routing that decides between the organizer dashboard and the
+  // gate console. Organizations are created on demand instead — see
+  // ensureOrganizationForUser in lib/organization.ts.
   callbacks: {
     async jwt({ token, user }) {
       if (user) token.userId = user.id;

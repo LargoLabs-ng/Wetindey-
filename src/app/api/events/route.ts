@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { events } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { getPrimaryOrganizationId, getSessionUserId } from '@/lib/authz';
+import { getSessionUserId } from '@/lib/authz';
+import { ensureOrganizationForUser } from '@/lib/organization';
 import { generateUniqueSlug } from '@/lib/slug';
 
 export async function GET(request: NextRequest) {
@@ -48,13 +49,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const organizationId = await getPrimaryOrganizationId(userId);
-    if (!organizationId) {
-      return NextResponse.json(
-        { error: 'No organization found for your account.' },
-        { status: 400 }
-      );
-    }
+    // First event someone creates is also the moment they become an
+    // organizer, so this is where the organization gets made.
+    const organizationId = await ensureOrganizationForUser(userId);
 
     const body = await request.json().catch(() => null);
     const parsed = createEventSchema.safeParse(body);
