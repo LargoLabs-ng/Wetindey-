@@ -102,6 +102,17 @@ export const users = pgTable("users", {
   image: text("image"), // avatar URL from OAuth provider
   phone: varchar("phone", { length: 32 }),
   passwordHash: text("password_hash"),
+  // Campus context. All nullable: platform staff and guest-turned-account
+  // buyers have none, and a student can sign up before deciding to share it.
+  universityId: uuid("university_id").references(() => universities.id, {
+    onDelete: "set null",
+  }),
+  campusId: uuid("campus_id").references(() => campuses.id, {
+    onDelete: "set null",
+  }),
+  departmentId: uuid("department_id").references(() => departments.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -376,6 +387,143 @@ export const ticketsRelations = relations(tickets, ({ one, many }) => ({
 
 export const paymentsRelations = relations(payments, ({ one }) => ({
   order: one(orders, { fields: [payments.orderId], references: [orders.id] }),
+}));
+
+// ─── Campus context ──────────────────────────────────────────────────────
+//
+// Kept deliberately thin: university → campus → faculty → department, and
+// nothing below that. A student belongs to a university and optionally a
+// department; an event happens at a campus. Anything more elaborate would be
+// modelling a university's org chart rather than what discovery needs.
+
+export const universities = pgTable("universities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),
+  shortName: varchar("short_name", { length: 40 }).notNull(),
+  slug: varchar("slug", { length: 200 }).notNull().unique(),
+  state: varchar("state", { length: 100 }),
+  country: varchar("country", { length: 100 }).default("Nigeria").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const campuses = pgTable(
+  "campuses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    universityId: uuid("university_id")
+      .references(() => universities.id, { onDelete: "cascade" })
+      .notNull(),
+    name: varchar("name", { length: 200 }).notNull(),
+    slug: varchar("slug", { length: 200 }).notNull(),
+    city: varchar("city", { length: 100 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueCampus: uniqueIndex("campus_unique").on(t.universityId, t.slug),
+  })
+);
+
+export const faculties = pgTable(
+  "faculties",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    universityId: uuid("university_id")
+      .references(() => universities.id, { onDelete: "cascade" })
+      .notNull(),
+    // Nullable: a faculty we know exists but cannot confidently place on a
+    // campus is still useful, and guessing would be worse than admitting it.
+    campusId: uuid("campus_id").references(() => campuses.id, {
+      onDelete: "set null",
+    }),
+    name: varchar("name", { length: 200 }).notNull(),
+    slug: varchar("slug", { length: 200 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueFaculty: uniqueIndex("faculty_unique").on(t.universityId, t.slug),
+  })
+);
+
+// Departments seeded from public directories are marked `provisional`: no
+// published list agreed with any other, so the seed is a starting point and
+// students correct it. One a student types themselves arrives as `pending`
+// and is reviewed before it shows up in anyone else's picker — otherwise a
+// typo becomes a permanent option for the whole university.
+export const departmentStatusEnum = pgEnum("department_status", [
+  "confirmed",
+  "provisional",
+  "pending",
+  "rejected",
+]);
+
+export const departments = pgTable(
+  "departments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    universityId: uuid("university_id")
+      .references(() => universities.id, { onDelete: "cascade" })
+      .notNull(),
+    // Nullable on purpose: several real programmes could not be attributed
+    // to a faculty from any source, and an invented attribution is worse
+    // than an empty field an admin can fill in.
+    facultyId: uuid("faculty_id").references(() => faculties.id, {
+      onDelete: "set null",
+    }),
+    name: varchar("name", { length: 200 }).notNull(),
+    slug: varchar("slug", { length: 200 }).notNull(),
+    status: departmentStatusEnum("status").default("provisional").notNull(),
+    // Who suggested it, when it came from a student rather than the seed.
+    // Deliberately NOT a declared foreign key: users.department_id already
+    // points at this table, and adding a reference back to users closes a
+    // cycle that Drizzle's type inference cannot resolve — it silently
+    // widens every relational query in the app to `any`, which showed up as
+    // the admin console losing its types rather than as an error here.
+    suggestedBy: uuid("suggested_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueDepartment: uniqueIndex("department_unique").on(
+      t.universityId,
+      t.slug
+    ),
+  })
+);
+
+export const universitiesRelations = relations(universities, ({ many }) => ({
+  campuses: many(campuses),
+  faculties: many(faculties),
+  departments: many(departments),
+}));
+
+export const campusesRelations = relations(campuses, ({ one, many }) => ({
+  university: one(universities, {
+    fields: [campuses.universityId],
+    references: [universities.id],
+  }),
+  faculties: many(faculties),
+}));
+
+export const facultiesRelations = relations(faculties, ({ one, many }) => ({
+  university: one(universities, {
+    fields: [faculties.universityId],
+    references: [universities.id],
+  }),
+  campus: one(campuses, {
+    fields: [faculties.campusId],
+    references: [campuses.id],
+  }),
+  departments: many(departments),
+}));
+
+export const departmentsRelations = relations(departments, ({ one }) => ({
+  university: one(universities, {
+    fields: [departments.universityId],
+    references: [universities.id],
+  }),
+  faculty: one(faculties, {
+    fields: [departments.facultyId],
+    references: [faculties.id],
+  }),
 }));
 
 // ─── Per-event staffing ──────────────────────────────────────────────────
