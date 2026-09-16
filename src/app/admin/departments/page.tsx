@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Check, GitMerge, X } from "lucide-react";
+import { Check, GitMerge, X } from "lucide-react";
 
 type Dept = {
   id: string;
@@ -83,16 +82,7 @@ export default function DepartmentReviewPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
-      <Link
-        href="/admin"
-        className="inline-flex items-center gap-2 text-sm"
-        style={{ color: "var(--color-stone)" }}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to admin
-      </Link>
-
-      <h1 className="mt-2 text-2xl font-bold" style={{ color: "var(--color-forest)" }}>
+      <h1 className="text-2xl font-bold" style={{ color: "var(--color-forest)" }}>
         Departments
       </h1>
       <p className="mt-1 text-sm" style={{ color: "var(--color-stone)" }}>

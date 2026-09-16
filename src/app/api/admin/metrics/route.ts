@@ -4,9 +4,6 @@ import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
 import { events, orders, tickets } from '@/db/schema';
 
-import { PLATFORM_FEE_RATE } from '@/lib/fees';
-
-const PLATFORM_FEE = PLATFORM_FEE_RATE;
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,12 +29,18 @@ export async function GET(request: NextRequest) {
     });
 
     const paidOrders = allOrders.filter((o) => o.payments?.some((p) => p.status === 'success'));
-    const totalRevenue = paidOrders.reduce((sum, o) => {
-      const totalNum = typeof o.total === 'string' ? parseFloat(o.total) : o.total;
-      return sum + totalNum;
-    }, 0);
-    const platformEarnings = totalRevenue * PLATFORM_FEE;
-    const organizerPayouts = totalRevenue * (1 - PLATFORM_FEE);
+    const num = (v: string | number) => (typeof v === 'string' ? parseFloat(v) : v);
+
+    // What buyers actually paid, fees included.
+    const totalRevenue = paidOrders.reduce((sum, o) => sum + num(o.total), 0);
+    // Ticket face value — the organizer's side, and the base our cut is taken
+    // from. Multiplying totalRevenue by the rate counts Paystack's fee as our
+    // revenue, which overstated platform earnings on every buyer-pays sale.
+    const ticketValue = paidOrders.reduce((sum, o) => sum + num(o.subtotal), 0);
+    // Our cut was worked out per order at checkout and stored; summing the
+    // stored figure is exact, and survives any future rate change.
+    const platformEarnings = paidOrders.reduce((sum, o) => sum + num(o.fees), 0);
+    const organizerPayouts = ticketValue - platformEarnings;
 
     const allTickets = await db.query.tickets.findMany();
     const totalAttendees = allTickets.length;
@@ -53,7 +56,16 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       overview: { totalEvents, activeEvents, totalOrganizers, totalAttendees },
-      financial: { totalRevenue, platformEarnings, organizerPayouts, recentRevenue, averageDailyRevenue: (recentRevenue / 7).toFixed(2) },
+      financial: {
+        // Every naira that has moved through the platform on a paid order.
+        totalRevenue,
+        paidOrders: paidOrders.length,
+        ticketValue,
+        platformEarnings,
+        organizerPayouts,
+        recentRevenue,
+        averageDailyRevenue: (recentRevenue / 7).toFixed(2),
+      },
       engagement: { checkedInAttendees, checkInRate, totalAttendees },
     });
   } catch (error) {

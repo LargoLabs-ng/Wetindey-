@@ -48,9 +48,16 @@ async function inRolledBackTransaction(
       tx.rollback();
     });
   } catch (error) {
-    // Drizzle signals a deliberate rollback by throwing; anything else is a
-    // real failure and must not be swallowed.
-    if ((error as Error)?.name !== "TransactionRollbackError") throw error;
+    // Drizzle signals a deliberate rollback by throwing. It is a DrizzleError
+    // whose message is "Rollback" — NOT a class called TransactionRollbackError,
+    // which is what an earlier version of this check looked for, so every
+    // rolled-back case was reported as a failure even though the rollback had
+    // worked perfectly. Both shapes are accepted so a future rename of the
+    // error class does not silently break the suite again.
+    const signal = error as { name?: string; message?: string } | undefined;
+    const isDeliberateRollback =
+      signal?.name === "TransactionRollbackError" || signal?.message === "Rollback";
+    if (!isDeliberateRollback) throw error;
   }
 }
 
