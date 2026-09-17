@@ -16,7 +16,9 @@ import {
 } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { EventImage } from '@/components/event-image';
+import { CoverFallback } from '@/components/event-card';
 import { WordMark } from '@/components/wordmark';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 interface TicketType {
   id: string;
@@ -221,7 +223,7 @@ export default function EventDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-cream">
+      <div className="wd-night flex min-h-screen items-center justify-center bg-cream">
         <p className="text-ink-3">Loading…</p>
       </div>
     );
@@ -229,7 +231,7 @@ export default function EventDetailPage() {
 
   if (error || !event) {
     return (
-      <div className="min-h-screen bg-cream">
+      <div className="wd-night min-h-screen bg-cream">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
           <WordMark />
         </div>
@@ -261,6 +263,12 @@ export default function EventDetailPage() {
     event.ticketTypes.length > 0 &&
     event.ticketTypes.every((t) => t.quantityTotal - t.quantitySold - t.quantityReserved <= 0);
 
+  // Real attendance, straight off the tiers — no estimate, no padding. Shown
+  // only once it is a number worth saying out loud; "1 going" makes an event
+  // look abandoned, which is worse than saying nothing at all.
+  const going = event.ticketTypes.reduce((n, t) => n + t.quantitySold, 0);
+  const organiser = event.organization?.name?.trim() || null;
+
   const countdown = isOver
     ? 'This event don happen'
     : hasStarted
@@ -279,7 +287,7 @@ export default function EventDetailPage() {
   })}${place ? ` at ${place}` : ''}`;
 
   return (
-    <div className="min-h-screen bg-cream">
+    <div className="wd-night min-h-screen bg-cream">
       <header className="absolute inset-x-0 top-0 z-10">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <Link
@@ -289,6 +297,7 @@ export default function EventDetailPage() {
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
+          <ThemeToggle variant="glass" />
         </div>
       </header>
 
@@ -300,13 +309,10 @@ export default function EventDetailPage() {
           {event.coverImage ? (
             <EventImage src={event.coverImage} alt={event.title} priority sizes="100vw" />
           ) : (
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  'linear-gradient(140deg, var(--color-indigo-3), var(--color-indigo))',
-              }}
-            />
+            // The same branded panel the cards use. This was a near-black
+            // gradient, which gave an event without artwork a dead rectangle
+            // for a hero — the single biggest reason the page felt empty.
+            <CoverFallback title={event.title} />
           )}
           {/* Gradient so white type stays legible on any artwork. */}
           <div
@@ -337,17 +343,44 @@ export default function EventDetailPage() {
               <h1 className="mt-3 text-3xl font-extrabold leading-[1.08] tracking-[-0.03em] text-white sm:text-5xl">
                 {event.title}
               </h1>
-              {event.organization?.name && (
-                <p className="mt-2 text-sm text-white/75">
-                  by {event.organization.name}
-                </p>
+              {/* An organiser is a person students are deciding whether to
+                  trust, so they get a face and a line of their own instead of
+                  a grey byline underneath the title. */}
+              {(organiser || going >= 5) && (
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  {organiser && (
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        aria-hidden="true"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold"
+                        style={{
+                          backgroundColor: 'var(--color-purple)',
+                          color: '#fff',
+                        }}
+                      >
+                        {organiser.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="text-sm text-white/75">
+                        by{' '}
+                        <span className="font-semibold text-white">{organiser}</span>
+                      </span>
+                    </div>
+                  )}
+                  {going >= 5 && (
+                    <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white backdrop-blur">
+                      {going} going
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </div>
         </div>
       </section>
 
-      <main className="mx-auto max-w-5xl px-4 pb-20 sm:px-6">
+      {/* Extra bottom padding on a phone so the fixed bar below never sits on
+          top of the last section. */}
+      <main className="mx-auto max-w-5xl px-4 pb-28 sm:px-6 lg:pb-20">
         <div className="grid gap-10 pt-8 lg:grid-cols-[1fr_380px]">
           {/* ── The event itself ───────────────────────────────────── */}
           <div className="min-w-0">
@@ -383,8 +416,8 @@ export default function EventDetailPage() {
             </dl>
 
             {event.description && (
-              <section className="mt-8">
-                <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">
+              <section className="mt-10">
+                <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-ink">
                   What&apos;s happening
                 </h2>
                 <p className="mt-2 whitespace-pre-line leading-relaxed text-ink-2">
@@ -394,8 +427,8 @@ export default function EventDetailPage() {
             )}
 
             {place && (
-              <section className="mt-8">
-                <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">
+              <section className="mt-10">
+                <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-ink">
                   Getting there
                 </h2>
                 <p className="mt-2 text-ink-2">
@@ -418,8 +451,8 @@ export default function EventDetailPage() {
 
             {/* Sharing is how this product spreads, so it is a real section
                 and WhatsApp comes first — that is where the link goes. */}
-            <section className="mt-8">
-              <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">
+            <section className="mt-10">
+              <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-ink">
                 Tell somebody
               </h2>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -427,7 +460,7 @@ export default function EventDetailPage() {
                   href={`https://wa.me/?text=${encodeURIComponent(`${shareText}\n${shareUrl}`)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-ink hover:border-ink-3"
+                  className="inline-flex items-center gap-2 rounded-xl border border-line bg-card px-4 py-2.5 text-sm font-semibold text-ink hover:border-ink-3"
                 >
                   <Share2 className="h-4 w-4" />
                   Share on WhatsApp
@@ -443,7 +476,7 @@ export default function EventDetailPage() {
                       setCopied(false);
                     }
                   }}
-                  className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-ink hover:border-ink-3"
+                  className="inline-flex items-center gap-2 rounded-xl border border-line bg-card px-4 py-2.5 text-sm font-semibold text-ink hover:border-ink-3"
                 >
                   {copied ? <Check className="h-4 w-4 text-ok" /> : <Link2 className="h-4 w-4" />}
                   {copied ? 'Link copied' : 'Copy link'}
@@ -453,8 +486,8 @@ export default function EventDetailPage() {
           </div>
 
           {/* ── Tickets ─────────────────────────────────────────────── */}
-          <aside className="lg:sticky lg:top-6 lg:self-start">
-            <div className="rounded-2xl border border-line bg-white p-5">
+          <aside id="tickets" className="scroll-mt-6 lg:sticky lg:top-6 lg:self-start">
+            <div className="rounded-2xl border border-line bg-card p-5">
               {isOver ? (
                 <>
                   <p className="font-extrabold text-ink">This event don happen</p>
@@ -664,6 +697,39 @@ export default function EventDetailPage() {
           </aside>
         </div>
       </main>
+
+      {/* ── Phone: the decision never scrolls away ─────────────────────
+          On a desktop the ticket panel is sticky in the right column, so the
+          price and the button are always on screen. On a phone that panel is
+          at the bottom of a long page, which means the one thing the page
+          exists for is the one thing you cannot see. This bar carries it. */}
+      {!isOver && event.ticketTypes.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-card/95 px-4 py-3 backdrop-blur lg:hidden">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-ink-3">
+                {soldOut ? 'No more tickets' : 'From'}
+              </p>
+              <p className="truncate text-lg font-extrabold leading-tight text-ink">
+                {soldOut
+                  ? 'Sold out'
+                  : Math.min(...event.ticketTypes.map((t) => Number(t.price))) === 0
+                    ? 'Free'
+                    : naira(Math.min(...event.ticketTypes.map((t) => Number(t.price))))}
+              </p>
+            </div>
+            <a
+              href="#tickets"
+              aria-disabled={soldOut}
+              className={`shrink-0 rounded-xl px-6 py-3 font-bold text-white ${
+                soldOut ? 'pointer-events-none bg-ink-3' : 'bg-purple hover:bg-purple-deep'
+              }`}
+            >
+              {soldOut ? 'Sold out' : "I'm in"}
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

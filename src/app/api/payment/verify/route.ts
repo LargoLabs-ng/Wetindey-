@@ -2,28 +2,29 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { payments } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { finalizePaidOrder, isPaidAtPaystack } from '@/lib/finalize-order';
 
+/**
+ * GET /api/payment/verify?reference=…
+ *
+ * Called when the buyer lands back on the site. It asks PAYSTACK whether the
+ * payment succeeded rather than only reading our own database — the previous
+ * version did the latter, which meant it answered "pending" forever whenever
+ * the webhook had not arrived, and the buyer's ticket never existed.
+ *
+ * Completing the order here as well as in the webhook is what makes a lost or
+ * delayed webhook survivable: whoever gets there first finishes the job.
+ */
 export async function GET(request: NextRequest) {
   try {
     const reference = request.nextUrl.searchParams.get('reference');
-
     if (!reference) {
-      return NextResponse.json(
-        { error: 'Missing reference parameter' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Missing reference parameter' }, { status: 400 });
     }
 
-    const payment = await db.query.payments.findFirst({
+    let payment = await db.query.payments.findFirst({
       where: eq(payments.providerReference, reference),
-      with: {
-        order: {
-          with: {
-            event: true,
-            tickets: true,
-          },
-        },
-      },
+      with: { order: { with: { event: true, tickets: true } } },
     });
 
     if (!payment) {
@@ -31,6 +32,21 @@ export async function GET(request: NextRequest) {
         { status: 'failed', message: 'Payment not found' },
         { status: 404 }
       );
+    }
+
+    // Not marked paid on our side yet — go and ask.
+    if (payment.status !== 'success') {
+      if (await isPaidAtPaystack(reference)) {
+        await finalizePaidOrder(reference);
+        payment = await db.query.payments.findFirst({
+          where: eq(payments.providerReference, reference),
+          with: { order: { with: { event: true, tickets: true } } },
+        });
+      }
+    }
+
+    if (!payment) {
+      return NextResponse.json({ status: 'failed', message: 'Payment not found' }, { status: 404 });
     }
 
     const order = payment.order;
@@ -49,14 +65,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    if (payment.status === 'pending' || payment.status === 'initialized') {
-      return NextResponse.json({
-        status: 'pending',
-        message: 'Payment is being processed. Please wait...',
-        orderId: order.id,
-      });
-    }
-
     if (payment.status === 'failed' || payment.status === 'abandoned') {
       return NextResponse.json({
         status: 'failed',
@@ -66,14 +74,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       status: 'pending',
-      message: 'Payment status unknown. Please check your email.',
+      message: 'We are still confirming this payment. Hold on a moment.',
       orderId: order.id,
     });
   } catch (error) {
     console.error('Error verifying payment:', error);
-    return NextResponse.json(
-      { error: 'Failed to verify payment' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to verify payment' }, { status: 500 });
   }
 }

@@ -125,6 +125,115 @@
   --color-on-dark: var(--wd-on-dark);
   --color-on-dark-2: var(--wd-on-dark-2);
   --color-on-dark-3: var(--wd-on-dark-3);
+
+  /* Raised panels — ticket boxes, empty states, the organiser strip. White on
+     a light ground, a lifted indigo on a dark one. It exists as a token
+     because `bg-white` is a literal colour and cannot be re-themed. */
+  --wd-card: #FFFFFF;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Night mode for the consumer surfaces
+
+   Warm off-white is what the brief specifies for content, and it is the right
+   answer for a document. It is the wrong answer for a product about parties:
+   event artwork sits INSIDE the page, and a white page frames every flyer
+   like a press release. Dark gets out of the artwork's way.
+
+   This is a scoped override, not a second theme. Every token below already
+   exists; the block just repoints the `--wd-*` values, and because both the
+   new names and the old Ticket Buddy compatibility names dereference to
+   those, one block flips an entire page.
+
+   TWO selectors are doing the work:
+
+   `.wd-night` marks a CONSUMER page — home, discover, event, my events,
+   tickets, payment. It is static markup and never changes. Anything without
+   it — the organiser dashboard and admin, which §13 of the brief keeps
+   deliberately dashboard-like — is out of scope whatever the reader picks.
+
+   `html[data-wd-theme="dark"]` is the switch, and it is opt-in. Absence of
+   the attribute means light, so a first-time reader — and any page rendered
+   before JavaScript has run — gets the warm off-white the brief specifies,
+   and dark arrives only when someone asks for it. Everything below is
+   therefore the OVERRIDE, not the baseline.
+   ───────────────────────────────────────────────────────────────────────── */
+html[data-wd-theme="dark"] .wd-night {
+  --wd-cream: #0B0814;      /* page ground, a shade below the hero indigo so
+                               the hero still reads as a distinct surface */
+  --wd-cream-2: #131022;
+  --wd-cream-3: #1B1630;
+
+  --wd-ink: #F4F2F7;
+  --wd-ink-2: #A8A2BD;
+  --wd-ink-3: #7E7794;
+
+  --wd-line: #251F3A;
+  --wd-line-2: #342C4F;
+
+  --wd-card: #141024;
+
+  /* Soft tints are light washes by definition — on a dark ground they become
+     glare. Each drops to the dark equivalent of the same idea. */
+  --wd-purple-soft: #241B45;
+  --wd-coral-soft: #3A1A16;
+  --wd-ok-soft: #102C21;
+  --wd-warn-soft: #2E2410;
+  --wd-bad-soft: #351611;
+
+  /* Purple at full strength vibrates against near-black. The lifted tone is
+     the one that was mixed for dark grounds in the first place. */
+  --wd-purple: #7B4EFF;
+
+  /* ── Why the compatibility names are repeated here ──────────────────
+     A custom property is resolved where it is DECLARED, not where it is
+     used. `--color-ink: var(--wd-ink)` sits on :root, so it computes to the
+     light value once and every descendant inherits that computed result —
+     overriding `--wd-ink` further down the tree arrives too late to change
+     it. Re-declaring the name inside this block is what makes it resolve
+     against the dark values above. Miss this and headings render near-black
+     on a near-black page, which is exactly what happened first time. */
+  --color-ink: var(--wd-ink);
+  --color-ink-2: var(--wd-ink-2);
+  --color-ink-3: var(--wd-ink-3);
+  --color-charcoal: var(--wd-ink);
+  --color-secondary-text: var(--wd-ink-2);
+  --color-stone: var(--wd-ink-2);
+  --color-stone-mid: var(--wd-ink-3);
+
+  --color-line: var(--wd-line);
+  --color-line-2: var(--wd-line-2);
+  --color-border: var(--wd-line);
+
+  --color-ivory: var(--wd-cream);
+  --color-ivory-2: var(--wd-cream-2);
+  --color-ivory-3: var(--wd-cream-3);
+
+  /* `forest` was the old primary dark, used for headings and body copy on
+     light grounds. On a dark ground a dark heading is an invisible heading. */
+  --color-forest: var(--wd-on-dark);
+  --color-forest-mid: var(--wd-on-dark-2);
+  --color-sage: var(--wd-on-dark-2);
+  --color-sage-pale: var(--wd-purple-dim);
+  --color-primary-soft: var(--wd-purple-dim);
+
+  --color-gold: var(--wd-purple);
+  --color-info: var(--wd-purple);
+
+  background-color: var(--wd-cream);
+  color: var(--wd-ink);
+}
+
+/* The page ground behind everything, so an overscroll bounce on a phone
+   shows the dark surface rather than a flash of cream. */
+html[data-wd-theme="dark"]:has(.wd-night) body {
+  background: #0B0814;
+}
+
+/* Tells the browser which way round things are, so native scrollbars, form
+   controls and autofill styling follow the page instead of fighting it. */
+html[data-wd-theme="dark"]:has(.wd-night) {
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -145,6 +254,7 @@
   --color-cream: var(--wd-cream);
   --color-cream-2: var(--wd-cream-2);
   --color-cream-3: var(--wd-cream-3);
+  --color-card: var(--wd-card);
   --color-coral: var(--wd-coral);
   --color-coral-deep: var(--wd-coral-deep);
   --color-coral-soft: var(--wd-coral-soft);

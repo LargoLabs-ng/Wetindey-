@@ -7,6 +7,7 @@ import { CheckCircle, XCircle, Clock, QrCode } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { SUPPORT_EMAIL } from '@/lib/app-url';
 import { WordMark } from '@/components/wordmark';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 const QRCodeDisplay = dynamic(
   () => import('@/components/qr-code-display').then((mod) => mod.QRCodeDisplay),
@@ -83,20 +84,19 @@ export default function PaymentCallbackClient() {
   }, [reference]);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--color-ivory)' }}>
+    <div className="wd-night min-h-screen" style={{ backgroundColor: 'var(--color-ivory)' }}>
       <header className="border-b" style={{ borderColor: 'var(--color-stone-mid)' }}>
-        <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2">
-            <WordMark />
-            <span className="font-bold" style={{ color: 'var(--color-forest)' }}>
-              Ticket Buddy
-            </span>
-          </Link>
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4 sm:px-6">
+          {/* The wordmark already says the name; the old logo had a text
+              label beside it and swapping the image left the label behind,
+              so the header read "Wetin Dey? Ticket Buddy". */}
+          <WordMark />
+          <ThemeToggle />
         </div>
       </header>
 
       <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6">
-        <div className="rounded-lg border p-8 text-center" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'white' }}>
+        <div className="rounded-lg border p-8 text-center" style={{ borderColor: 'var(--color-stone-mid)', backgroundColor: 'var(--wd-card)' }}>
           {paymentStatus.status === 'success' && (
             <CheckCircle className="mx-auto h-16 w-16" style={{ color: 'var(--color-sage)' }} />
           )}
@@ -124,11 +124,14 @@ export default function PaymentCallbackClient() {
                 Your Tickets
               </h2>
 
-              <div className="grid gap-8 sm:grid-cols-2">
+              {/* Flex rather than a grid: a two-column grid parks a lone
+                  ticket in the left column with dead space beside it. Wrapping
+                  flex items centre themselves whatever the count. */}
+              <div className="flex flex-wrap justify-center gap-8">
                 {paymentStatus.tickets.map((ticket, index) => (
                   <div
                     key={ticket.id}
-                    className="rounded-lg border p-6"
+                    className="w-full max-w-sm rounded-lg border p-6 text-left"
                     style={{ borderColor: 'var(--color-stone-mid)' }}
                   >
                     <div className="flex items-start justify-between mb-4">
@@ -177,8 +180,11 @@ export default function PaymentCallbackClient() {
           <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:justify-center">
             <Link
               href="/events"
-              className="rounded px-6 py-3 font-semibold transition-opacity text-white"
-              style={{ backgroundColor: 'var(--color-forest)' }}
+              // `--color-forest` is the old dark primary, and on a dark page
+              // it resolves to a LIGHT colour — white text on it disappears.
+              // The action colour is purple here, as everywhere else.
+              className="rounded-xl px-6 py-3 font-semibold text-white transition-opacity"
+              style={{ backgroundColor: 'var(--color-purple)' }}
             >
               Browse More Events
             </Link>

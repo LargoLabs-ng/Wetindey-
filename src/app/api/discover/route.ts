@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { events, ticketTypes } from "@/db/schema";
+import { events, ticketTypes, tickets } from "@/db/schema";
 import { availableQuantity } from "@/lib/inventory";
 
 /**
@@ -31,6 +31,12 @@ export type DiscoverCard = {
   soldOut: boolean;
   ticketsLeft: number;
   createdAt: string;
+  /**
+   * How many people actually hold a ticket. Counted from issued tickets, so
+   * it is a fact rather than a vanity number — cards decide for themselves
+   * whether a given count is worth showing.
+   */
+  going: number;
 };
 
 export async function GET() {
@@ -45,6 +51,21 @@ export async function GET() {
   for (const t of tiers) {
     byEvent.set(t.eventId, [...(byEvent.get(t.eventId) ?? []), t]);
   }
+
+  // One grouped count for the whole listing rather than a query per card.
+  // "valid" is a ticket that has been paid for; "checked_in" is one already
+  // used at the door. Both are people who came. Cancelled and refunded
+  // tickets are not, and pending ones are somebody mid-checkout.
+  const attending = await db
+    .select({
+      eventId: tickets.eventId,
+      going: sql<number>`count(*)::int`,
+    })
+    .from(tickets)
+    .where(inArray(tickets.status, ["valid", "checked_in"]))
+    .groupBy(tickets.eventId);
+
+  const goingByEvent = new Map(attending.map((row) => [row.eventId, row.going]));
 
   const now = Date.now();
 
@@ -76,6 +97,7 @@ export async function GET() {
         soldOut: mine.length > 0 && left === 0,
         ticketsLeft: left,
         createdAt: new Date(e.createdAt).toISOString(),
+        going: goingByEvent.get(e.id) ?? 0,
       };
     });
 

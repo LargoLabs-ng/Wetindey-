@@ -75,14 +75,35 @@ export async function POST(request: NextRequest) {
     // Mark as checked in
     const now = new Date();
 
-    await db
+    // Claim the ticket with the write itself rather than trusting the read
+    // above. Two phones scanning the same QR in the same second both saw
+    // 'valid' and both admitted the holder; Postgres locks the row for an
+    // UPDATE, so only one of them can match `status = 'valid'` and the loser
+    // gets zero rows back.
+    const claimed = await db
       .update(tickets)
       .set({
         status: 'checked_in',
         checkedInAt: now,
         checkedInBy: access.userId,
       })
-      .where(eq(tickets.id, ticketId));
+      .where(and(eq(tickets.id, ticketId), eq(tickets.status, 'valid')))
+      .returning({ id: tickets.id });
+
+    if (claimed.length === 0) {
+      const existing = await db.query.checkIns.findFirst({
+        where: eq(checkIns.ticketId, ticket.id),
+        orderBy: (checkIns, { desc }) => [desc(checkIns.checkedInAt)],
+      });
+      return NextResponse.json({
+        status: 'already_checked_in',
+        message: existing?.checkedInAt
+          ? `Already checked in at ${new Date(existing.checkedInAt).toLocaleTimeString()}`
+          : 'Already checked in a moment ago',
+        attendeeName: ticket.attendeeName,
+        checkedInAt: existing?.checkedInAt,
+      });
+    }
 
     // Create check-in record.
     // checked_in_by is a uuid FK to users.id — this previously wrote

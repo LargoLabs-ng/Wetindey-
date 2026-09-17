@@ -4,6 +4,7 @@ import { quoteOrder } from "@/lib/fees";
 import { db } from '@/db';
 import { events, orders, tickets, payments, ticketTypes } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { getSessionUserId } from '@/lib/authz';
 import {
   availableQuantity,
   releaseExpiredReservations,
@@ -101,7 +102,12 @@ export async function POST(request: NextRequest) {
       .insert(orders)
       .values({
         eventId,
-        buyerId: null,
+        // Link the order to the account when there is one. Guest checkout
+        // stays guest checkout — that is the point of it — but a signed-in
+        // student's purchase needs to be findable in My Events later, and
+        // matching on email alone would let anyone see another person's
+        // tickets by signing up with their address.
+        buyerId: await getSessionUserId(),
         email: buyerEmail,
         phone: buyerPhone,
         subtotal: subtotal.toString(),

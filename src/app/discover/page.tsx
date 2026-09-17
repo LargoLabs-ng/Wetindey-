@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { WordMark } from "@/components/wordmark";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { EventCardItem, FeaturedCard, type CardEvent } from "@/components/event-card";
 
 type Payload = { events: CardEvent[]; categories: { name: string; count: number }[] };
@@ -85,14 +86,15 @@ export default function DiscoverPage() {
     `whitespace-nowrap rounded-full border px-3.5 py-1.5 text-sm font-semibold transition-colors ${
       active
         ? "border-purple bg-purple text-white"
-        : "border-line bg-white text-ink-2 hover:border-ink-3"
+        : "border-line bg-card text-ink-2 hover:border-ink-3"
     }`;
 
   return (
-    <main className="min-h-screen bg-cream">
+    <main className="wd-night min-h-screen bg-cream">
       <header className="border-b border-line bg-cream">
-        <div className="mx-auto max-w-5xl px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <WordMark />
+          <ThemeToggle />
         </div>
       </header>
 
@@ -112,7 +114,7 @@ export default function DiscoverPage() {
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search events, venues, departments…"
             aria-label="Search events"
-            className="w-full rounded-xl border border-line bg-white py-3 pl-10 pr-3 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
+            className="w-full rounded-xl border border-line bg-card py-3 pl-10 pr-3 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
           />
         </div>
 
@@ -148,7 +150,7 @@ export default function DiscoverPage() {
         {loading ? (
           <p className="mt-10 text-ink-3">Loading…</p>
         ) : results.length === 0 ? (
-          <div className="mt-12 rounded-2xl border border-line bg-white p-8 text-center">
+          <div className="mt-12 rounded-2xl border border-line bg-card p-8 text-center">
             <p className="text-lg font-bold text-ink">
               {filtering ? "Nothing match that search." : "Nothing dey here yet."}
             </p>

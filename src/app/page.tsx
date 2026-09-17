@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { WordMark } from "@/components/wordmark";
-import { EventRail, FeaturedCard, type CardEvent } from "@/components/event-card";
+import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  EventRail,
+  EventSpotlight,
+  type CardEvent,
+} from "@/components/event-card";
 
 /**
  * The front door.
@@ -28,23 +33,54 @@ export default function HomePage() {
       .catch(() => setEvents([]));
   }, []);
 
+  /**
+   * Each event appears in exactly one place on this page.
+   *
+   * Every rail used to filter the full list independently, so with a handful
+   * of events the same three cards showed up under "Happening soon", "Just
+   * dropped" and "Free entry" one after another. Repetition is how a page
+   * announces that it is empty. `take` hands each section only what no
+   * earlier section has already used, and a section that comes up empty
+   * renders nothing at all.
+   */
+  const all = events ?? [];
+  const spent = new Set<string>();
+  const take = (
+    pick: (e: CardEvent) => boolean,
+    limit = 8,
+    sort?: (a: CardEvent, b: CardEvent) => number
+  ) => {
+    const chosen = all
+      .filter((e) => !spent.has(e.id) && pick(e))
+      .sort(sort ?? (() => 0))
+      .slice(0, limit);
+    chosen.forEach((e) => spent.add(e.id));
+    return chosen;
+  };
+
+  // Order matters here: each section takes from what is left, so the
+  // narrowest, most interesting cuts run first and the catch-all runs last.
   const now = Date.now();
-  const soon = (events ?? []).filter(
+  const spotlight = take(() => true, 3);
+  const soon = take(
     (e) => new Date(e.startDatetime).getTime() - now < 14 * 86400000
   );
-  const justDropped = [...(events ?? [])]
-    .sort((a, b) => ((a.createdAt ?? "") < (b.createdAt ?? "") ? 1 : -1))
-    .slice(0, 8);
-  const free = (events ?? []).filter((e) => e.isFree);
-  const lead = (events ?? [])[0];
+  const justDropped = take(
+    (e) => !!e.createdAt && now - new Date(e.createdAt).getTime() < 14 * 86400000,
+    8,
+    (a, b) => ((a.createdAt ?? "") < (b.createdAt ?? "") ? 1 : -1)
+  );
+  const free = take((e) => e.isFree);
+  const rest = take(() => true, 12);
 
   return (
-    <div className="min-h-screen bg-cream">
+    <div className="wd-night min-h-screen bg-cream">
       {/* ── Nav ──────────────────────────────────────────────────────── */}
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <WordMark />
           <nav className="flex items-center gap-2">
+            <ThemeToggle className="mr-1" />
             <Link
               href="/login"
               className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
@@ -124,7 +160,7 @@ export default function HomePage() {
         {events === null ? (
           <p className="pt-12 text-ink-3">Loading what&apos;s on…</p>
         ) : events.length === 0 ? (
-          <div className="mt-12 rounded-2xl border border-line bg-white p-10 text-center">
+          <div className="mt-12 rounded-2xl border border-line bg-card p-10 text-center">
             <p className="text-xl font-extrabold text-ink">Nothing dey here yet.</p>
             <p className="mx-auto mt-2 max-w-sm text-ink-2">
               No events posted yet. If you&apos;re running something, you can be
@@ -139,14 +175,14 @@ export default function HomePage() {
           </div>
         ) : (
           <>
-            {lead && (
-              <section className="pt-12">
-                <h2 className="mb-4 text-lg font-extrabold tracking-[-0.02em] text-ink">
-                  Next one up
-                </h2>
-                <FeaturedCard e={lead} />
-              </section>
-            )}
+            <div>
+              <EventSpotlight
+                title="Wetin dey next"
+                note="Closest to happening"
+                events={spotlight}
+                href="/discover"
+              />
+            </div>
 
             <EventRail
               title="Happening soon"
@@ -154,18 +190,24 @@ export default function HomePage() {
               events={soon}
               href="/discover"
             />
-            <EventRail title="Just dropped" events={justDropped} href="/discover" />
+            <EventRail
+              title="Just dropped"
+              note="Posted in the last fortnight"
+              events={justDropped}
+              href="/discover"
+            />
             <EventRail
               title="Free entry"
               note="No ticket money required"
               events={free}
               href="/discover"
             />
+            <EventRail title="Also on" events={rest} href="/discover" />
 
-            <div className="mt-12 text-center">
+            <div className="mt-14 text-center">
               <Link
                 href="/discover"
-                className="inline-block rounded-xl border border-line bg-white px-6 py-3 font-semibold text-ink hover:border-ink-3"
+                className="inline-block rounded-xl border border-line bg-card px-6 py-3 font-semibold text-ink hover:border-ink-3"
               >
                 See everything
               </Link>
@@ -175,7 +217,7 @@ export default function HomePage() {
       </div>
 
       {/* ── For organisers, kept to its proper size ───────────────────── */}
-      <section className="border-y border-line bg-white">
+      <section className="border-y border-line bg-card">
         <div className="mx-auto flex max-w-5xl flex-col items-start justify-between gap-6 px-4 py-12 sm:flex-row sm:items-center sm:px-6">
           <div>
             <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink">

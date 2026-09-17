@@ -4,6 +4,7 @@ import { Providers } from "./providers";
 import "./globals.css";
 import { appUrl } from "@/lib/app-url";
 import { BRAND_NAME, BRAND_TAGLINE } from "@/lib/brand";
+import { THEME_BOOTSTRAP } from "@/lib/theme";
 
 // Wetin Dey brand typeface. Loaded from Google rather than bundled locally
 // so the full weight range is available — the design leans on 800 for
@@ -35,7 +36,28 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${jakarta.variable} h-full antialiased`}>
+    // suppressHydrationWarning is required, not cosmetic. The script below
+    // adds data-wd-theme to this element before React hydrates, so the
+    // server's markup and the live DOM genuinely differ by that attribute.
+    // Without this, React logs a hydration mismatch on every dark-mode page
+    // load. It suppresses the warning for THIS element's attributes only —
+    // mismatches anywhere else still surface normally.
+    <html
+      lang="en"
+      className={`${jakarta.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
+      <head>
+        {/* Applies the reader's saved light/dark choice before the first
+            paint. In <head> and synchronous on purpose: done from a React
+            effect instead, the page would paint light and snap to dark a
+            frame later. The string is a constant we wrote, never user
+            input — nothing from the reader reaches it. */}
+        <script
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }}
+        />
+      </head>
       <body className="min-h-full flex flex-col font-sans">
         <Providers>{children}</Providers>
       </body>

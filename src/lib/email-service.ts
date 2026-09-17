@@ -7,11 +7,45 @@ import { BRAND_NAME } from './brand';
  * Supports multiple providers: Resend, SendGrid, SMTP
  */
 
+/**
+ * An image or file carried with the message rather than linked from it.
+ *
+ * `contentId` is what makes an image render *inside* the body: the HTML
+ * points at `cid:<contentId>` and the mail client resolves it against the
+ * attached part. Data URIs (`<img src="data:image/png;base64,...">`) are
+ * stripped by Gmail, Outlook and essentially every other major client, so
+ * an inline attachment is the only reliable way to show a QR code in an
+ * email.
+ */
+export interface EmailAttachment {
+  filename: string;
+  /** Raw base64 — no `data:` prefix. */
+  base64: string;
+  contentType: string;
+  /** Set to render inline via `cid:`; omit for a plain attachment. */
+  contentId?: string;
+}
+
 interface EmailOptions {
   to: string;
   subject: string;
   html: string;
   replyTo?: string;
+  attachments?: EmailAttachment[];
+}
+
+/**
+ * Splits `data:image/png;base64,AAAA` into its parts.
+ * Returns null for anything that isn't a base64 data URI.
+ */
+export function parseDataUrl(
+  dataUrl: string
+): { contentType: string; base64: string } | null {
+  // [\s\S] rather than the `s` (dotAll) flag, which TypeScript rejects
+  // below an es2018 target — and Next's default tsconfig targets es2017.
+  const match = /^data:([^;,]+);base64,([\s\S]+)$/.exec(dataUrl.trim());
+  if (!match) return null;
+  return { contentType: match[1], base64: match[2] };
 }
 
 // Initialize email transporter
@@ -88,6 +122,19 @@ async function sendViaResend(
       subject: options.subject,
       html: options.html,
       ...(options.replyTo ? { reply_to: options.replyTo } : {}),
+      // Resend's REST API is snake_case: content_id, not contentId (that
+      // spelling belongs to their Node SDK). Getting this wrong silently
+      // downgrades an inline image to a plain attachment.
+      ...(options.attachments?.length
+        ? {
+            attachments: options.attachments.map((a) => ({
+              filename: a.filename,
+              content: a.base64,
+              content_type: a.contentType,
+              ...(a.contentId ? { content_id: a.contentId } : {}),
+            })),
+          }
+        : {}),
     }),
   });
 
@@ -122,6 +169,18 @@ export async function sendEmailWithResult(
       subject: options.subject,
       html: options.html,
       replyTo: options.replyTo || from,
+      ...(options.attachments?.length
+        ? {
+            attachments: options.attachments.map((a) => ({
+              filename: a.filename,
+              content: Buffer.from(a.base64, "base64"),
+              contentType: a.contentType,
+              ...(a.contentId
+                ? { cid: a.contentId, contentDisposition: "inline" as const }
+                : {}),
+            })),
+          }
+        : {}),
     });
     return { ok: true };
   } catch (error) {
@@ -158,24 +217,45 @@ export async function sendOrderConfirmation(data: {
 }): Promise<boolean> {
   const subject = `Your tickets for ${data.eventTitle} are ready! 🎉`;
 
+  // Every QR travels as an inline attachment referenced by `cid:`. It used
+  // to be inlined as a base64 data URI, which Gmail strips — the buyer got
+  // a broken-image placeholder where their ticket should have been. If the
+  // QR somehow isn't a data URI we fall back to using it as a src directly
+  // rather than dropping the image entirely.
+  const attachments: EmailAttachment[] = [];
+
   const ticketsHtml = data.tickets
-    .map(
-      (ticket) => `
+    .map((ticket, index) => {
+      const parsed = parseDataUrl(ticket.qrCode);
+      let imgSrc = ticket.qrCode;
+
+      if (parsed) {
+        const contentId = `qr-${ticket.id}`;
+        attachments.push({
+          filename: `ticket-${index + 1}-qr.png`,
+          base64: parsed.base64,
+          contentType: parsed.contentType,
+          contentId,
+        });
+        imgSrc = `cid:${contentId}`;
+      }
+
+      return `
     <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-bottom: 16px; background-color: #ffffff;">
       <p style="color: #6b7280; font-size: 12px; margin: 0 0 8px 0;">Ticket for</p>
       <h3 style="color: #12372a; margin: 0 0 12px 0; font-size: 18px;">${ticket.attendeeName}</h3>
       <p style="color: #6b7280; font-size: 14px; margin: 0 0 8px 0;">${ticket.ticketType}</p>
 
       <div style="background-color: #f3f4f6; padding: 16px; border-radius: 6px; text-align: center; margin: 16px 0;">
-        <img src="${ticket.qrCode}" alt="QR Code" style="width: 200px; height: 200px; margin: 0 auto; display: block;" />
+        <img src="${imgSrc}" alt="QR code for ${ticket.attendeeName}" width="200" height="200" style="width: 200px; height: 200px; margin: 0 auto; display: block;" />
       </div>
 
       <p style="color: #6b7280; font-size: 12px; margin: 0; text-align: center;">
         Show this QR code at the event entrance
       </p>
     </div>
-  `
-    )
+  `;
+    })
     .join('');
 
   const html = `
@@ -230,6 +310,9 @@ export async function sendOrderConfirmation(data: {
                 2. Show your QR code at the event entrance<br>
                 3. Our staff will scan it to verify you're all set
               </p>
+              <p style="color: #075985; font-size: 12px; margin: 8px 0 0 0;">
+                Can't see the code above? Each one is also attached to this email as a PNG.
+              </p>
             </div>
 
             <!-- Support -->
@@ -257,6 +340,7 @@ export async function sendOrderConfirmation(data: {
     to: data.attendeeEmail,
     subject,
     html,
+    attachments,
   });
 }
 
