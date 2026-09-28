@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { events, ticketTypes, tickets } from "@/db/schema";
+import { events, ticketTypes, tickets, universities, users } from "@/db/schema";
 import { availableQuantity } from "@/lib/inventory";
+import { getSessionUserId } from "@/lib/authz";
 
 /**
  * GET /api/discover — everything the home and discover surfaces need.
@@ -26,11 +27,17 @@ export type DiscoverCard = {
   city: string | null;
   startDatetime: string;
   endDatetime: string;
+  /** Provisional — the card prints "Date TBA" instead of the date. */
+  dateTbd: boolean;
+  venueTbd: boolean;
   minPrice: number | null;
   isFree: boolean;
   soldOut: boolean;
   ticketsLeft: number;
   createdAt: string;
+  /** Campus this belongs to. Null means public — everyone's, not nobody's. */
+  universityId: string | null;
+  campusId: string | null;
   /**
    * How many people actually hold a ticket. Counted from issued tickets, so
    * it is a fact rather than a vanity number — cards decide for themselves
@@ -56,12 +63,17 @@ export async function GET() {
   // "valid" is a ticket that has been paid for; "checked_in" is one already
   // used at the door. Both are people who came. Cancelled and refunded
   // tickets are not, and pending ones are somebody mid-checkout.
+  // Sums `admits` rather than counting rows: one table ticket is six people
+  // through the door, and counting it as one would make a sold-out gala look
+  // like nobody was coming. Ordinary tiers have admits = 1, so this is the
+  // same number it always was for them.
   const attending = await db
     .select({
       eventId: tickets.eventId,
-      going: sql<number>`count(*)::int`,
+      going: sql<number>`coalesce(sum(coalesce(${ticketTypes.admits}, 1)), 0)::int`,
     })
     .from(tickets)
+    .leftJoin(ticketTypes, eq(tickets.ticketTypeId, ticketTypes.id))
     .where(inArray(tickets.status, ["valid", "checked_in"]))
     .groupBy(tickets.eventId);
 
@@ -89,6 +101,8 @@ export async function GET() {
         city: e.city,
         startDatetime: new Date(e.startDatetime).toISOString(),
         endDatetime: new Date(e.endDatetime).toISOString(),
+        dateTbd: e.dateTbd,
+        venueTbd: e.venueTbd,
         minPrice: prices.length ? Math.min(...prices) : null,
         isFree: prices.length > 0 && Math.min(...prices) === 0,
         // No tiers at all is not "sold out", it is "nothing on sale yet" —
@@ -98,6 +112,8 @@ export async function GET() {
         ticketsLeft: left,
         createdAt: new Date(e.createdAt).toISOString(),
         going: goingByEvent.get(e.id) ?? 0,
+        universityId: e.universityId,
+        campusId: e.campusId,
       };
     });
 
@@ -112,5 +128,38 @@ export async function GET() {
     .sort((a, b) => b[1] - a[1])
     .map(([name, count]) => ({ name, count }));
 
-  return NextResponse.json({ events: cards, categories, total: cards.length });
+  // Who is asking, so the home page can lead with their own campus.
+  //
+  // Returned alongside the listing rather than fetched separately: the rail
+  // and the events it filters have to come from one response, or the page
+  // renders "Around UNICROSS" a beat before it knows which events qualify.
+  // A signed-out reader gets null and simply sees no campus rail.
+  const userId = await getSessionUserId();
+  let viewer: { universityId: string; universityName: string; campusId: string | null } | null =
+    null;
+
+  if (userId) {
+    const me = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { universityId: true, campusId: true },
+    });
+    if (me?.universityId) {
+      const uni = await db.query.universities.findFirst({
+        where: eq(universities.id, me.universityId),
+        columns: { shortName: true, name: true },
+      });
+      viewer = {
+        universityId: me.universityId,
+        universityName: uni?.shortName || uni?.name || "your campus",
+        campusId: me.campusId ?? null,
+      };
+    }
+  }
+
+  return NextResponse.json({
+    events: cards,
+    categories,
+    total: cards.length,
+    viewer,
+  });
 }

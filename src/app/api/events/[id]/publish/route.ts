@@ -54,7 +54,14 @@ export async function POST(request: Request, context: RouteContext) {
     // (Ticket types are intentionally not required here — an organizer
     // may publish event details first and add tickets moments later.)
     const missing: string[] = [];
-    if (!event.venueName) missing.push("a venue");
+    // A venue that is openly "to be announced" clears this bar; a venue the
+    // organiser simply left blank does not. That distinction is the point of
+    // the flag — buyers of a TBA event know what they bought and are emailed
+    // when it firms up, whereas a blank field tells them nothing and
+    // promises them nothing.
+    if (!event.venueName && !event.venueTbd) {
+      missing.push("a venue (or the “not confirmed yet” switch)");
+    }
     if (!event.city) missing.push("a city");
 
     // An event with no ticket types publishes a page with nothing on it —

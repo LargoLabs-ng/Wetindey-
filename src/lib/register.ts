@@ -25,6 +25,54 @@ const slugify = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 /**
+ * "My department isn't listed."
+ *
+ * Saved as `pending`: it belongs to the person who typed it straight away,
+ * and stays out of everyone else's picker until someone reviews it — so one
+ * student's typo cannot become a permanent option for the whole university.
+ *
+ * Exported because signup is no longer the only place this happens. A
+ * student who skipped the question at signup and fills it in on their
+ * profile later has to land in exactly the same state, and the way two code
+ * paths drift apart is by each implementing this rule for themselves.
+ */
+export async function suggestDepartment(
+  tx: Tx,
+  input: { universityId: string; name: string; suggestedBy: string }
+): Promise<string> {
+  const slug = slugify(input.name);
+
+  // Somebody may already have suggested it, or it may exist under a name we
+  // seeded. Either way, join the existing row rather than making a second.
+  const [already] = await tx
+    .select({ id: departments.id })
+    .from(departments)
+    .where(
+      and(
+        eq(departments.universityId, input.universityId),
+        eq(departments.slug, slug)
+      )
+    )
+    .limit(1);
+
+  if (already) return already.id;
+
+  const [created] = await tx
+    .insert(departments)
+    .values({
+      universityId: input.universityId,
+      facultyId: null,
+      name: input.name,
+      slug,
+      status: "pending",
+      suggestedBy: input.suggestedBy,
+    })
+    .returning({ id: departments.id });
+
+  return created.id;
+}
+
+/**
  * Everything signup writes, in one place and one transaction.
  *
  * Lives here rather than inside the route handler so it can be exercised
@@ -47,38 +95,13 @@ export async function createAccount(tx: Tx, input: NewAccount) {
     })
     .returning();
 
-  // "My department isn't listed." Saved as pending: theirs straight away,
-  // absent from everyone else's picker until reviewed, so one typo cannot
-  // become a permanent option for the whole university.
   let suggestedDepartmentId: string | null = null;
   if (!input.departmentId && input.newDepartmentName && input.universityId) {
-    const slug = slugify(input.newDepartmentName);
-    const [already] = await tx
-      .select({ id: departments.id })
-      .from(departments)
-      .where(
-        and(
-          eq(departments.universityId, input.universityId),
-          eq(departments.slug, slug)
-        )
-      )
-      .limit(1);
-
-    suggestedDepartmentId =
-      already?.id ??
-      (
-        await tx
-          .insert(departments)
-          .values({
-            universityId: input.universityId,
-            facultyId: null,
-            name: input.newDepartmentName,
-            slug,
-            status: "pending",
-            suggestedBy: user.id,
-          })
-          .returning({ id: departments.id })
-      )[0].id;
+    suggestedDepartmentId = await suggestDepartment(tx, {
+      universityId: input.universityId,
+      name: input.newDepartmentName,
+      suggestedBy: user.id,
+    });
 
     await tx
       .update(users)

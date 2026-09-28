@@ -15,6 +15,15 @@ export type Tier = {
   status: string;
   salesStart: string | null;
   salesEnd: string | null;
+  /**
+   * How many people one ticket lets through the door. 1 is an ordinary
+   * ticket; higher makes this a table, a couple's entry, a block booking.
+   *
+   * quantityTotal still counts TICKETS. With admits 6, a quantityTotal of 20
+   * is twenty tables and one hundred and twenty seats — the form shows that
+   * sum, because getting it wrong is how a hall ends up oversold sixfold.
+   */
+  admits?: number;
 };
 
 const naira = (value: string | number) =>
@@ -59,6 +68,7 @@ type FormValues = {
   description: string;
   salesStart: string;
   salesEnd: string;
+  admits: string;
 };
 
 const emptyForm: FormValues = {
@@ -69,6 +79,7 @@ const emptyForm: FormValues = {
   description: "",
   salesStart: "",
   salesEnd: "",
+  admits: "1",
 };
 
 function TierForm({
@@ -90,9 +101,17 @@ function TierForm({
   const [showExtras, setShowExtras] = useState(
     Boolean(initial.description || initial.salesStart || initial.salesEnd)
   );
+  // Open when editing a tier that already is one — an organiser coming back
+  // to their table tier should see it as a table tier, not have to rediscover
+  // the checkbox.
+  const [isGroup, setIsGroup] = useState(Number(initial.admits || 1) > 1);
 
   const set = <K extends keyof FormValues>(key: K, value: FormValues[K]) =>
     setValues((v) => ({ ...v, [key]: value }));
+
+  const admits = Math.max(1, Number(values.admits) || 1);
+  const rows = Math.max(0, Number(values.quantityTotal) || 0);
+  const seats = rows * admits;
 
   return (
     <form
@@ -129,7 +148,13 @@ function TierForm({
         </div>
 
         <div>
-          <label className={labelClass}>Quantity</label>
+          {/* The unit changes when the ticket does. "Quantity: 20" on a tier
+              that seats six people each is a number that means nothing on its
+              own, and the seat total below is the figure that has to match
+              the hall. */}
+          <label className={labelClass}>
+            {isGroup ? "Tables available" : "Quantity"}
+          </label>
           <input
             required
             type="number"
@@ -137,9 +162,14 @@ function TierForm({
             step="1"
             value={values.quantityTotal}
             onChange={(e) => set("quantityTotal", e.target.value)}
-            placeholder="e.g. 100"
+            placeholder={isGroup ? "e.g. 20" : "e.g. 100"}
             className={fieldClass}
           />
+          {isGroup && seats > 0 && (
+            <p className="mt-1 text-xs font-semibold text-gold">
+              {seats.toLocaleString("en-NG")} seats in total
+            </p>
+          )}
         </div>
 
         <div>
@@ -155,6 +185,44 @@ function TierForm({
             className={fieldClass}
           />
         </div>
+      </div>
+
+      <div className="rounded-lg border border-line-dark bg-surface/40 p-3">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-on-dark-2">
+          <input
+            type="checkbox"
+            checked={isGroup}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setIsGroup(on);
+              // Back to 1 when switched off, so a tier can't be left claiming
+              // to seat four people with the checkbox unticked.
+              set("admits", on ? (Number(values.admits) > 1 ? values.admits : "2") : "1");
+            }}
+            className="accent-[#6C3CFF]"
+          />
+          One ticket admits more than one person
+        </label>
+
+        {isGroup && (
+          <div className="mt-3 sm:w-48">
+            <label className={labelClass}>People per ticket</label>
+            <input
+              required
+              type="number"
+              min="2"
+              max="50"
+              step="1"
+              value={values.admits}
+              onChange={(e) => set("admits", e.target.value)}
+              className={fieldClass}
+            />
+            <p className="mt-1 text-xs text-on-dark-3">
+              A table of six, a couple&apos;s entry, a hostel block. One scan
+              at the door lets all {admits} in.
+            </p>
+          </div>
+        )}
       </div>
 
       <button
@@ -253,6 +321,7 @@ export function TicketTiers({
       price: Number(values.price),
       quantityTotal: Number(values.quantityTotal),
       maxPerOrder: Number(values.maxPerOrder),
+      admits: Math.max(1, Number(values.admits) || 1),
       description: values.description.trim() || undefined,
       salesStart: values.salesStart ? new Date(values.salesStart).toISOString() : null,
       salesEnd: values.salesEnd ? new Date(values.salesEnd).toISOString() : null,
@@ -368,6 +437,7 @@ export function TicketTiers({
                 description: tier.description ?? "",
                 salesStart: toLocalInput(tier.salesStart),
                 salesEnd: toLocalInput(tier.salesEnd),
+                admits: String(tier.admits ?? 1),
               }}
               submitLabel="Save changes"
               onSubmit={(values) => update(tier.id, values)}
@@ -404,11 +474,30 @@ export function TicketTiers({
                     </span>
                     {" · "}
                     <span className="tabular-nums">
-                      {tier.quantitySold} of {tier.quantityTotal} sold
+                      {tier.quantitySold} of {tier.quantityTotal}{" "}
+                      {(tier.admits ?? 1) > 1 ? "tables" : ""} sold
                     </span>
                     {" · "}
                     max {tier.maxPerOrder} per order
                   </p>
+                  {(tier.admits ?? 1) > 1 && (
+                    // Spelled out rather than left as "admits 6", because the
+                    // number that has to match the hall is the seat count,
+                    // and it is the one nobody works out in their head.
+                    <p className="mt-1 text-sm text-on-dark-2">
+                      Admits {tier.admits} each ·{" "}
+                      <span className="tabular-nums text-gold">
+                        {(
+                          tier.quantitySold * (tier.admits ?? 1)
+                        ).toLocaleString("en-NG")}{" "}
+                        of{" "}
+                        {(
+                          tier.quantityTotal * (tier.admits ?? 1)
+                        ).toLocaleString("en-NG")}{" "}
+                        seats
+                      </span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex shrink-0 items-center gap-1">

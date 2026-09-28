@@ -18,9 +18,6 @@ export async function GET(
       where: eq(events.slug, slug),
       with: {
         ticketTypes: true,
-        // The event page names who is running it — "published by the Faculty
-        // of Law" is a large part of whether a student trusts a link.
-        organization: true,
       },
     });
 
@@ -38,7 +35,23 @@ export async function GET(
       }
     }
 
-    return NextResponse.json(event);
+    // This endpoint hands the event row to the open internet, so anything
+    // private comes off HERE rather than being merely absent from whichever
+    // page happens to render it today.
+    //
+    // The after-purchase fields are why this matters. Their one promise is
+    // that only somebody who paid ever sees them, and a WhatsApp invite
+    // sitting in a JSON response anyone can curl breaks that promise while
+    // the page above it still looks perfectly correct.
+    //
+    // Destructured rather than hand-picked into an allowlist, so adding an
+    // ordinary column to `events` keeps working without a change here — but
+    // a new PRIVATE column has to be added to this line.
+    const { afterPurchaseNote, afterPurchaseUrl, ...publicEvent } = event;
+    void afterPurchaseNote;
+    void afterPurchaseUrl;
+
+    return NextResponse.json(publicEvent);
   } catch (error) {
     console.error('Error fetching event:', error);
     return NextResponse.json(

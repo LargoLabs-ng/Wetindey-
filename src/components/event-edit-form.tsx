@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { CoverImageField } from "@/components/cover-image-field";
 
@@ -18,6 +19,9 @@ export type EditableEvent = {
   startDatetime: string;
   endDatetime: string;
   status: string;
+  /** The date and venue are stored; these say not to show them. */
+  dateTbd: boolean;
+  venueTbd: boolean;
 };
 
 /** datetime-local wants "YYYY-MM-DDTHH:mm" in local time. */
@@ -47,8 +51,20 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
     endDatetime: toLocalInput(event.endDatetime),
   });
   const [coverImage, setCoverImage] = useState<string | null>(event.coverImage);
+  const [dateTbd, setDateTbd] = useState(event.dateTbd);
+  const [venueTbd, setVenueTbd] = useState(event.venueTbd);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * How many ticket-holders were emailed about this change.
+   *
+   * Held rather than redirected past, because an organiser who moves a venue
+   * and is bounced straight back to the dashboard has no idea whether anyone
+   * was told — and will post it to the group chat anyway, which is the exact
+   * work this feature exists to remove.
+   */
+  const [notified, setNotified] = useState<number | null>(null);
+  const [notifyFailures, setNotifyFailures] = useState(0);
 
   const set = <K extends keyof typeof form>(k: K, v: string) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -72,6 +88,8 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
           country: form.country.trim(),
           startDatetime: new Date(form.startDatetime).toISOString(),
           endDatetime: new Date(form.endDatetime).toISOString(),
+          dateTbd,
+          venueTbd,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -79,6 +97,16 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
         setError(data.error ?? "Couldn't save those changes.");
         return;
       }
+      // Only stop to say so when somebody was actually told. A quiet edit —
+      // a typo in the description, a new cover — should still behave exactly
+      // as it always did and go straight back.
+      if (typeof data.notified === "number" && data.notified > 0) {
+        setNotified(data.notified);
+        setNotifyFailures(data.notifyFailures ?? 0);
+        router.refresh();
+        return;
+      }
+
       router.push(`/dashboard/events/${event.id}`);
       router.refresh();
     } catch {
@@ -86,6 +114,41 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (notified !== null) {
+    return (
+      <div className="rounded-2xl border border-line-dark bg-surface p-6">
+        <h2 className="text-lg font-bold text-on-dark">Saved, and everyone knows</h2>
+        <p className="mt-2 text-on-dark-2">
+          {notified} {notified === 1 ? "person" : "people"} holding a ticket
+          {notified === 1 ? " was" : " were"} emailed about the change.
+        </p>
+        {notifyFailures > 0 && (
+          <p className="mt-2 text-sm text-coral">
+            {notifyFailures}{" "}
+            {notifyFailures === 1 ? "email" : "emails"} couldn&apos;t be
+            delivered. Those addresses may be wrong — worth a message in the
+            group chat as a backstop.
+          </p>
+        )}
+        <div className="mt-5 flex gap-3">
+          <Link
+            href={`/dashboard/events/${event.id}`}
+            className="rounded-lg bg-purple px-5 py-2.5 font-semibold text-white transition-colors hover:bg-purple-deep"
+          >
+            Back to event
+          </Link>
+          <button
+            type="button"
+            onClick={() => setNotified(null)}
+            className="rounded-lg border border-line-dark px-5 py-2.5 font-semibold text-on-dark-2 transition-colors hover:text-on-dark"
+          >
+            Keep editing
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -96,9 +159,10 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
           <div>
             <p className="font-semibold text-on-dark">This event is live</p>
             <p className="text-sm text-on-dark-2">
-              Changes show on the public page straight away. Anyone who already
-              bought a ticket won&apos;t be told automatically — if you move the
-              date or venue, message them yourself.
+              Changes show on the public page straight away. If you move the
+              date, the time or the venue, everyone holding a ticket is
+              emailed automatically — so nobody turns up to the wrong place,
+              and you don&apos;t have to chase them yourself.
             </p>
           </div>
         </div>
@@ -164,7 +228,17 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
               onChange={(e) => set("venueName", e.target.value)}
               placeholder="e.g. Uniuyo Auditorium"
               className={field}
+              disabled={venueTbd}
             />
+            <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-on-dark-2">
+              <input
+                type="checkbox"
+                checked={venueTbd}
+                onChange={(e) => setVenueTbd(e.target.checked)}
+                className="accent-[#6C3CFF]"
+              />
+              Venue not confirmed yet
+            </label>
           </div>
           <div>
             <label className={label}>City</label>
@@ -186,7 +260,8 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
           />
         </div>
         <p className="text-xs text-on-dark-3">
-          A venue and city are required while an event is published.
+          A city is required while an event is published, and a venue unless
+          you&apos;ve ticked that it isn&apos;t confirmed.
         </p>
       </div>
 
@@ -214,6 +289,29 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
             />
           </div>
         </div>
+
+        <label className="flex cursor-pointer items-start gap-2 text-sm text-on-dark-2">
+          <input
+            type="checkbox"
+            checked={dateTbd}
+            onChange={(e) => setDateTbd(e.target.checked)}
+            className="mt-0.5 accent-[#6C3CFF]"
+          />
+          <span>
+            Date not confirmed yet — show &ldquo;to be announced&rdquo;
+            instead
+          </span>
+        </label>
+
+        {(dateTbd || venueTbd) && (
+          <p className="rounded-lg border border-purple/30 bg-purple/5 px-3 py-2 text-xs text-on-dark-2">
+            Keep your best guess in the fields anyway — nobody sees it, but it
+            decides where your event lands in{" "}
+            <span className="text-on-dark">What&apos;s on</span>. Moving a
+            provisional date emails nobody; confirming it emails everyone
+            holding a ticket.
+          </p>
+        )}
       </div>
 
       {error && (

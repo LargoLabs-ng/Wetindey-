@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { tickets, ticketTypes, orders } from "@/db/schema";
+import {
+  registrationAnswers,
+  registrationFields,
+  tickets,
+  ticketTypes,
+  orders,
+} from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
 import { can } from "@/lib/permissions";
+import { answerColumns } from "@/lib/registration";
 
 /**
  * GET /api/dashboard/attendees?eventId=...
@@ -33,12 +40,44 @@ export async function GET(request: NextRequest) {
         checkedInAt: tickets.checkedInAt,
         createdAt: tickets.createdAt,
         ticketType: ticketTypes.name,
+        orderId: tickets.orderId,
         orderCreatedAt: orders.createdAt,
       })
       .from(tickets)
       .leftJoin(ticketTypes, eq(tickets.ticketTypeId, ticketTypes.id))
       .leftJoin(orders, eq(tickets.orderId, orders.id))
       .where(eq(tickets.eventId, event.id));
+
+    // The organiser's extra questions are answered once per ORDER, so three
+    // tickets bought together carry the same answers. Fetched in one query
+    // and attached in memory rather than joined — a join here multiplies
+    // ticket rows by answer rows, and the guest list would list everybody
+    // once per question.
+    const [answerRows, fieldRows] = await Promise.all([
+      db
+        .select({
+          orderId: registrationAnswers.orderId,
+          label: registrationAnswers.label,
+          value: registrationAnswers.value,
+        })
+        .from(registrationAnswers)
+        .where(eq(registrationAnswers.eventId, event.id)),
+      db
+        .select({
+          label: registrationFields.label,
+          position: registrationFields.position,
+        })
+        .from(registrationFields)
+        .where(eq(registrationFields.eventId, event.id))
+        .orderBy(asc(registrationFields.position)),
+    ]);
+
+    const byOrder = new Map<string, { label: string; value: string }[]>();
+    for (const a of answerRows) {
+      const list = byOrder.get(a.orderId) ?? [];
+      list.push({ label: a.label, value: a.value ?? "" });
+      byOrder.set(a.orderId, list);
+    }
 
     const attendees = rows
       .map((row) => ({
@@ -50,12 +89,16 @@ export async function GET(request: NextRequest) {
         status: row.status,
         purchaseTime: (row.orderCreatedAt ?? row.createdAt).toISOString(),
         checkedInAt: row.checkedInAt ? row.checkedInAt.toISOString() : undefined,
+        answers: byOrder.get(row.orderId) ?? [],
       }))
       .sort((a, b) => b.purchaseTime.localeCompare(a.purchaseTime));
 
     return NextResponse.json({
       eventTitle: event.title,
       attendees,
+      // Column order for whoever renders this: current questions first, then
+      // any label that only survives in old answers.
+      answerColumns: answerColumns(fieldRows, answerRows),
       canRefund: can(access.role, "refund:issue"),
     });
   } catch (error) {

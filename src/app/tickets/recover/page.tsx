@@ -32,69 +32,85 @@ export default function RecoverTicketsPage() {
   }
 
   return (
-    <div className="wd-night min-h-screen bg-cream">
+    // A short page has to be told where to sit. Flowing from the top of a
+    // laptop viewport, a 450px column of form strands itself above 500px of
+    // empty background and reads as a page that failed to load rather than a
+    // page with little on it. Column layout, header pinned, main taking the
+    // remaining height and centring its card inside it.
+    <div className="wd-night flex min-h-screen flex-col bg-cream">
       <header className="border-b border-line">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4 sm:px-6">
+        {/* max-w-5xl to match the header on every other consumer page. This
+            was max-w-3xl, so the wordmark sat a different distance from the
+            edge here than on home or discover — small, but enough to make
+            the page look like it belongs to another site. */}
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <WordMark />
           <ThemeToggle />
         </div>
       </header>
 
-      <main className="mx-auto max-w-md px-4 py-12 sm:px-6">
-        <h1 className="text-2xl font-extrabold tracking-[-0.02em] text-ink">
-          Can&apos;t find your ticket?
-        </h1>
-        <p className="mt-2 text-ink-2">
-          Put in the email you used and we&apos;ll send it again — QR code and
-          all. No account needed.
-        </p>
-
-        {sent ? (
-          <div className="mt-6 rounded-2xl border border-line bg-card p-6 text-center">
-            <Mail className="mx-auto h-8 w-8 text-purple" />
-            <p className="mt-3 font-semibold text-ink">{sent}</p>
-            <p className="mt-2 text-sm text-ink-2">
-              Still nothing after a few minutes? The address might be different
-              from the one you paid with — try another.
+      <main className="flex flex-1 items-center justify-center px-4 py-12 sm:px-6">
+        <div className="w-full max-w-md">
+          <div className="rounded-2xl border border-line bg-card p-6 sm:p-8">
+            <h1 className="text-2xl font-extrabold tracking-[-0.02em] text-ink">
+              Can&apos;t find your ticket?
+            </h1>
+            <p className="mt-2 text-ink-2">
+              Put in the email you used and we&apos;ll send it again — QR code
+              and all. No account needed.
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setSent(null);
-                setEmail("");
-              }}
-              className="mt-4 text-sm font-semibold text-purple"
-            >
-              Try a different email
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={submit} className="mt-6 space-y-3">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="The email you paid with"
-              aria-label="Email address"
-              className="w-full rounded-xl border border-line bg-card px-4 py-3 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
-            />
-            <button
-              type="submit"
-              disabled={busy}
-              className="w-full rounded-xl bg-purple py-3 font-semibold text-white hover:bg-purple-deep disabled:opacity-60"
-            >
-              {busy ? "Sending…" : "Send my tickets"}
-            </button>
-          </form>
-        )}
 
-        <p className="mt-8 text-center text-sm text-ink-3">
-          Have an account?{" "}
-          <Link href="/my-events" className="font-semibold text-purple">
-            See your tickets
-          </Link>
-        </p>
+            {sent ? (
+              <div className="mt-6 text-center">
+                <Mail className="mx-auto h-8 w-8 text-purple" />
+                <p className="mt-3 font-semibold text-ink">{sent}</p>
+                <p className="mt-2 text-sm text-ink-2">
+                  Still nothing after a few minutes? The address might be
+                  different from the one you paid with — try another.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSent(null);
+                    setEmail("");
+                  }}
+                  className="mt-4 text-sm font-semibold text-purple"
+                >
+                  Try a different email
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={submit} className="mt-6 space-y-3">
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="The email you paid with"
+                  aria-label="Email address"
+                  // bg-cream, not bg-card: inside a card the field has to be
+                  // a different surface from the thing holding it, or it
+                  // reads as a line of text with a box drawn round it.
+                  className="w-full rounded-xl border border-line bg-cream px-4 py-3 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
+                />
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="w-full rounded-xl bg-purple py-3 font-semibold text-white hover:bg-purple-deep disabled:opacity-60"
+                >
+                  {busy ? "Sending…" : "Send my tickets"}
+                </button>
+              </form>
+            )}
+          </div>
+
+          <p className="mt-6 text-center text-sm text-ink-3">
+            Have an account?{" "}
+            <Link href="/my-events" className="font-semibold text-purple">
+              See your tickets
+            </Link>
+          </p>
+        </div>
       </main>
     </div>
   );

@@ -12,6 +12,14 @@ const createTicketTypeSchema = z.object({
   price: z.coerce.number().min(0),
   quantityTotal: z.coerce.number().int().min(1),
   maxPerOrder: z.coerce.number().int().min(1).max(50).optional(),
+  /**
+   * How many people one ticket admits. 1 is an ordinary ticket.
+   *
+   * Capped at 50 for the same reason maxPerOrder is: a number in the
+   * thousands here is a typo, and this one would silently multiply the
+   * event's real capacity by it.
+   */
+  admits: z.coerce.number().int().min(1).max(50).optional(),
   // .nullable() matters: z.coerce.date() would turn an explicit null into
   // new Date(null) — the 1970 epoch — which then failed the ordering check
   // below even when the organizer left both fields blank.
@@ -98,6 +106,7 @@ export async function POST(request: Request, context: RouteContext) {
       price: parsed.data.price.toFixed(2),
       quantityTotal: parsed.data.quantityTotal,
       maxPerOrder: parsed.data.maxPerOrder ?? 10,
+      admits: parsed.data.admits ?? 1,
       salesStart: parsed.data.salesStart,
       salesEnd: parsed.data.salesEnd,
     })

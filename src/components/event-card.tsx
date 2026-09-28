@@ -12,6 +12,13 @@ export type CardEvent = {
   venueName: string | null;
   city: string | null;
   startDatetime: string;
+  /**
+   * Provisional. The date above is still real — it decides which rail this
+   * card lands in and where it sorts — but nobody may see it, so the card
+   * reads "Date TBA" and the "This week" signal stays quiet.
+   */
+  dateTbd?: boolean;
+  venueTbd?: boolean;
   minPrice: number | null;
   isFree: boolean;
   soldOut: boolean;
@@ -19,6 +26,13 @@ export type CardEvent = {
   createdAt?: string;
   /** Real tickets issued for this event. Never estimated, never padded. */
   going?: number;
+  /**
+   * Campus this belongs to, when it has one. Cards don't display it — they
+   * carry it so the pages doing the arranging can group by campus. Null
+   * means public: an event that belongs to everyone, not to nobody.
+   */
+  universityId?: string | null;
+  campusId?: string | null;
 };
 
 /**
@@ -33,8 +47,12 @@ export type CardEvent = {
  * how every product students actually use presents an event.
  */
 
-function when(iso: string) {
-  const d = new Date(iso);
+// Takes the event rather than the string so it can't be called without the
+// TBA flag in hand — which is the one mistake that would print a provisional
+// date on a public card.
+function when(e: CardEvent) {
+  if (e.dateTbd) return "Date TBA";
+  const d = new Date(e.startDatetime);
   const now = new Date();
   const days = Math.round((d.getTime() - now.getTime()) / 86400000);
   const time = d.toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" });
@@ -46,6 +64,7 @@ function when(iso: string) {
 }
 
 function place(e: CardEvent) {
+  if (e.venueTbd) return e.city ?? "";
   return [e.venueName, e.city].filter(Boolean).join(", ");
 }
 
@@ -171,8 +190,12 @@ function signalFor(e: CardEvent): { text: string; tone: "purple" | "coral" | "gl
     if (age >= 0 && age < 3 * 86400000) return { text: "Just dropped", tone: "coral" };
   }
 
-  const days = (new Date(e.startDatetime).getTime() - Date.now()) / 86400000;
-  if (days >= 0 && days < 3) return { text: "This week", tone: "glass" };
+  // Not for a provisional date. "This week" on an event whose date is openly
+  // unconfirmed is the card contradicting itself two lines apart.
+  if (!e.dateTbd) {
+    const days = (new Date(e.startDatetime).getTime() - Date.now()) / 86400000;
+    if (days >= 0 && days < 3) return { text: "This week", tone: "glass" };
+  }
 
   return null;
 }
@@ -233,7 +256,7 @@ export function FeaturedCard({ e }: { e: CardEvent }) {
         )}
 
         <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold text-white/85">
-          <span>{when(e.startDatetime)}</span>
+          <span>{when(e)}</span>
           {place(e) && (
             <>
               <span aria-hidden="true" className="text-white/35">
@@ -258,6 +281,10 @@ export function FeaturedCard({ e }: { e: CardEvent }) {
 export function EventCardItem({ e }: { e: CardEvent }) {
   return (
     <Link href={`/events/${e.slug}`} className="group block">
+      {/* One ratio, everywhere. A `fill` variant briefly existed so this card
+          could stretch to match a landscape lead beside it; the layout that
+          needed it is gone, and with it the only way for two cards in a row
+          to end up different heights. */}
       <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl">
         {e.coverImage ? (
           <EventImage
@@ -277,7 +304,7 @@ export function EventCardItem({ e }: { e: CardEvent }) {
 
         <div className="absolute inset-x-0 bottom-0 p-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-white/65">
-            {when(e.startDatetime)}
+            {when(e)}
           </p>
           <h3 className="mt-1 line-clamp-3 text-lg font-extrabold leading-[1.12] tracking-[-0.02em] text-white">
             {e.title}
@@ -285,13 +312,42 @@ export function EventCardItem({ e }: { e: CardEvent }) {
         </div>
       </div>
 
-      <div className="mt-2.5 flex items-baseline justify-between gap-3">
+      <div className="mt-2.5 flex shrink-0 items-baseline justify-between gap-3">
         <span className="min-w-0 truncate text-sm text-ink-2">
           {place(e) || "Venue to be announced"}
         </span>
         <Price e={e} />
       </div>
     </Link>
+  );
+}
+
+function RailHeading({
+  title,
+  note,
+  href,
+}: {
+  title: string;
+  note?: string;
+  href?: string;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <div>
+        <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-ink">
+          {title}
+        </h2>
+        {note && <p className="mt-0.5 text-sm text-ink-3">{note}</p>}
+      </div>
+      {href && (
+        <Link
+          href={href}
+          className="shrink-0 text-sm font-semibold text-purple hover:underline"
+        >
+          See all →
+        </Link>
+      )}
+    </div>
   );
 }
 
@@ -310,22 +366,7 @@ export function EventRail({
   if (events.length === 0) return null;
   return (
     <section className="mt-14">
-      <div className="flex items-baseline justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-ink">
-            {title}
-          </h2>
-          {note && <p className="mt-0.5 text-sm text-ink-3">{note}</p>}
-        </div>
-        {href && (
-          <Link
-            href={href}
-            className="shrink-0 text-sm font-semibold text-purple hover:underline"
-          >
-            See all →
-          </Link>
-        )}
-      </div>
+      <RailHeading title={title} note={note} href={href} />
 
       {/* Scrolls horizontally on a phone — the whole point of a rail — and
           never makes the page itself scroll sideways. */}
@@ -341,55 +382,31 @@ export function EventRail({
 }
 
 /**
- * Lead plus two: one large item beside a stacked pair.
+ * One event, given the whole width.
  *
- * The brief asks for asymmetry rather than "one endless identical card grid",
- * and this is the cheapest honest way to get it — the layout varies, the
- * content doesn't have to.
+ * The only honest reason to make a card bigger than its neighbours is that
+ * it genuinely outranks them. "The next thing happening" is such a reason —
+ * it is soonest, and that is a fact rather than a layout preference. So the
+ * big treatment is reserved for exactly one event and comes with a heading
+ * that says why it earned it.
  */
-export function EventSpotlight({
+export function EventFeature({
   title,
   note,
-  events,
+  event,
   href,
 }: {
   title: string;
   note?: string;
-  events: CardEvent[];
+  event: CardEvent | undefined;
   href?: string;
 }) {
-  if (events.length === 0) return null;
-  const [lead, ...rest] = events;
-  const pair = rest.slice(0, 2);
-
+  if (!event) return null;
   return (
     <section className="mt-14">
-      <div className="flex items-baseline justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-ink">
-            {title}
-          </h2>
-          {note && <p className="mt-0.5 text-sm text-ink-3">{note}</p>}
-        </div>
-        {href && (
-          <Link
-            href={href}
-            className="shrink-0 text-sm font-semibold text-purple hover:underline"
-          >
-            See all →
-          </Link>
-        )}
-      </div>
-
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1.55fr_1fr]">
-        <FeaturedCard e={lead} />
-        {pair.length > 0 && (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-1">
-            {pair.map((e) => (
-              <EventCardItem key={e.id} e={e} />
-            ))}
-          </div>
-        )}
+      <RailHeading title={title} note={note} href={href} />
+      <div className="mt-5">
+        <FeaturedCard e={event} />
       </div>
     </section>
   );

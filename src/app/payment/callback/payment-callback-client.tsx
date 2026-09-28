@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { CheckCircle, XCircle, Clock, QrCode } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { SUPPORT_EMAIL } from '@/lib/app-url';
+import { safeHttpUrl } from '@/lib/media';
 import { WordMark } from '@/components/wordmark';
 import { ThemeToggle } from '@/components/theme-toggle';
 
@@ -27,6 +28,12 @@ interface PaymentStatus {
   orderId?: string;
   eventTitle?: string;
   tickets?: Ticket[];
+  /**
+   * The organiser's note to people who have paid — a WhatsApp group, a Zoom
+   * link, where to come in. Only ever arrives on a successful verification;
+   * see the comment in /api/payment/verify.
+   */
+  afterPurchase?: { note: string | null; url: string | null } | null;
 }
 
 export default function PaymentCallbackClient() {
@@ -59,6 +66,7 @@ export default function PaymentCallbackClient() {
             orderId: data.orderId,
             eventTitle: data.eventTitle,
             tickets: data.tickets,
+            afterPurchase: data.afterPurchase ?? null,
           });
         } else if (data.status === 'pending') {
           setPaymentStatus({
@@ -117,6 +125,50 @@ export default function PaymentCallbackClient() {
           <p className="mt-4 text-lg" style={{ color: 'var(--color-stone)' }}>
             {paymentStatus.message}
           </p>
+
+          {/* Above the tickets, not below them. This is the one thing on the
+              page the buyer has to act on — joining the group, saving the
+              link — and everything under the QR codes on a phone is three
+              screens away. */}
+          {paymentStatus.status === 'success' && paymentStatus.afterPurchase && (
+            <div
+              className="mx-auto mt-8 max-w-xl rounded-xl p-5 text-left"
+              style={{
+                backgroundColor: 'var(--color-purple-pale, rgba(108,60,255,0.08))',
+                border: '1px solid var(--color-purple)',
+              }}
+            >
+              <p
+                className="text-xs font-bold uppercase tracking-[0.08em]"
+                style={{ color: 'var(--color-purple)' }}
+              >
+                From the organiser
+              </p>
+              {paymentStatus.afterPurchase.note && (
+                <p
+                  className="mt-2 whitespace-pre-line"
+                  style={{ color: 'var(--color-ink, var(--color-forest))' }}
+                >
+                  {paymentStatus.afterPurchase.note}
+                </p>
+              )}
+              {safeHttpUrl(paymentStatus.afterPurchase.url) && (
+                <a
+                  href={safeHttpUrl(paymentStatus.afterPurchase.url)!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-block rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: 'var(--color-purple)' }}
+                >
+                  Open the link →
+                </a>
+              )}
+              <p className="mt-3 text-xs" style={{ color: 'var(--color-stone)' }}>
+                This is also in your confirmation email, so you won&apos;t lose
+                it when you close this page.
+              </p>
+            </div>
+          )}
 
           {paymentStatus.status === 'success' && paymentStatus.tickets && paymentStatus.tickets.length > 0 && (
             <div className="mt-8 space-y-8">

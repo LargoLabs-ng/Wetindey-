@@ -4,7 +4,13 @@ import { can, type Capability } from "@/lib/permissions";
 import { db } from "@/db";
 import { eventStaff, events, organizationMembers } from "@/db/schema";
 
-export type OrgRole = "owner" | "event_manager" | "gate_staff" | "finance";
+export type OrgRole =
+  | "owner"
+  | "event_manager"
+  | "gate_staff"
+  | "finance"
+  | "viewer"
+  | "promoter";
 
 export async function getSessionUserId(): Promise<string | null> {
   const session = await auth();
@@ -83,8 +89,22 @@ export function isUuid(value: string | null | undefined): boolean {
   return !!value && UUID_RE.test(value);
 }
 
+/**
+ * What somebody holds on an event: the role, plus the switches that sit
+ * beside it. Passed around as one thing so a caller cannot check the role
+ * and forget the flag — which would silently deny the money page to a
+ * person the organiser had explicitly granted it to.
+ */
+export type Grant = { role: OrgRole; canSeeFinances: boolean };
+
 export type EventAccess =
-  | { ok: true; userId: string; role: OrgRole; event: typeof events.$inferSelect }
+  | {
+      ok: true;
+      userId: string;
+      role: OrgRole;
+      canSeeFinances: boolean;
+      event: typeof events.$inferSelect;
+    }
   | { ok: false; status: 400 | 401 | 403 | 404; error: string };
 
 /**
@@ -118,7 +138,8 @@ export async function requireEventAccess(
   // org runs, without needing to be staffed onto each one.
   const membership = await getMembership(userId, event.organizationId);
   if (membership && membership.role === "owner") {
-    return { ok: true, userId, role: "owner", event };
+    // The owner sees everything by definition; the switch is meaningless.
+    return { ok: true, userId, role: "owner", canSeeFinances: true, event };
   }
 
   // Everyone else has to be staffed onto this specific event.
@@ -140,11 +161,23 @@ export async function requireEventAccess(
     return { ok: false, status: 404, error: "Event not found" };
   }
 
-  return { ok: true, userId, role: assignment.role as OrgRole, event };
+  return {
+    ok: true,
+    userId,
+    role: assignment.role as OrgRole,
+    canSeeFinances: assignment.canSeeFinances,
+    event,
+  };
 }
 
 export type CapabilityCheck =
-  | { ok: true; userId: string; role: OrgRole; event: typeof events.$inferSelect }
+  | {
+      ok: true;
+      userId: string;
+      role: OrgRole;
+      canSeeFinances: boolean;
+      event: typeof events.$inferSelect;
+    }
   | { ok: false; status: 400 | 401 | 403 | 404; error: string };
 
 /**
@@ -158,7 +191,7 @@ export async function requireEventCapability(
   const access = await requireEventAccess(eventId);
   if (!access.ok) return access;
 
-  if (!can(access.role, capability)) {
+  if (!can(access.role, capability, { canSeeFinances: access.canSeeFinances })) {
     return {
       ok: false,
       status: 403,
@@ -281,6 +314,12 @@ export type StaffedEvent = {
   title: string;
   slug: string;
   startDatetime: Date;
+  /**
+   * The date is provisional and hidden from buyers. Carried here so an
+   * organiser's own surfaces can mark it — the flag hides the date from the
+   * public, not from the person who set it.
+   */
+  dateTbd: boolean;
   status: string;
   role: OrgRole;
 };
@@ -316,6 +355,7 @@ export async function getStaffedEvents(
     title: e.title,
     slug: e.slug,
     startDatetime: e.startDatetime,
+    dateTbd: e.dateTbd,
     status: e.status,
     role: "owner" as OrgRole,
   }));
@@ -327,6 +367,7 @@ export async function getStaffedEvents(
       title: row.event.title,
       slug: row.event.slug,
       startDatetime: row.event.startDatetime,
+      dateTbd: row.event.dateTbd,
       status: row.event.status,
       role: row.role as OrgRole,
     });

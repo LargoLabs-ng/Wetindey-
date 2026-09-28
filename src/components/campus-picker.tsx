@@ -43,7 +43,7 @@ export function CampusPicker({
   value,
   onChange,
   labelClass = "mb-1 block text-sm font-medium text-ink",
-  fieldClass = "w-full rounded-lg border border-line bg-white px-3 py-2 text-ink focus:outline-none focus:ring-2 focus:ring-purple",
+  fieldClass = "w-full rounded-lg border border-line bg-card px-3 py-2 text-ink focus:outline-none focus:ring-2 focus:ring-purple",
 }: {
   value: CampusSelection;
   onChange: (next: CampusSelection) => void;

@@ -12,6 +12,7 @@ const updateTicketTypeSchema = z.object({
   price: z.coerce.number().min(0).optional(),
   quantityTotal: z.coerce.number().int().min(1).optional(),
   maxPerOrder: z.coerce.number().int().min(1).max(50).optional(),
+  admits: z.coerce.number().int().min(1).max(50).optional(),
   status: z.enum(["active", "paused", "sold_out"]).optional(),
   // Nullable so a sales window set at creation can also be cleared.
   salesStart: z.coerce.date().nullable().optional(),
@@ -74,6 +75,32 @@ export async function PATCH(request: Request, context: RouteContext) {
         error: `Cannot set quantity below ${tier.quantitySold} — that many tickets are already sold.`,
       },
       { status: 400 }
+    );
+  }
+
+  /**
+   * How many people a ticket admits is part of what somebody BOUGHT.
+   *
+   * An organiser who sells twenty tables of six and then edits this to two
+   * has quietly taken eighty seats off people who already paid — and nothing
+   * in the system would tell them, because the ticket looks unchanged. So
+   * once one has sold, this number is fixed: make a new tier instead.
+   *
+   * Sending the same value back is fine, since the edit form posts every
+   * field whether or not it was touched.
+   */
+  if (
+    parsed.data.admits !== undefined &&
+    parsed.data.admits !== tier.admits &&
+    tier.quantitySold > 0
+  ) {
+    return NextResponse.json(
+      {
+        error: `${tier.quantitySold} of these have already sold, admitting ${tier.admits} ${
+          tier.admits === 1 ? "person" : "people"
+        } each. Changing that now would shortchange people who already paid — add a separate tier instead.`,
+      },
+      { status: 409 }
     );
   }
 

@@ -3,6 +3,10 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireEventCapability } from "@/lib/authz";
 import { EventEditForm } from "@/components/event-edit-form";
+import { AfterPurchaseFields } from "@/components/after-purchase-fields";
+import { EventBrandingFields } from "@/components/event-branding-fields";
+import { PromoCodesEditor } from "@/components/promo-codes-editor";
+import { RegistrationFieldsEditor } from "@/components/registration-fields-editor";
 
 export default async function EditEventPage({
   params,
@@ -46,8 +50,30 @@ export default async function EditEventPage({
           startDatetime: event.startDatetime.toISOString(),
           endDatetime: event.endDatetime.toISOString(),
           status: event.status,
+          dateTbd: event.dateTbd,
+          venueTbd: event.venueTbd,
         }}
       />
+
+      {/* Editable after publishing on purpose. An organiser realises on day
+          three that they should have asked for department, and the answer to
+          that should be "add it", not "too late". Answers already given keep
+          the label they were given under. */}
+      <section className="rounded-2xl border border-line-dark bg-surface p-6">
+        <RegistrationFieldsEditor eventId={event.id} />
+      </section>
+
+      <section className="rounded-2xl border border-line-dark bg-surface p-6">
+        <AfterPurchaseFields eventId={event.id} />
+      </section>
+
+      <section className="rounded-2xl border border-line-dark bg-surface p-6">
+        <EventBrandingFields eventId={event.id} />
+      </section>
+
+      <section className="rounded-2xl border border-line-dark bg-surface p-6">
+        <PromoCodesEditor eventId={event.id} />
+      </section>
     </div>
   );
 }

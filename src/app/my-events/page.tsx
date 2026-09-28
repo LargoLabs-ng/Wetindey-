@@ -7,6 +7,7 @@ import { CalendarDays, MapPin, QrCode, Ticket } from "lucide-react";
 import { WordMark } from "@/components/wordmark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { EventImage } from "@/components/event-image";
+import { safeHttpUrl } from "@/lib/media";
 
 const QRCodeDisplay = dynamic(
   () => import("@/components/qr-code-display").then((m) => m.QRCodeDisplay),
@@ -30,6 +31,8 @@ type Item = {
     city: string | null;
     startDatetime: string;
     endDatetime: string;
+    /** The organiser's note to people who paid. Never on the public page. */
+    afterPurchase?: { note: string | null; url: string | null } | null;
   };
 };
 
@@ -97,6 +100,32 @@ function TicketRow({ item, past }: { item: Item; past: boolean }) {
         )}
       </div>
 
+      {/* Only on tickets that are still good for something. On a past event
+          the group link is noise, and on a used ticket the instructions have
+          already been followed. */}
+      {!past && item.event.afterPurchase && (
+        <div className="border-t border-line bg-purple/5 px-4 py-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-purple">
+            From the organiser
+          </p>
+          {item.event.afterPurchase.note && (
+            <p className="mt-1 whitespace-pre-line text-sm text-ink-2">
+              {item.event.afterPurchase.note}
+            </p>
+          )}
+          {safeHttpUrl(item.event.afterPurchase.url) && (
+            <a
+              href={safeHttpUrl(item.event.afterPurchase.url)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block text-sm font-semibold text-purple hover:underline"
+            >
+              Open the link →
+            </a>
+          )}
+        </div>
+      )}
+
       {showQR && (
         <div className="border-t border-line bg-cream-2 px-4 py-5">
           <QRCodeDisplay
@@ -137,6 +166,9 @@ export default function MyEventsPage() {
           <div className="flex items-center gap-3">
             <Link href="/discover" className="text-sm font-semibold text-ink-2 hover:text-ink">
               Discover
+            </Link>
+            <Link href="/profile" className="text-sm font-semibold text-ink-2 hover:text-ink">
+              Profile
             </Link>
             <ThemeToggle />
           </div>

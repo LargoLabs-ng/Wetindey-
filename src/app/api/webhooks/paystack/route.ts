@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { finalizePaidOrder } from '@/lib/finalize-order';
+import {
+  failPendingOrder,
+  finalizePaidOrder,
+  recordExternalRefund,
+} from '@/lib/finalize-order';
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 
@@ -57,8 +61,61 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Everything else is acknowledged and ignored. charge.failed and
-    // refund.processed are not handled yet — see the note in the build plan.
+    if (event.event === 'charge.failed') {
+      if (!reference) {
+        return NextResponse.json({ error: 'Missing reference' }, { status: 400 });
+      }
+
+      const result = await failPendingOrder(reference);
+      if (!result.ok) {
+        console.log(`charge.failed for unknown reference: ${reference}`);
+        return NextResponse.json({ success: true, message: 'Unknown reference' });
+      }
+
+      return NextResponse.json({
+        success: true,
+        orderId: result.orderId,
+        alreadyProcessed: result.alreadyDone,
+      });
+    }
+
+    if (event.event === 'refund.processed') {
+      // Paystack has moved this field around between payload versions, and a
+      // refund we silently drop is a ticket that stays valid after the money
+      // has gone back. Check every shape it has used rather than trusting one.
+      const transactionRef: string | undefined =
+        event?.data?.transaction_reference ??
+        event?.data?.transaction?.reference ??
+        reference;
+
+      if (!transactionRef) {
+        console.error('refund.processed with no transaction reference', event?.data);
+        return NextResponse.json({ success: true, message: 'No transaction reference' });
+      }
+
+      const result = await recordExternalRefund({
+        reference: transactionRef,
+        amountMinor: event?.data?.amount,
+        providerReference: event?.data?.reference ?? event?.data?.refund_reference,
+        raw: event?.data,
+      });
+
+      if (!result.ok) {
+        console.log(`refund.processed ignored (${result.reason}): ${transactionRef}`);
+        return NextResponse.json({ success: true, message: result.reason });
+      }
+
+      return NextResponse.json({
+        success: true,
+        orderId: result.orderId,
+        full: result.full,
+        alreadyRecorded: result.alreadyRecorded,
+      });
+    }
+
+    // Anything else is acknowledged so Paystack stops resending, and logged
+    // so an event type we should be handling doesn't disappear in silence.
+    console.log(`Unhandled Paystack event: ${event.event}`);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Webhook error:', error);

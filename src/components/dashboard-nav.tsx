@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+// Finance is top-level, not buried inside an event. "How much can I
+// withdraw" is never a question about one event, and the per-event payout
+// page could never answer it.
 const links = [
   { href: "/dashboard", label: "Overview" },
   { href: "/dashboard/events", label: "Events" },
+  { href: "/dashboard/finance", label: "Finance" },
 ];
 
 export function DashboardNav() {

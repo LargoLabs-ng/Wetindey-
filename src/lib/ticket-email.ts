@@ -21,7 +21,9 @@ export async function sendTicketsForOrder(
 ): Promise<SendTicketsResult> {
   const order = await db.query.orders.findFirst({
     where: eq(orders.id, orderId),
-    with: { event: true, tickets: true },
+    // The organisation comes along for the email header: the committee's
+    // logo and name, not ours.
+    with: { event: { with: { organization: true } }, tickets: true },
   });
 
   if (!order) return { ok: false, reason: "not_found" };
@@ -73,6 +75,15 @@ export async function sendTicketsForOrder(
     tickets: ticketsWithQR,
     orderId: order.id,
     totalAmount: Number.isFinite(Number(order.total)) ? Number(order.total) : 0,
+    // This email is the durable copy. The confirmation page shows the same
+    // thing, but it's gone the moment they close the tab — and somebody
+    // buying at 2am is exactly the person who needs the group link at 9am.
+    afterPurchase: {
+      note: order.event.afterPurchaseNote,
+      url: order.event.afterPurchaseUrl,
+    },
+    organiserLogoUrl: order.event.logoUrl,
+    organiserName: order.event.organization?.name ?? null,
   });
 
   if (!emailSent) {

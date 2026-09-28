@@ -10,6 +10,8 @@ interface ScanResult {
   message: string;
   attendeeName?: string;
   ticketType?: string;
+  /** People this one ticket lets through. 1 for an ordinary ticket. */
+  admits?: number;
   checkedInAt?: string;
 }
 
@@ -180,6 +182,19 @@ export function CheckInConsole({
               {result.status === 'already_checked_in' && '⚠ ALREADY CHECKED IN'}
               {result.status === 'invalid' && '✗ INVALID TICKET'}
             </h2>
+
+            {/* The headcount, bigger than anything else on the screen.
+                Somebody working a door in the dark with a queue behind them
+                reads one number off this phone, and reading it wrong means
+                five people are turned away or five get in free. */}
+            {result.status !== 'invalid' && (result.admits ?? 1) > 1 && (
+              <p
+                className="mb-4 text-4xl font-extrabold"
+                style={{ color: 'var(--color-on-dark)' }}
+              >
+                Admit {result.admits}
+              </p>
+            )}
 
             <p className="text-lg mb-4" style={{ color: 'var(--color-on-dark-2)' }}>
               {result.message}

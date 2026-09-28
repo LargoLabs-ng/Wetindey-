@@ -5,14 +5,18 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { eventStaff, users } from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
-import { ASSIGNABLE_ROLES } from "@/lib/permissions";
+import { ASSIGNABLE_ROLES, supportsFinanceSwitch } from "@/lib/permissions";
 import { sendEmailWithResult } from "@/lib/email-service";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 const inviteSchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
-  role: z.enum(["event_manager", "gate_staff", "finance"]),
+  // `finance` is gone from here: an organiser who wants someone on the
+  // money now picks Editor or Viewer and turns the switch on, which is the
+  // same grant expressed as the two decisions they were really making.
+  role: z.enum(["event_manager", "viewer", "gate_staff", "promoter"]),
+  canSeeFinances: z.boolean().optional(),
 });
 
 /** GET /api/events/:id/staff — who works this event. */
@@ -28,6 +32,8 @@ export async function GET(_request: Request, context: RouteContext) {
       id: eventStaff.id,
       email: eventStaff.userEmail,
       role: eventStaff.role,
+      canSeeFinances: eventStaff.canSeeFinances,
+      refCode: eventStaff.refCode,
       status: eventStaff.status,
       invitedAt: eventStaff.invitedAt,
       joinedAt: eventStaff.joinedAt,
@@ -41,6 +47,37 @@ export async function GET(_request: Request, context: RouteContext) {
 }
 
 /** POST /api/events/:id/staff — invite someone onto this event. */
+/**
+ * A short, human-sayable code for a promoter's share link.
+ *
+ * Ambiguous characters are left out (no O/0, I/1, S/5) because these get
+ * read aloud in a hall and typed by hand from a WhatsApp status. Uniqueness
+ * is per event, and the loop re-rolls on the rare clash rather than trusting
+ * randomness — the index would reject a duplicate anyway, and losing a role
+ * assignment to a collision would be an absurd way to fail.
+ */
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRTUVWXY2346789";
+
+async function mintRefCode(eventId: string): Promise<string> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const code = Array.from(
+      { length: 6 },
+      () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+    ).join("");
+
+    const [clash] = await db
+      .select({ id: eventStaff.id })
+      .from(eventStaff)
+      .where(and(eq(eventStaff.eventId, eventId), eq(eventStaff.refCode, code)))
+      .limit(1);
+
+    if (!clash) return code;
+  }
+  // 29^6 is about 600 million; eight straight collisions means something is
+  // wrong with the random source, and a long fallback is better than a loop.
+  return `P${Date.now().toString(36).toUpperCase()}`;
+}
+
 export async function POST(request: Request, context: RouteContext) {
   const { id } = await context.params;
   const access = await requireEventCapability(id, "team:manage");
@@ -92,6 +129,15 @@ export async function POST(request: Request, context: RouteContext) {
   const [invite] = await db
     .insert(eventStaff)
     .values({
+      // Minted here, not on first use: a promoter who signs in to find no
+      // link yet has nothing to do and no way to ask for one.
+      refCode:
+        parsed.data.role === "promoter" ? await mintRefCode(id) : null,
+      // Only honoured for roles the switch is meaningful on. A ticked box
+      // must not be able to hand the payout page to a door volunteer.
+      canSeeFinances:
+        supportsFinanceSwitch(parsed.data.role) &&
+        parsed.data.canSeeFinances === true,
       eventId: id,
       userId: user?.id ?? null,
       userEmail: email,

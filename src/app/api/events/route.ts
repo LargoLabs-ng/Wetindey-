@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/db';
-import { events } from '@/db/schema';
+import { events, users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { getSessionUserId } from '@/lib/authz';
 import { ensureOrganizationForUser } from '@/lib/organization';
 import { generateUniqueSlug } from '@/lib/slug';
+import { isSafeHttpUrl } from "@/lib/media";
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,7 +32,12 @@ const createEventSchema = z.object({
   title: z.string().trim().min(3, 'Give your event a title of at least 3 characters.'),
   description: z.string().trim().optional(),
   category: z.string().trim().optional(),
-  coverImage: z.string().url().nullish(),
+  // Scheme-checked, not just parse-checked: `.url()` accepts javascript:.
+  coverImage: z
+    .string()
+    .max(500)
+    .refine(isSafeHttpUrl, "Links have to start with http:// or https://")
+    .nullish(),
   venueName: z.string().trim().optional(),
   city: z.string().trim().optional(),
   startDatetime: z.string().datetime('Pick a valid start date and time.'),
@@ -72,6 +78,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Campus, inherited from whoever is creating the event.
+    //
+    // Asked for rather than typed: the organiser already told us their
+    // university when they signed up, and a field that repeats a question
+    // gets filled in wrongly or not at all. It stays null for anyone with no
+    // campus on their profile, and a null event is public rather than
+    // hidden — see the comment on events.university_id.
+    const creator = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { universityId: true, campusId: true },
+    });
+
     const slug = await generateUniqueSlug(data.title, async (candidate) => {
       const [existing] = await db
         .select({ id: events.id })
@@ -94,6 +112,8 @@ export async function POST(request: NextRequest) {
         city: data.city || null,
         startDatetime: start,
         endDatetime: end,
+        universityId: creator?.universityId ?? null,
+        campusId: creator?.campusId ?? null,
       })
       .returning();
 

@@ -14,11 +14,18 @@ import {
   Share2,
   Ticket,
 } from 'lucide-react';
-import { useParams } from 'next/navigation';
-import { EventImage } from '@/components/event-image';
-import { CoverFallback } from '@/components/event-card';
+import { useParams, useSearchParams } from 'next/navigation';
+import { EventBanner } from '@/components/event-banner';
+import { safeHttpUrl, type GalleryItem, type Sponsor } from '@/lib/media';
 import { WordMark } from '@/components/wordmark';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { EventConversation } from '@/components/event-conversation';
+import {
+  RegistrationAnswersForm,
+  missingRequired,
+  type AnswerMap,
+  type PublicField,
+} from '@/components/registration-answers-form';
 
 interface TicketType {
   id: string;
@@ -30,6 +37,8 @@ interface TicketType {
   quantityReserved: number;
   maxPerOrder: number;
   status: string;
+  /** People one ticket lets in. 1 is an ordinary ticket. */
+  admits?: number;
 }
 
 interface Event {
@@ -42,6 +51,9 @@ interface Event {
   platformFeePaidBy: 'organizer' | 'buyer';
   category: string | null;
   venueName: string | null;
+  /** Provisional — see the schema. Gates every display of date and venue. */
+  dateTbd?: boolean;
+  venueTbd?: boolean;
   venueAddress: string | null;
   city: string | null;
   country: string | null;
@@ -49,10 +61,18 @@ interface Event {
   endDatetime: string;
   ticketTypes: TicketType[];
   organization?: { name: string } | null;
+  /** The organiser's mark, as opposed to this event's flyer. */
+  logoUrl?: string | null;
+  gallery?: GalleryItem[] | null;
+  sponsors?: Sponsor[] | null;
 }
+
+/** Where a promoter's code lives between arriving and buying. */
+const REF_KEY = "wd-ref";
 
 export default function EventDetailPage() {
   const params = useParams();
+  const search = useSearchParams();
   const slug = params.slug as string;
 
   const [event, setEvent] = useState<Event | null>(null);
@@ -71,6 +91,63 @@ export default function EventDetailPage() {
   // screen rather than an event; the form arrives once they've said yes.
   const [joining, setJoining] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [ref, setRef] = useState<string | null>(null);
+
+  // The organiser's own questions. Fetched separately from the event so a
+  // failure here costs the extra questions and not the whole page — an
+  // organiser who asked for a matric number would rather sell a ticket
+  // without one than not sell it at all.
+  const [regFields, setRegFields] = useState<PublicField[]>([]);
+  const [answers, setAnswers] = useState<AnswerMap>({});
+
+  /**
+   * A discount or referral code the buyer typed.
+   *
+   * `promoEffect` is a PREVIEW only. The order API re-resolves the code from
+   * the database and recalculates the price itself, so nothing here can talk
+   * the server into a discount that doesn't exist.
+   */
+  const [promoInput, setPromoInput] = useState('');
+  const [promoBusy, setPromoBusy] = useState(false);
+  const [promoEffect, setPromoEffect] = useState<
+    { code: string; discount: number; message: string } | null
+  >(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
+
+  /**
+   * Remember who sent them.
+   *
+   * A promoter's link is `?p=AMAKA7`, and the gap between opening it and
+   * paying is long enough to lose: they read the page, tap share, come back,
+   * refresh. Holding the code only in the URL means any of that loses the
+   * attribution, and an unattributed sale is an argument between an
+   * organiser and a student who swears they sold it.
+   *
+   * Scoped per event, so a code from one event's link cannot follow someone
+   * to another. sessionStorage rather than localStorage: credit for sending
+   * you here should not outlive the browsing session.
+   */
+  useEffect(() => {
+    if (!slug) return;
+    const key = `${REF_KEY}:${slug}`;
+    const fromUrl = search.get("p") ?? search.get("ref");
+
+    if (fromUrl) {
+      setRef(fromUrl);
+      try {
+        window.sessionStorage.setItem(key, fromUrl);
+      } catch {
+        /* private browsing — the URL still works for this page view */
+      }
+      return;
+    }
+
+    try {
+      setRef(window.sessionStorage.getItem(key));
+    } catch {
+      setRef(null);
+    }
+  }, [slug, search]);
 
   useEffect(() => {
     const fetchEvent = async () => {
@@ -120,6 +197,40 @@ export default function EventDetailPage() {
     ? Math.max(0, selectedTicketType.quantityTotal - selectedTicketType.quantitySold - selectedTicketType.quantityReserved)
     : 0;
 
+  useEffect(() => {
+    if (!event?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/events/${event.id}/registration-fields`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setRegFields(data.fields ?? []);
+      } catch {
+        // Silent on purpose. See the state declaration above.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id]);
+
+  /**
+   * A discount is a naira figure calculated for a particular quantity and
+   * tier. Change either and it is wrong — three tickets carrying a discount
+   * worked out for one would quote a total the server then refuses to match.
+   *
+   * Cleared rather than recalculated, and said out loud rather than silently,
+   * because a discount that vanishes with no explanation reads as a bug.
+   */
+  useEffect(() => {
+    setPromoEffect((current) => {
+      if (!current) return null;
+      setPromoError('Quantity changed — tap Apply again.');
+      return null;
+    });
+  }, [quantity, selectedTicket]);
+
   // The <select> shows the first tier from the start, so the state has to
   // agree with it — otherwise nothing is really selected and checkout is
   // dead on arrival.
@@ -142,7 +253,10 @@ export default function EventDetailPage() {
 
   // Same calculation the order API uses, so the page and the payment screen
   // can never quote different numbers.
-  const quote = quoteOrder(parseFloat(selectedTicketType?.price || '0') * quantity, {
+  // The page quotes the discounted figure so the buy button and the Paystack
+  // screen agree. The server recalculates this from scratch anyway.
+  const faceValue = parseFloat(selectedTicketType?.price || '0') * quantity;
+  const quote = quoteOrder(Math.max(0, faceValue - (promoEffect?.discount ?? 0)), {
     platformFeePaidBy: event?.platformFeePaidBy ?? 'organizer',
     processingFeePaidBy: event?.feeStrategy === 'organizer_absorbs' ? 'organizer' : 'buyer',
   });
@@ -159,6 +273,39 @@ export default function EventDetailPage() {
     newAttendees[index] = { ...newAttendees[index], [field]: value };
     setAttendees(newAttendees);
   };
+
+  async function applyPromo() {
+    const typed = promoInput.trim();
+    if (!typed || !event || !selectedTicketType) return;
+
+    setPromoBusy(true);
+    setPromoError(null);
+    try {
+      const res = await fetch(`/api/events/${event.id}/promo-codes/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: typed,
+          faceValue: Number(selectedTicketType.price) * quantity,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setPromoEffect(null);
+        setPromoError(data.reason ?? "That code didn't work.");
+        return;
+      }
+      setPromoEffect({
+        code: data.code,
+        discount: Number(data.discount) || 0,
+        message: data.message ?? 'Code applied.',
+      });
+    } catch {
+      setPromoError('Could not check that code — try again.');
+    } finally {
+      setPromoBusy(false);
+    }
+  }
 
   const handleCheckout = async () => {
     if (!selectedTicketType || !event) return;
@@ -182,6 +329,14 @@ export default function EventDetailPage() {
       return;
     }
 
+    // Told here rather than after the round trip to Paystack. The server
+    // checks this again — that's the gate; this is the courtesy.
+    const missing = missingRequired(regFields, answers);
+    if (missing) {
+      setFormError(`${missing} is required.`);
+      return;
+    }
+
     try {
       setProcessing(true);
 
@@ -195,6 +350,17 @@ export default function EventDetailPage() {
           buyerEmail,
           buyerPhone,
           attendees: resolvedAttendees,
+          answers: Object.entries(answers).map(([fieldId, value]) => ({
+            fieldId,
+            value,
+          })),
+          // Unverified here, like `ref` below: the server resolves it and
+          // ignores anything it doesn't recognise.
+          promoCode: promoEffect?.code ?? undefined,
+          // Unverified on purpose: the server resolves the code itself and
+          // ignores anything it does not recognise, so a made-up value here
+          // credits nobody rather than crediting the wrong person.
+          ref,
         }),
       });
 
@@ -256,9 +422,22 @@ export default function EventDetailPage() {
   const start = new Date(event.startDatetime);
   const end = new Date(event.endDatetime);
   const daysAway = Math.ceil((start.getTime() - Date.now()) / 86400000);
-  const hasStarted = start.getTime() <= Date.now();
-  const isOver = end.getTime() < Date.now();
-  const place = [event.venueName, event.city].filter(Boolean).join(', ');
+
+  /**
+   * The provisional date exists but nobody is meant to see it.
+   *
+   * `dateTbd` gates every reader of `start` and `end` below — the headline
+   * facts, the countdown, the share text — and also stops the page deciding
+   * an event is over because a placeholder date drifted into the past.
+   */
+  const dateTbd = event.dateTbd === true;
+  const venueTbd = event.venueTbd === true;
+
+  const hasStarted = !dateTbd && start.getTime() <= Date.now();
+  const isOver = !dateTbd && end.getTime() < Date.now();
+  const place = venueTbd
+    ? ''
+    : [event.venueName, event.city].filter(Boolean).join(', ');
   const soldOut =
     event.ticketTypes.length > 0 &&
     event.ticketTypes.every((t) => t.quantityTotal - t.quantitySold - t.quantityReserved <= 0);
@@ -266,25 +445,35 @@ export default function EventDetailPage() {
   // Real attendance, straight off the tiers — no estimate, no padding. Shown
   // only once it is a number worth saying out loud; "1 going" makes an event
   // look abandoned, which is worse than saying nothing at all.
-  const going = event.ticketTypes.reduce((n, t) => n + t.quantitySold, 0);
+  // People, not tickets. Twenty tables of six is a hundred and twenty people
+  // in the room, and "20 going" would make a packed event look empty.
+  const going = event.ticketTypes.reduce(
+    (n, t) => n + t.quantitySold * (t.admits ?? 1),
+    0
+  );
   const organiser = event.organization?.name?.trim() || null;
 
-  const countdown = isOver
-    ? 'This event don happen'
-    : hasStarted
-      ? 'Happening now'
-      : daysAway === 0
-        ? 'Today'
-        : daysAway === 1
-          ? 'Tomorrow'
-          : `In ${daysAway} days`;
+  const countdown = dateTbd
+    ? 'Date to be announced'
+    : isOver
+      ? 'This event don happen'
+      : hasStarted
+        ? 'Happening now'
+        : daysAway === 0
+          ? 'Today'
+          : daysAway === 1
+            ? 'Tomorrow'
+            : `In ${daysAway} days`;
 
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
-  const shareText = `${event.title} — ${start.toLocaleDateString('en-NG', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  })}${place ? ` at ${place}` : ''}`;
+  const shareWhen = dateTbd
+    ? 'date to be announced'
+    : start.toLocaleDateString('en-NG', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      });
+  const shareText = `${event.title} — ${shareWhen}${place ? ` at ${place}` : ''}`;
 
   return (
     <div className="wd-night min-h-screen bg-cream">
@@ -306,14 +495,15 @@ export default function EventDetailPage() {
           in a card beneath it. */}
       <section className="relative">
         <div className="relative h-[54vw] max-h-[460px] min-h-[280px] w-full overflow-hidden bg-indigo">
-          {event.coverImage ? (
-            <EventImage src={event.coverImage} alt={event.title} priority sizes="100vw" />
-          ) : (
-            // The same branded panel the cards use. This was a near-black
-            // gradient, which gave an event without artwork a dead rectangle
-            // for a hero — the single biggest reason the page felt empty.
-            <CoverFallback title={event.title} />
-          )}
+          {/* Cover art first, then anything else the organiser added. With
+              one image this renders exactly what it always did — including
+              the branded fallback panel when there's no artwork at all,
+              which was the single biggest reason this page felt empty. */}
+          <EventBanner
+            title={event.title}
+            cover={event.coverImage}
+            gallery={event.gallery}
+          />
           {/* Gradient so white type stays legible on any artwork. */}
           <div
             className="absolute inset-0"
@@ -350,16 +540,31 @@ export default function EventDetailPage() {
                 <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
                   {organiser && (
                     <div className="flex items-center gap-2.5">
-                      <span
-                        aria-hidden="true"
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold"
-                        style={{
-                          backgroundColor: 'var(--color-purple)',
-                          color: '#fff',
-                        }}
-                      >
-                        {organiser.charAt(0).toUpperCase()}
-                      </span>
+                      {/* The real mark when they've uploaded one, the initial
+                          when they haven't. White plate behind it because a
+                          logo is usually drawn for paper and disappears
+                          against a dark photograph otherwise. */}
+                      {event.logoUrl ? (
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={event.logoUrl}
+                            alt=""
+                            className="h-full w-full object-contain p-0.5"
+                          />
+                        </span>
+                      ) : (
+                        <span
+                          aria-hidden="true"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold"
+                          style={{
+                            backgroundColor: 'var(--color-purple)',
+                            color: '#fff',
+                          }}
+                        >
+                          {organiser.charAt(0).toUpperCase()}
+                        </span>
+                      )}
                       <span className="text-sm text-white/75">
                         by{' '}
                         <span className="font-semibold text-white">{organiser}</span>
@@ -387,28 +592,45 @@ export default function EventDetailPage() {
             <dl className="grid gap-4 sm:grid-cols-2">
               <div className="flex gap-3">
                 <CalendarDays className="mt-0.5 h-5 w-5 shrink-0 text-purple" />
-                <div>
-                  <dt className="text-sm font-semibold text-ink">
-                    {start.toLocaleDateString('en-NG', {
-                      weekday: 'long',
-                      day: 'numeric',
-                      month: 'long',
-                    })}
-                  </dt>
-                  <dd className="text-sm text-ink-2">
-                    {start.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}
-                    {' – '}
-                    {end.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}
-                  </dd>
-                </div>
+                {dateTbd ? (
+                  <div>
+                    <dt className="text-sm font-semibold text-ink">
+                      Date to be announced
+                    </dt>
+                    <dd className="text-sm text-ink-2">
+                      You&apos;ll be emailed as soon as it&apos;s set
+                    </dd>
+                  </div>
+                ) : (
+                  <div>
+                    <dt className="text-sm font-semibold text-ink">
+                      {start.toLocaleDateString('en-NG', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'long',
+                      })}
+                    </dt>
+                    <dd className="text-sm text-ink-2">
+                      {start.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}
+                      {' – '}
+                      {end.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}
+                    </dd>
+                  </div>
+                )}
               </div>
-              {place && (
+              {(place || venueTbd) && (
                 <div className="flex gap-3">
                   <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-purple" />
                   <div className="min-w-0">
-                    <dt className="text-sm font-semibold text-ink">{event.venueName}</dt>
+                    <dt className="text-sm font-semibold text-ink">
+                      {venueTbd ? 'Venue to be announced' : event.venueName}
+                    </dt>
                     <dd className="text-sm text-ink-2">
-                      {event.venueAddress || event.city}
+                      {venueTbd
+                        ? event.city
+                          ? `Somewhere in ${event.city} — you'll be emailed`
+                          : "You'll be emailed as soon as it's set"
+                        : event.venueAddress || event.city}
                     </dd>
                   </div>
                 </div>
@@ -483,6 +705,56 @@ export default function EventDetailPage() {
                 </button>
               </div>
             </section>
+
+            {/* §11: the event as a place people talk in, not a page they
+                read. Organiser updates and Q&A, with the moderation
+                controls that have to exist the moment anyone can post. */}
+            <EventConversation eventId={event.id} eventTitle={event.title} />
+
+            {/* Below the conversation, not above it. Sponsors are a promise
+                the organiser made to somebody else; the student scrolling
+                this page came for the event. Quiet, and present. */}
+            {event.sponsors && event.sponsors.length > 0 && (
+              <section className="mt-10 border-t border-line pt-6">
+                <h2 className="text-[11px] font-bold uppercase tracking-[0.1em] text-ink-3">
+                  {event.sponsors.length === 1
+                    ? 'In partnership with'
+                    : 'Sponsors and partners'}
+                </h2>
+                <ul className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-5">
+                  {event.sponsors.map((s, i) => {
+                    const logo = (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={s.logoUrl}
+                        alt={s.name}
+                        title={s.name}
+                        className="h-9 w-auto max-w-[140px] object-contain opacity-80 transition-opacity hover:opacity-100"
+                      />
+                    );
+                    const href = safeHttpUrl(s.url);
+                    return (
+                      <li key={`${s.name}-${i}`}>
+                        {href ? (
+                          <a
+                            href={href}
+                            target="_blank"
+                            // nofollow as well as noopener: an organiser can
+                            // add any sponsor they like, and this page should
+                            // not be a way to buy a link from us.
+                            rel="noopener noreferrer nofollow"
+                          >
+                            {logo}
+                          </a>
+                        ) : (
+                          logo
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
           </div>
 
           {/* ── Tickets ─────────────────────────────────────────────── */}
@@ -545,6 +817,15 @@ export default function EventDetailPage() {
                           {t.description && (
                             <span className="mt-0.5 block text-xs text-ink-2">{t.description}</span>
                           )}
+                          {(t.admits ?? 1) > 1 && (
+                            // Said before the price sinks in, not after. A
+                            // table at ₦30,000 is a different proposition
+                            // from a ticket at ₦30,000, and the buyer has to
+                            // know which one they're looking at.
+                            <span className="mt-1 block text-xs font-semibold text-purple">
+                              Admits {t.admits} people
+                            </span>
+                          )}
                           <span className="mt-1 block text-xs text-ink-3">
                             {paused
                               ? 'Not on sale'
@@ -553,6 +834,11 @@ export default function EventDetailPage() {
                                 : left <= 10
                                   ? `Only ${left} left`
                                   : `${left} available`}
+                            {(t.admits ?? 1) > 1 && !gone && !paused
+                              ? left === 1
+                                ? ' · 1 table'
+                                : ` · ${left} tables`
+                              : ''}
                           </span>
                         </button>
                       );
@@ -650,6 +936,55 @@ export default function EventDetailPage() {
                             onChange={(e) => setBuyerPhone(e.target.value)}
                             placeholder="Phone number"
                             className="w-full rounded-lg border border-line px-3 py-2.5 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
+                          />
+
+                          <div className="rounded-xl bg-cream-2 p-3">
+                            <label className="mb-1 block text-xs font-semibold text-ink-2">
+                              Have a code?
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                value={promoInput}
+                                onChange={(e) => {
+                                  setPromoInput(e.target.value.toUpperCase());
+                                  setPromoError(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    void applyPromo();
+                                  }
+                                }}
+                                placeholder="FRESHERS20"
+                                className="w-full rounded-lg border border-line px-3 py-2 font-mono text-sm text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void applyPromo()}
+                                disabled={promoBusy || !promoInput.trim()}
+                                className="shrink-0 rounded-lg border border-line px-4 text-sm font-semibold text-ink disabled:opacity-40"
+                              >
+                                {promoBusy ? '…' : 'Apply'}
+                              </button>
+                            </div>
+                            {promoError && (
+                              <p className="mt-1.5 text-xs text-coral">{promoError}</p>
+                            )}
+                            {promoEffect && (
+                              <p className="mt-1.5 text-xs font-semibold text-ok">
+                                {promoEffect.discount > 0
+                                  ? `${promoEffect.code} applied — ${naira(promoEffect.discount)} off`
+                                  : promoEffect.message}
+                              </p>
+                            )}
+                          </div>
+
+                          <RegistrationAnswersForm
+                            fields={regFields}
+                            values={answers}
+                            onChange={(fieldId, value) =>
+                              setAnswers((a) => ({ ...a, [fieldId]: value }))
+                            }
                           />
 
                           {quantity > 1 && (

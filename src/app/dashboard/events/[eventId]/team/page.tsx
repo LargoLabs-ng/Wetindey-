@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft, Crown, Mail, Trash2, UserPlus, X } from 'lucide-react';
 import {
   ASSIGNABLE_ROLES,
+  supportsFinanceSwitch,
   ROLE_DESCRIPTIONS,
   ROLE_LABELS,
 } from '@/lib/permissions';
@@ -19,6 +20,9 @@ interface StaffMember {
   name: string | null;
   invitedAt: string | null;
   joinedAt: string | null;
+  /** Promoters only — the code on the end of their share link. */
+  refCode: string | null;
+  canSeeFinances: boolean;
 }
 
 const roleChip: Record<string, string> = {
@@ -26,6 +30,8 @@ const roleChip: Record<string, string> = {
   event_manager: 'bg-success/25 text-sage',
   gate_staff: 'bg-info/20 text-info',
   finance: 'bg-warning/15 text-warning',
+  viewer: 'bg-surface-2 text-on-dark-2',
+  promoter: 'bg-gold-soft text-gold',
 };
 
 export default function TeamPage() {
@@ -41,6 +47,10 @@ export default function TeamPage() {
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<OrgRole>('gate_staff');
+  // Off by default and reset whenever the role changes, so it can never be
+  // left ticked from a previous selection and quietly carried onto someone
+  // the organiser did not mean to put on the money.
+  const [inviteFinances, setInviteFinances] = useState(false);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -73,7 +83,11 @@ export default function TeamPage() {
       const res = await fetch(`/api/events/${eventId}/staff`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+        body: JSON.stringify({
+          email: inviteEmail,
+          role: inviteRole,
+          canSeeFinances: inviteFinances,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -227,7 +241,10 @@ export default function TeamPage() {
                     name="role"
                     value={role}
                     checked={inviteRole === role}
-                    onChange={() => setInviteRole(role)}
+                    onChange={() => {
+                      setInviteRole(role);
+                      setInviteFinances(false);
+                    }}
                     className="mt-1 accent-[#E3B341]"
                   />
                   <span>
@@ -242,6 +259,29 @@ export default function TeamPage() {
               ))}
             </div>
           </fieldset>
+
+          {/* The second question, asked separately because it is a separate
+              question. Only offered for roles it means anything on — a
+              scanner or a promoter can never hold it. */}
+          {supportsFinanceSwitch(inviteRole) && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line-dark p-3">
+              <input
+                type="checkbox"
+                checked={inviteFinances}
+                onChange={(e) => setInviteFinances(e.target.checked)}
+                className="mt-1 accent-[#E3B341]"
+              />
+              <span>
+                <span className="block font-semibold text-on-dark">
+                  Can see finances
+                </span>
+                <span className="block text-sm text-on-dark-2">
+                  Revenue and payouts. Off means counts only — tickets sold,
+                  people checked in. Doesn&apos;t let them issue refunds.
+                </span>
+              </span>
+            </label>
+          )}
 
           <div className="flex items-center gap-3">
             <button
@@ -312,6 +352,19 @@ export default function TeamPage() {
                         {member.status === 'pending' && (
                           <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-on-dark-2">
                             Invite pending
+                          </span>
+                        )}
+                        {/* Shown here so the organiser can read a code back
+                            to someone who has lost their link, without
+                            having to sign in as them. */}
+                        {member.canSeeFinances && (
+                          <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">
+                            Sees finances
+                          </span>
+                        )}
+                        {member.refCode && (
+                          <span className="rounded-full bg-surface-2 px-2 py-0.5 font-mono text-xs text-on-dark-2">
+                            {member.refCode}
                           </span>
                         )}
                       </div>

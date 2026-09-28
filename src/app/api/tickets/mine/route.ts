@@ -44,6 +44,17 @@ export async function GET() {
           city: o.event.city,
           startDatetime: new Date(o.event.startDatetime).toISOString(),
           endDatetime: new Date(o.event.endDatetime).toISOString(),
+          // Safe to include: `paid` above already narrowed this list to
+          // orders that went through. The rule for this field is that it
+          // never reaches anyone who hasn't paid, and that filter is what
+          // enforces it here.
+          afterPurchase:
+            o.event.afterPurchaseNote || o.event.afterPurchaseUrl
+              ? {
+                  note: o.event.afterPurchaseNote,
+                  url: o.event.afterPurchaseUrl,
+                }
+              : null,
         },
       }))
   );

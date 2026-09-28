@@ -45,6 +45,10 @@ export async function POST(request: NextRequest) {
       where: and(eq(tickets.qrToken, token), eq(tickets.eventId, eventId)),
       with: {
         order: true,
+        // Needed for `admits`. One scan on a table ticket has to tell the
+        // person on the door how many people to let through, and the tier is
+        // the only place that number lives.
+        ticketType: true,
       },
     });
 
@@ -67,7 +71,8 @@ export async function POST(request: NextRequest) {
         status: 'already_checked_in',
         message: `Already checked in at ${checkIn?.checkedInAt ? new Date(checkIn.checkedInAt).toLocaleTimeString() : 'unknown time'}`,
         attendeeName: ticket.attendeeName,
-        ticketType: 'Standard',
+        ticketType: ticket.ticketType?.name ?? 'Standard',
+        admits: ticket.ticketType?.admits ?? 1,
         checkedInAt: checkIn?.checkedInAt,
       });
     }
@@ -123,11 +128,20 @@ export async function POST(request: NextRequest) {
       method: 'qr_scan',
     });
 
+    // The number the person on the door actually needs. A table ticket that
+    // says "admit attendee" gets one person through and leaves five arguing
+    // in the queue, so the count leads the message.
+    const admits = ticket.ticketType?.admits ?? 1;
+
     return NextResponse.json({
       status: 'valid',
-      message: 'Ticket verified. Admit attendee.',
+      message:
+        admits > 1
+          ? `Ticket verified. Admit ${admits} people.`
+          : 'Ticket verified. Admit attendee.',
       attendeeName: ticket.attendeeName,
-      ticketType: 'Standard',
+      ticketType: ticket.ticketType?.name ?? 'Standard',
+      admits,
       checkedInAt: now.toISOString(),
     });
   } catch (error) {

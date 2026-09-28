@@ -6,6 +6,7 @@ import {
   paystackReverseGrossUp,
   quoteOrder,
   quoteRefund,
+  quoteCancellationRefund,
   naira,
   type FeeBearer,
 } from "./fees";
@@ -159,5 +160,66 @@ describe("naira", () => {
   it("drops decimals on whole amounts and keeps them otherwise", () => {
     expect(naira(5000)).toBe("₦5,000");
     expect(naira(5177.66)).toBe("₦5,177.66");
+  });
+});
+
+describe("quoteCancellationRefund", () => {
+  // The distinction this whole function exists for: a buyer changing their
+  // mind pays for the privilege, an organiser calling the event off does not.
+  it("keeps nothing, unlike a buyer-requested refund", () => {
+    const changedMind = quoteRefund(5000, "organizer");
+    const cancelled = quoteCancellationRefund(5000, "organizer");
+
+    expect(changedMind.platformKeeps).toBe(5000 * REFUND_RETAINED_RATE);
+    expect(cancelled.platformKeeps).toBe(0);
+  });
+
+  it("returns the ticket price when the organiser paid our fee", () => {
+    const q = quoteCancellationRefund(5000, "organizer");
+    // The buyer only ever paid the face value, so that is all we can return.
+    expect(q.buyerRefund).toBe(5000);
+    // And the organiser stops being charged the cut they would have paid.
+    expect(q.organizerRefunded).toBe(5000 * PLATFORM_FEE_RATE);
+  });
+
+  it("returns price plus our fee when the buyer paid it", () => {
+    const q = quoteCancellationRefund(5000, "buyer");
+    expect(q.buyerRefund).toBe(5000 + 5000 * PLATFORM_FEE_RATE);
+    // Nothing to hand back to the organiser — they were never charged.
+    expect(q.organizerRefunded).toBe(0);
+  });
+
+  it("reports Paystack's charge as lost rather than pretending it comes back", () => {
+    const q = quoteCancellationRefund(5000, "organizer");
+    expect(q.processingLost).toBeGreaterThan(0);
+    expect(q.processingLost).toBe(
+      Math.round((paystackGrossUp(q.buyerRefund) - q.buyerRefund) * 100) / 100
+    );
+  });
+
+  it("is zero all round on a free ticket", () => {
+    for (const bearer of BEARERS) {
+      expect(quoteCancellationRefund(0, bearer)).toEqual({
+        buyerRefund: 0,
+        platformKeeps: 0,
+        organizerRefunded: 0,
+        processingLost: 0,
+      });
+    }
+  });
+
+  it("never returns less than the buyer paid", () => {
+    for (const face of [500, 1000, 2400, 5000, 25000]) {
+      for (const bearer of BEARERS) {
+        const order = quoteOrder(face, { platformFeePaidBy: bearer });
+        const refund = quoteCancellationRefund(face, bearer);
+        // What we owe back is what reached us: the buyer's total minus the
+        // card fee, which Paystack keeps on both legs of the journey.
+        expect(refund.buyerRefund).toBeCloseTo(
+          order.buyerTotal - order.processingFee,
+          2
+        );
+      }
+    }
   });
 });

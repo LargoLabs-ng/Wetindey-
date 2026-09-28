@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Search } from "lucide-react";
 import { WordMark } from "@/components/wordmark";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { OrganisingStrip } from "@/components/organising-strip";
 import {
+  EventFeature,
   EventRail,
-  EventSpotlight,
   type CardEvent,
 } from "@/components/event-card";
 
@@ -23,13 +25,25 @@ import {
  * So: real events above everything else. The pitch to organizers survives as
  * one strip near the bottom, which is roughly the attention it deserves.
  */
+type Viewer = {
+  universityId: string;
+  universityName: string;
+  campusId: string | null;
+} | null;
+
 export default function HomePage() {
+  const { status } = useSession();
+  const signedIn = status === "authenticated";
   const [events, setEvents] = useState<CardEvent[] | null>(null);
+  const [viewer, setViewer] = useState<Viewer>(null);
 
   useEffect(() => {
     fetch("/api/discover")
       .then((r) => r.json())
-      .then((d) => setEvents(d.events ?? []))
+      .then((d) => {
+        setEvents(d.events ?? []);
+        setViewer(d.viewer ?? null);
+      })
       .catch(() => setEvents([]));
   }, []);
 
@@ -58,19 +72,56 @@ export default function HomePage() {
     return chosen;
   };
 
-  // Order matters here: each section takes from what is left, so the
-  // narrowest, most interesting cuts run first and the catch-all runs last.
   const now = Date.now();
-  const spotlight = take(() => true, 3);
-  const soon = take(
-    (e) => new Date(e.startDatetime).getTime() - now < 14 * 86400000
-  );
-  const justDropped = take(
+
+  /**
+   * Sections are for organising abundance. Below a certain number of events
+   * they stop organising anything and become scaffolding around emptiness —
+   * four headings, one card each, which is how the page looked with three
+   * events on it. A heading over a single card is overhead, not structure.
+   *
+   * So the page changes shape with how much there is: one feature and one
+   * rail while the listing is small, the full set of cuts once there are
+   * enough events for a cut to mean something.
+   */
+  const SECTION_FROM = 6; // events, below which the page stays simple
+  const SECTION_MIN = 2; // cards, below which a section is not worth a heading
+  const sectioned = all.length >= SECTION_FROM;
+
+  // Exactly one event gets the big treatment, and only because it is the
+  // soonest — an actual ranking rather than a layout preference. Their own
+  // campus wins the slot when we know it, otherwise the soonest anywhere.
+  const [next] = viewer
+    ? take((e) => e.universityId === viewer.universityId, 1)
+    : take(() => true, 1);
+
+  // A cut only happens when the page is big enough to need cutting, and only
+  // keeps what it takes if that is enough to fill a row. Anything it turns
+  // down stays in the pool for the catch-all at the bottom, so no event is
+  // ever dropped by a section refusing it.
+  const cut = (
+    pick: (e: CardEvent) => boolean,
+    sort?: (a: CardEvent, b: CardEvent) => number
+  ) => {
+    if (!sectioned) return [];
+    const chosen = all
+      .filter((e) => !spent.has(e.id) && pick(e))
+      .sort(sort ?? (() => 0))
+      .slice(0, 8);
+    if (chosen.length < SECTION_MIN) return [];
+    chosen.forEach((e) => spent.add(e.id));
+    return chosen;
+  };
+
+  const campus = viewer
+    ? cut((e) => e.universityId === viewer.universityId)
+    : [];
+  const soon = cut((e) => new Date(e.startDatetime).getTime() - now < 14 * 86400000);
+  const justDropped = cut(
     (e) => !!e.createdAt && now - new Date(e.createdAt).getTime() < 14 * 86400000,
-    8,
     (a, b) => ((a.createdAt ?? "") < (b.createdAt ?? "") ? 1 : -1)
   );
-  const free = take((e) => e.isFree);
+  const free = cut((e) => e.isFree);
   const rest = take(() => true, 12);
 
   return (
@@ -79,20 +130,55 @@ export default function HomePage() {
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <WordMark />
+          {/* The nav has to know who is looking at it. It offered "Sign in"
+              and "Sign up" to everyone, including people already signed in —
+              which reads as the app not recognising you, and buries the two
+              links a signed-in student actually wants. */}
           <nav className="flex items-center gap-2">
             <ThemeToggle className="mr-1" />
-            <Link
-              href="/login"
-              className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
-            >
-              Sign in
-            </Link>
-            <Link
-              href="/signup"
-              className="rounded-lg bg-purple px-3.5 py-2 text-sm font-semibold text-white hover:bg-purple-deep"
-            >
-              Sign up
-            </Link>
+            {signedIn ? (
+              <>
+                <Link
+                  href="/dashboard/events"
+                  className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
+                >
+                  Organising
+                </Link>
+                <Link
+                  href="/my-events"
+                  className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
+                >
+                  My events
+                </Link>
+                <Link
+                  href="/profile"
+                  className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
+                >
+                  Profile
+                </Link>
+                <Link
+                  href="/dashboard"
+                  className="rounded-lg bg-purple px-3.5 py-2 text-sm font-semibold text-white hover:bg-purple-deep"
+                >
+                  Post an event
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/signup"
+                  className="rounded-lg bg-purple px-3.5 py-2 text-sm font-semibold text-white hover:bg-purple-deep"
+                >
+                  Sign up
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       </header>
@@ -142,7 +228,7 @@ export default function HomePage() {
               See wetin dey
             </Link>
             <Link
-              href="/signup"
+              href={signedIn ? "/dashboard" : "/signup"}
               className="inline-flex items-center justify-center rounded-xl border px-6 py-3.5 text-base font-semibold transition-colors"
               style={{
                 borderColor: "var(--color-indigo-line)",
@@ -157,6 +243,12 @@ export default function HomePage() {
 
       {/* ── Real events ──────────────────────────────────────────────── */}
       <div className="mx-auto max-w-5xl px-4 pb-16 sm:px-6">
+        {/* Above the discovery rails, and outside the loading/empty branch
+            below: somebody who runs events still has events to manage on a
+            day when nothing is published, and "Nothing dey here yet" must
+            not be the whole of their home page. */}
+        <OrganisingStrip />
+
         {events === null ? (
           <p className="pt-12 text-ink-3">Loading what&apos;s on…</p>
         ) : events.length === 0 ? (
@@ -175,14 +267,23 @@ export default function HomePage() {
           </div>
         ) : (
           <>
-            <div>
-              <EventSpotlight
-                title="Wetin dey next"
-                note="Closest to happening"
-                events={spotlight}
-                href="/discover"
-              />
-            </div>
+            <EventFeature
+              title="Wetin dey next"
+              note={
+                viewer && next?.universityId === viewer.universityId
+                  ? `The next one at ${viewer.universityName}`
+                  : "Closest to happening"
+              }
+              event={next}
+              href="/discover"
+            />
+
+            <EventRail
+              title={`Around ${viewer?.universityName ?? "campus"}`}
+              note="Everything else at your school"
+              events={campus}
+              href="/discover"
+            />
 
             <EventRail
               title="Happening soon"
@@ -202,7 +303,18 @@ export default function HomePage() {
               events={free}
               href="/discover"
             />
-            <EventRail title="Also on" events={rest} href="/discover" />
+            <EventRail
+              title={sectioned ? "Also on" : "Wetin else dey"}
+              note={
+                sectioned
+                  ? undefined
+                  : viewer
+                    ? "Around you and beyond"
+                    : "Everything else on"
+              }
+              events={rest}
+              href="/discover"
+            />
 
             <div className="mt-14 text-center">
               <Link

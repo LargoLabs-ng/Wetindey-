@@ -14,6 +14,17 @@ interface Attendee {
   purchaseTime: string;
   checkedInAt?: string;
   ticketId: string;
+  /**
+   * Answers to the organiser's own questions. Per ORDER, so everyone who
+   * bought together carries the same ones.
+   *
+   * Shown in the detail panel rather than as table columns: there are six
+   * columns already, and four questions would push the name off the side of
+   * a laptop. The answer you actually want at the door is one person's, not
+   * everybody's at once — and search below covers them, so looking up a
+   * matric number still works from the top of the page.
+   */
+  answers?: { label: string; value: string }[];
 }
 
 export default function AttendeesPage() {
@@ -107,7 +118,12 @@ export default function AttendeesPage() {
         (a) =>
           a.name.toLowerCase().includes(query) ||
           a.email.toLowerCase().includes(query) ||
-          a.ticketId.toLowerCase().includes(query)
+          a.ticketId.toLowerCase().includes(query) ||
+          // A matric number is exactly the kind of thing somebody types into
+          // this box, and it only exists as an answer.
+          (a.answers ?? []).some((ans) =>
+            ans.value.toLowerCase().includes(query)
+          )
       );
     }
 
@@ -464,6 +480,20 @@ export default function AttendeesPage() {
                   {new Date(selectedAttendee.purchaseTime).toLocaleString()}
                 </p>
               </div>
+
+              {(selectedAttendee.answers ?? []).map((ans) => (
+                <div key={ans.label}>
+                  <p
+                    className="text-xs font-semibold uppercase"
+                    style={{ color: 'var(--color-on-dark-3)' }}
+                  >
+                    {ans.label}
+                  </p>
+                  <p style={{ color: 'var(--color-on-dark-2)' }}>
+                    {ans.value || '—'}
+                  </p>
+                </div>
+              ))}
 
               {selectedAttendee.checkedInAt && (
                 <div>

@@ -251,6 +251,61 @@ export function quoteRefund(
   };
 }
 
+/**
+ * What a refund returns when the ORGANISER cancelled the event.
+ *
+ * Deliberately not quoteRefund. The two look similar and mean opposite
+ * things: quoteRefund covers a buyer changing their mind about an event that
+ * is still going ahead, where retaining half the cut pays for work already
+ * done. Here the event is not happening. Nobody was served, so there is
+ * nothing to charge for, and the platform keeps zero.
+ *
+ * The buyer gets back every naira that left their account — ticket price
+ * plus our fee if they were the one who paid it.
+ *
+ * What this does NOT undo is Paystack's own processing charge. Paystack
+ * keeps that on a refunded transaction, so it is a real loss landing on
+ * whoever carried it originally — the organiser on a buyer_pays event, since
+ * the buyer is being made whole. Returned as its own number rather than
+ * folded into a total, because an organiser cancelling an event deserves to
+ * be told that figure rather than find it later in a payout statement.
+ */
+export function quoteCancellationRefund(
+  faceValue: number,
+  platformFeePaidBy: FeeBearer = "organizer"
+): {
+  /** Cash returned to the buyer: everything they paid us. */
+  buyerRefund: number;
+  /** Always zero. The event did not happen. */
+  platformKeeps: number;
+  /** Our fee handed back, when the organiser was the one who paid it. */
+  organizerRefunded: number;
+  /** Paystack's cut, which nobody gets back. */
+  processingLost: number;
+} {
+  if (faceValue <= 0) {
+    return {
+      buyerRefund: 0,
+      platformKeeps: 0,
+      organizerRefunded: 0,
+      processingLost: 0,
+    };
+  }
+
+  const fullFee = round2(faceValue * PLATFORM_FEE_RATE);
+  const buyerPaid = platformFeePaidBy === "buyer";
+  const charged = buyerPaid ? round2(faceValue + fullFee) : round2(faceValue);
+
+  return {
+    buyerRefund: charged,
+    platformKeeps: 0,
+    // When the buyer paid our fee it goes back to them inside buyerRefund
+    // above; when the organiser paid it, they simply stop being charged it.
+    organizerRefunded: buyerPaid ? 0 : fullFee,
+    processingLost: round2(paystackGrossUp(charged) - charged),
+  };
+}
+
 export const naira = (value: number) =>
   `₦${value.toLocaleString("en-NG", {
     minimumFractionDigits: Number.isInteger(value) ? 0 : 2,

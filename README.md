@@ -1,220 +1,179 @@
-# Ticket Buddy
+# Wetin Dey
 
-Modern event ticketing platform for Nigerian organizers, attendees, and event
-staff. Built per the Founder Build Blueprint — Phase 1 (Foundation) in
-progress.
+University event discovery and ticketing for the Nigerian campus market.
 
-## Locked architecture decisions
+Students find what's happening around them; organisers sell tickets, take money
+out, and run the door. Ticketing is the infrastructure — the product is the
+discovery and community layer on top of it.
 
-These are settled and should not drift without a deliberate, explicit change:
+Formerly "Ticket Buddy"; you will still find that name in older commits and in
+one or two asset filenames.
 
-1. **ORM: Drizzle.** No other ORM is used, referenced, or planned anywhere
-   in this project. Drizzle was chosen because it's pure TypeScript with no
-   native binary dependency — it installs and builds identically in any
-   environment, including sandboxed CI and restricted networks.
-2. **Attendees never need an account.** Ticket buying is a guest flow:
-   visit event page → select ticket → enter contact details → pay via
-   Paystack → receive QR ticket. No signup, no login, ever, for attendees.
-3. **The `users` table is for platform staff only** — Organization Owners,
-   Event Managers, Gate Staff, Finance/Admin. It is never the source of
-   attendee identity.
-4. **Guest purchase data lives on `orders` and `tickets`**, not on `users`.
-   `orders.buyerId` is nullable and only populated if a logged-in staff
-   member happens to place an order themselves; `tickets.attendeeName` /
-   `attendeeEmail` are the actual source of truth for who holds a ticket.
-5. **Deployment target: Vercel (Next.js) + Neon (external PostgreSQL).**
-   The database client is configured for Neon's pooled connection string
-   (`prepare: false`, `max: 1`) — the correct, production-safe setup for
-   serverless functions, not just a local-dev convenience.
-6. **Stack:** Next.js + TypeScript + PostgreSQL + Drizzle + Auth.js +
-   Paystack, deployed as a single monolith. No microservices.
+---
 
-## What's built so far (Phase 1: Foundation)
+## Stack
 
-- [x] Full database schema (`src/db/schema.ts`) — every entity from the
-      blueprint: User, Organization, OrganizationMember, Event, TicketType,
-      Order, Ticket, Payment, CheckIn, Payout — with enums for every status
-      field and relations wired for Drizzle's query API
-- [x] Auth: registration endpoint (`POST /api/auth/register`) that creates a
-      platform User **and** their Organization + Owner membership in one
-      transaction, and Auth.js credentials login wired to the same `users`
-      table — staff only, per decision #2 above
-- [x] Brand system wired into Tailwind (colors + Manrope font)
-- [x] Event CRUD API (`GET/POST /api/events`, `GET/PATCH/DELETE /api/events/:id`,
-      `POST /api/events/:id/publish`) with organization-role authorization —
-      only Owner/Event Manager can create, edit, or publish; only Owner can
-      delete; any org member can view
-- [x] Staff signup (`/signup`) and login (`/login`) pages
-- [x] Dashboard shell with route protection (`src/proxy.ts` — Next 16's
-      middleware convention) redirecting unauthenticated visitors to `/login`
-- [x] Events dashboard (`/dashboard/events`) — list, create, view/edit,
-      publish/unpublish, delete, all calling the Event CRUD API above
-- [x] Ticket Types — `GET/POST /api/events/:id/ticket-types` and
-      `PATCH/DELETE /api/ticket-types/:id`, with the same Owner/Event Manager
-      permission gate. Deletion is blocked once a tier has any sales
-      (protects paid orders); capacity can't be shrunk below units already
-      sold. UI lives on the event detail page.
-- [x] Google sign-in for staff — email/password and Google both work and
-      resolve to the same account by email. A first-time Google sign-in
-      auto-creates an Organization (Owner role) since there's no form step
-      to collect a name mid-OAuth-flow; renaming that org isn't built yet.
-      Attendees still never authenticate — this is staff-only, same as
-      email/password. **Fully optional:** without `AUTH_GOOGLE_ID`/
-      `AUTH_GOOGLE_SECRET` set, the button auto-hides on both pages and the
-      provider isn't even registered — nothing breaks, email/password works
-      completely independently.
-- [x] Brand palette extended to match final design files (Figma Make export):
-      ink/ink-2/ink-3 text tiers, primary-soft/pale tints, sage-pale, caution
-      and danger states, layered ivory/line shades — see `globals.css`
-- [ ] Database migrations run against a real Postgres instance (needs a
-      `DATABASE_URL` — see below)
-- [ ] Edit form for existing event fields (currently create-only; the detail
-      page shows fields and supports publish/delete, but not field edits yet)
-- [ ] Guest checkout flow (Phase 2 — public event pages, ticket selection)
+| | |
+|---|---|
+| Framework | Next.js 16 (App Router, Turbopack) |
+| UI | React 19, Tailwind v4 |
+| Database | Neon Postgres via Drizzle ORM |
+| Auth | Auth.js v5 (beta), JWT sessions, credentials + Google |
+| Payments | Paystack |
+| Email | Resend (or SMTP/SendGrid — see `EMAIL_PROVIDER`) |
+| File storage | Vercel Blob |
+| Tests | Vitest |
 
-## Getting started (local development)
+Route params are `Promise<{...}>` — this is Next 16, not 15.
 
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+---
 
-2. **Set up a Neon database** at [neon.tech](https://neon.tech) (free tier
-   is fine to start). Grab both connection strings it gives you — pooled
-   and direct.
+## Running it
 
-3. **Copy the env file and fill it in:**
-   ```bash
-   cp .env.example .env
-   ```
-   Use plain `.env` (not `.env.local`) — Next.js reads both, but `drizzle-kit`
-   (the CLI that creates your tables) only reads `.env`. Use the **direct**
-   (non-pooled) connection string for local dev.
-   Generate `AUTH_SECRET` with:
-   ```bash
-   npx auth secret
-   ```
-
-4. **Push the schema to your database:**
-   ```bash
-   npx drizzle-kit push
-   ```
-
-5. **(Optional) Set up Google sign-in:**
-   - Go to [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials)
-   - Create an OAuth 2.0 Client ID (Application type: Web application)
-   - Add an Authorized redirect URI: `http://localhost:3000/api/auth/callback/google`
-     (and `https://your-vercel-domain.com/api/auth/callback/google` for production —
-     add both, Google allows multiple)
-   - Copy the Client ID and Client Secret into `AUTH_GOOGLE_ID` and
-     `AUTH_GOOGLE_SECRET` in `.env`
-   - Google's OAuth consent screen + Client ID setup does not require
-     billing. If Cloud Console prompts for a payment method, that's a
-     general account-verification step for new/free-tier Cloud accounts,
-     not something specific to OAuth — safe to skip this section entirely
-     if you'd rather not.
-   - Without this, everything else still works — the "Continue with
-     Google" button automatically hides on the login/signup pages when
-     these env vars aren't set, and the provider isn't even registered
-     with Auth.js. Email/password is fully independent of this.
-
-6. **Run the dev server:**
-   ```bash
-   npm run dev
-   ```
-
-## Deploying to Vercel
-
-1. Push this repo to GitHub.
-2. Import it into Vercel.
-3. In Project Settings → Environment Variables, add everything from
-   `.env.example` (these are separate from your local `.env` file — Vercel
-   doesn't read your local files, you enter them in its dashboard). For
-   `DATABASE_URL`, use Neon's **pooled** connection string here (the one
-   with `-pooler` in the hostname) — the db client is already configured
-   to work correctly with it.
-4. Set `NEXTAUTH_URL` to your production URL.
-5. Deploy. No build-time native dependencies to worry about — Drizzle
-   needs nothing beyond `npm install`.
-
-## Project structure
-
-```
-src/
-  app/
-    api/
-      auth/
-        [...nextauth]/route.ts   # Auth.js handlers (staff login)
-        register/route.ts        # POST /api/auth/register (staff signup)
-      events/
-        route.ts                 # GET (list) / POST (create)
-        [id]/
-          route.ts                # GET / PATCH / DELETE
-          publish/route.ts        # POST — toggle published/unpublished
-          ticket-types/route.ts   # GET (list) / POST (create) tiers
-      ticket-types/
-        [id]/route.ts            # PATCH / DELETE a single tier
-    dashboard/
-      layout.tsx                 # Nav shell + sign-out (session-aware)
-      events/
-        page.tsx                  # Events list
-        new/page.tsx               # Create event form
-        [id]/
-          page.tsx                  # Event detail (view + publish/delete)
-          event-actions.tsx          # Client component for publish/delete
-          ticket-tiers.tsx            # Client component: list + add tiers
-    login/
-      page.tsx                    # Server wrapper — checks Google env vars
-      login-form.tsx                # Client form (hides Google button if unset)
-    signup/
-      page.tsx                    # Server wrapper — checks Google env vars
-      signup-form.tsx                # Client form (hides Google button if unset)
-    page.tsx                     # Public landing page
-    layout.tsx                   # Root layout, brand font + metadata
-    providers.tsx                # SessionProvider wrapper (client)
-    globals.css                  # Tailwind theme + brand color tokens
-  db/
-    schema.ts                    # Every table, enum, and relation
-    index.ts                     # Drizzle client, tuned for Neon + Vercel
-  fonts/
-    Manrope-Variable.ttf         # Self-hosted brand typeface
-  lib/
-    authz.ts                     # Session + organization-role helpers
-    password.ts                  # bcrypt hash/verify helpers
-    slug.ts                      # Shared slug generation (orgs + events)
-  components/
-    sign-out-button.tsx          # Client component (calls next-auth signOut)
-  auth.ts                        # Auth.js config (Credentials provider)
-  proxy.ts                       # Route protection for /dashboard/* (Next 16
-                                  # renamed "middleware" to "proxy")
+```bash
+npm install
+cp .env.example .env.local   # then fill it in — see below
+npm run dev
 ```
 
-## Event authorization rules (enforced in code, not just documented)
+### Environment
 
-| Action | Owner | Event Manager | Gate Staff | Finance |
-|---|---|---|---|---|
-| View event | ✅ | ✅ | ✅ | ✅ |
-| Create / edit / publish | ✅ | ✅ | ❌ | ❌ |
-| Delete | ✅ | ❌ | ❌ | ❌ |
+`.env.local` is gitignored and has never been committed. You need your own.
 
-See `src/lib/authz.ts`. Every event route loads the event, resolves the
-caller's membership in that event's organization, and checks role — there
-is no endpoint that trusts a client-supplied organization or role.
+**Required to boot:**
 
-## Other design decisions worth knowing
+| Variable | What it is |
+|---|---|
+| `DATABASE_URL` | Neon Postgres connection string |
+| `AUTH_SECRET` | Any long random string (`openssl rand -base64 32`) |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` in dev; the real origin in production |
 
-- **Fee config lives on the Organization row** (`feePercent`, `feeFlat`,
-  `feeStrategy`), not hard-coded — per blueprint Section 22/23, pricing
-  strategy must be changeable without engineering work.
-- **Inventory protection groundwork:** `ticketTypes.quantityReserved` and
-  `orders.reservationExpiresAt` are in the schema now so Phase 3 can
-  implement the reserve → confirm/release flow without a schema migration.
-- **QR tokens are opaque:** `tickets.qrToken` is a random unique string, not
-  a ticket ID — per blueprint Section 15, scan logic will validate
-  server-side.
+**Required for the parts that matter:**
 
-## Next steps (continuing Phase 1 → 2)
+| Variable | What breaks without it |
+|---|---|
+| `PAYSTACK_SECRET_KEY` | Checkout. Use a test key in dev |
+| `RESEND_API_KEY` + `EMAIL_FROM` | Tickets, QR codes, all notifications |
+| `BLOB_READ_WRITE_TOKEN` | Image uploads (cover art, logos, sponsors) |
+| `ADMIN_EMAILS` | Comma-separated. Who can reach `/admin` |
 
-- Edit form for existing event fields (title/description/venue/dates)
-- "Invite team member" flow (Owner adds Event Manager/Gate Staff/Finance)
-- Public event page + guest checkout flow (Phase 2)
+**Optional:** `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (Google sign-in),
+`NEXT_PUBLIC_SUPPORT_EMAIL`, `EMAIL_PROVIDER` with `SMTP_*` or
+`SENDGRID_API_KEY` if you'd rather not use Resend.
+
+### Paystack webhook
+
+Point it at `POST /api/webhooks/paystack`. Signature is verified with
+HMAC-SHA512 against `PAYSTACK_SECRET_KEY`.
+
+The webhook is **not** the only thing that completes a purchase. The buyer's
+own return to the site calls the same `finalizeOrder()`, so a dropped or
+delayed webhook doesn't leave somebody paid-but-ticketless. Both paths claim
+the order with a conditional `UPDATE ... WHERE status = X RETURNING`, so
+whichever arrives second is a no-op rather than a double-send.
+
+---
+
+## Migrations — read this before touching the database
+
+**There is no `drizzle-kit migrate` or `push` in this project, deliberately.**
+
+`migrate` replays from a journal this repo doesn't keep (the early migrations
+were applied by hand), and `push` diffs the live database against `schema.ts`
+and decides for itself what to run. Neither is acceptable against a database
+holding real orders.
+
+Instead: migrations are **hand-written SQL** in `drizzle/`, applied one at a
+time by a script that runs exactly the reviewed text and nothing else.
+
+```bash
+node apply-migration.mjs drizzle/0013_commission_snapshot.sql
+```
+
+Every migration is written to be safe to run twice — `IF NOT EXISTS`
+throughout, `DO $$ ... EXCEPTION WHEN duplicate_object` around new enum types.
+
+To find out what the database actually has:
+
+```bash
+node check-schema.mjs
+```
+
+It reads `information_schema`, writes nothing, and prints OK / NOT RUN /
+PARTIAL per migration, naming the missing column or table and the command to
+fix it. **Run it after pulling.** `tsc` passing only proves the code agrees
+with `schema.ts`; it says nothing about what Postgres has.
+
+When you add a migration, add its markers to the `EXPECT` list in
+`check-schema.mjs`.
+
+The SQL files carry the reasoning for each decision in comments. They are
+worth reading before changing the tables they touch — several of them explain
+a choice that looks wrong until you know what went wrong before it.
+
+---
+
+## Checks
+
+```bash
+npm test            # vitest
+npm run typecheck   # tsc --noEmit
+npm run lint
+node check-schema.mjs
+```
+
+`next dev` transpiles without type-checking, so **a page rendering cleanly
+proves syntax and nothing else.** Run `typecheck` before you believe anything.
+
+---
+
+## Where the real decisions live
+
+Most of this codebase is ordinary. These files are not, and each one explains
+itself at the top:
+
+| File | Why it's worth reading |
+|---|---|
+| `src/lib/fees.ts` | Who pays what. Paystack's gross-up is reverse-solved so the page and the charge always agree; verified against a live test charge |
+| `src/lib/permissions.ts` | Four assignable roles plus an orthogonal "can see the money" switch, and why it isn't six roles |
+| `src/lib/earnings.ts` | The single source of truth for what an organisation is owed. Documents one known simplification in the organiser's favour |
+| `src/lib/registration.ts` | Custom checkout questions. Built around "a bad answer must never cost a sale that isn't the buyer's fault" |
+| `src/lib/notify-change.ts` | What counts as a change worth emailing ticket-holders about — and why a provisional date never leaks into an inbox |
+| `src/lib/promo.ts` | Discount vs refer-to-earn: identical at checkout, opposite in the ledger |
+| `src/lib/media.ts` | YouTube URL parsing, and `isSafeHttpUrl` — the check that `z.string().url()` is not |
+| `src/lib/cancel-event.ts` | Split in two on purpose: telling people is urgent and reversible, moving money is neither |
+| `src/app/globals.css` | The theming. CSS custom properties resolve where **declared**, not where used — the `.wd-night` block re-declares the compat names for that reason |
+
+### Two conventions worth knowing
+
+**Snapshot, don't join, for anything that records what happened.** A payout
+copies the bank details it was requested against. A registration answer copies
+the question label it was asked under. An order stores the discount and
+commission in naira. In every case the configuration can change tomorrow and
+the record must not change with it.
+
+**URLs are scheme-checked, not just parse-checked.** `z.string().url()`
+accepts `javascript:alert(1)`. Every URL field goes through `isSafeHttpUrl`
+on the way in, and every render site calls `safeHttpUrl()` on the way out.
+
+---
+
+## What isn't built
+
+Stated plainly so nobody discovers it in production:
+
+- **Payouts don't move money.** A withdrawal request queues a row for a human
+  to action. There is no bank transfer integration.
+- **Promoter commissions are a record, not a payment.** The codes screen shows
+  what an organiser owes; it is not deducted from their balance and we do not
+  pay promoters.
+- **Refunds retained on a buyer's change of mind** aren't deducted in
+  `earnings.ts` — about ₦125 on a ₦5,000 ticket, always in the organiser's
+  favour. Doing it properly needs a `kind` column on `refunds`. Documented
+  in-file.
+- **A provisional date is real data nobody is meant to see.** Anything that
+  displays a date must check `dateTbd` first. Three places do: the event page,
+  the cards, and the change-notification email.
+- **`organizations.fee_percent`** exists in the schema and nothing reads it.
+  `PLATFORM_FEE_RATE` in `src/lib/fees.ts` is the only source of truth. Wire
+  one up or drop the other; don't add a third.

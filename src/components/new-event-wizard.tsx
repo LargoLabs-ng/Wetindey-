@@ -4,7 +4,11 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Check, Loader2 } from "lucide-react";
+import { AfterPurchaseFields } from "@/components/after-purchase-fields";
 import { CoverImageField } from "@/components/cover-image-field";
+import { EventBrandingFields } from "@/components/event-branding-fields";
+import { PromoCodesEditor } from "@/components/promo-codes-editor";
+import { RegistrationFieldsEditor } from "@/components/registration-fields-editor";
 import { TicketTiers, type Tier } from "@/components/ticket-tiers";
 import {
   quoteOrder,
@@ -45,6 +49,9 @@ type Details = {
   venueName: string;
   startDatetime: string;
   endDatetime: string;
+  /** See the schema: the dates are still stored, just not shown to anyone. */
+  dateTbd: boolean;
+  venueTbd: boolean;
 };
 
 const EMPTY: Details = {
@@ -56,6 +63,8 @@ const EMPTY: Details = {
   venueName: "",
   startDatetime: "",
   endDatetime: "",
+  dateTbd: false,
+  venueTbd: false,
 };
 
 const field =
@@ -135,6 +144,8 @@ export function NewEventWizard() {
           venueName: ev.venueName ?? "",
           startDatetime: toLocalInput(ev.startDatetime),
           endDatetime: toLocalInput(ev.endDatetime),
+          dateTbd: ev.dateTbd ?? false,
+          venueTbd: ev.venueTbd ?? false,
         });
         setFeeStrategy(ev.feeStrategy ?? "buyer_pays");
         setPlatformFeePaidBy(ev.platformFeePaidBy ?? "organizer");
@@ -170,6 +181,8 @@ export function NewEventWizard() {
       venueName: details.venueName.trim(),
       startDatetime: new Date(details.startDatetime).toISOString(),
       endDatetime: new Date(details.endDatetime).toISOString(),
+      dateTbd: details.dateTbd,
+      venueTbd: details.venueTbd,
     };
 
     const res = await fetch(
@@ -366,7 +379,17 @@ export function NewEventWizard() {
               onChange={(e) => set("venueName", e.target.value)}
               placeholder="e.g. UNICROSS Main Auditorium"
               className={field}
+              disabled={details.venueTbd}
             />
+            <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-on-dark-2">
+              <input
+                type="checkbox"
+                checked={details.venueTbd}
+                onChange={(e) => set("venueTbd", e.target.checked)}
+                className="accent-[#6C3CFF]"
+              />
+              Venue not confirmed yet
+            </label>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -392,9 +415,36 @@ export function NewEventWizard() {
             </div>
           </div>
 
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-on-dark-2">
+            <input
+              type="checkbox"
+              checked={details.dateTbd}
+              onChange={(e) => set("dateTbd", e.target.checked)}
+              className="mt-0.5 accent-[#6C3CFF]"
+            />
+            <span>
+              Date not confirmed yet — show &ldquo;to be announced&rdquo;
+              instead
+            </span>
+          </label>
+
+          {(details.dateTbd || details.venueTbd) && (
+            // The provisional date is not a formality: it decides which week
+            // the event turns up in on the discovery rails, so an organiser
+            // has to know their rough guess is doing real work.
+            <p className="rounded-lg border border-purple/30 bg-purple/5 px-3 py-2 text-xs text-on-dark-2">
+              Put your best guess in the fields above anyway — nobody sees it,
+              but it decides where your event lands in{" "}
+              <span className="text-on-dark">What&apos;s on</span>. Everyone
+              holding a ticket is emailed automatically the moment you
+              confirm.
+            </p>
+          )}
+
           <p className="text-xs text-on-dark-3">
-            Venue and city are needed before you can publish, but you can come
-            back to them.
+            A city is needed before you can publish, and a venue unless
+            you&apos;ve ticked that it isn&apos;t confirmed. You can come back
+            to any of this.
           </p>
 
           <button
@@ -512,6 +562,22 @@ export function NewEventWizard() {
           </div>
 
           <div className="rounded-2xl border border-line-dark bg-surface p-6">
+            <RegistrationFieldsEditor eventId={eventId} />
+          </div>
+
+          <div className="rounded-2xl border border-line-dark bg-surface p-6">
+            <AfterPurchaseFields eventId={eventId} />
+          </div>
+
+          <div className="rounded-2xl border border-line-dark bg-surface p-6">
+            <EventBrandingFields eventId={eventId} />
+          </div>
+
+          <div className="rounded-2xl border border-line-dark bg-surface p-6">
+            <PromoCodesEditor eventId={eventId} />
+          </div>
+
+          <div className="rounded-2xl border border-line-dark bg-surface p-6">
             <h2 className="font-bold text-on-dark">Before it goes live</h2>
             <ul className="mt-3 space-y-2 text-sm text-on-dark-2">
               <li>
@@ -521,8 +587,19 @@ export function NewEventWizard() {
               </li>
               <li>
                 {tiers.length} ticket {tiers.length === 1 ? "type" : "types"} ·{" "}
-                {tiers.reduce((n, t) => n + Number(t.quantityTotal || 0), 0)} tickets
-                available
+                {/* Seats, not rows. With a table tier these are different
+                    numbers, and the one that has to fit in the hall is this
+                    one. */}
+                {tiers
+                  .reduce(
+                    (n, t) =>
+                      n + Number(t.quantityTotal || 0) * Number(t.admits ?? 1),
+                    0
+                  )
+                  .toLocaleString("en-NG")}{" "}
+                {tiers.some((t) => Number(t.admits ?? 1) > 1)
+                  ? "places available"
+                  : "tickets available"}
               </li>
               <li>{details.coverImage ? "Cover art added" : "No cover art — it will show a placeholder"}</li>
             </ul>

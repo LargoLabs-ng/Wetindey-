@@ -47,24 +47,24 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-ivory px-4">
+    <main className="wd-night min-h-screen flex items-center justify-center bg-cream px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <div className="mb-5"><WordMark size="lg" /></div>
-          <h1 className="text-2xl font-bold text-charcoal">Welcome back</h1>
-          <p className="text-secondary-text text-sm mt-1">
+          <h1 className="text-2xl font-bold text-ink">Welcome back</h1>
+          <p className="text-ink-2 text-sm mt-1">
             Log in to manage your events.
           </p>
         </div>
 
         <form
           onSubmit={handleSubmit}
-          className="space-y-4 bg-white border border-border rounded-2xl p-6"
+          className="space-y-4 bg-card border border-line rounded-2xl p-6"
         >
           {error && <p className="text-error text-sm">{error}</p>}
 
           <div>
-            <label className="block text-sm font-medium text-charcoal mb-1">
+            <label className="block text-sm font-medium text-ink mb-1">
               Email
             </label>
             <input
@@ -72,12 +72,12 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-forest"
+              className="w-full rounded-xl border border-line bg-cream px-3 py-2 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-charcoal mb-1">
+            <label className="block text-sm font-medium text-ink mb-1">
               Password
             </label>
             <input
@@ -85,14 +85,14 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-forest"
+              className="w-full rounded-xl border border-line bg-cream px-3 py-2 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-forest text-ivory font-semibold py-2.5 hover:bg-emerald transition-colors disabled:opacity-60"
+            className="w-full rounded-xl bg-purple text-white font-semibold py-2.5 hover:bg-purple-deep transition-colors disabled:opacity-60"
           >
             {loading ? "Logging in..." : "Log in"}
           </button>
@@ -100,15 +100,15 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
           {googleEnabled && (
             <>
               <div className="flex items-center gap-3 py-1">
-                <div className="flex-1 h-px bg-border" />
-                <span className="text-xs text-secondary-text">or</span>
-                <div className="flex-1 h-px bg-border" />
+                <div className="flex-1 h-px bg-line" />
+                <span className="text-xs text-ink-2">or</span>
+                <div className="flex-1 h-px bg-line" />
               </div>
 
               <button
                 type="button"
                 onClick={() => signIn("google", { callbackUrl: destination })}
-                className="w-full flex items-center justify-center gap-2 rounded-lg border border-border py-2.5 font-semibold text-charcoal hover:bg-ivory transition-colors"
+                className="w-full flex items-center justify-center gap-2 rounded-lg border border-line py-2.5 font-semibold text-ink hover:bg-cream-2 transition-colors"
               >
                 <GoogleIcon />
                 Continue with Google
@@ -117,9 +117,9 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
           )}
         </form>
 
-        <p className="text-center text-sm text-secondary-text mt-4">
+        <p className="text-center text-sm text-ink-2 mt-4">
           New organizer?{" "}
-          <Link href="/signup" className="text-forest font-medium">
+          <Link href="/signup" className="text-purple font-semibold">
             Create an account
           </Link>
         </p>
