@@ -1,5 +1,5 @@
 // Diagnostic: figure out why drizzle-kit dies at "Pulling schema".
-// Run with:  node db-check.mjs
+// Run with:  npm run db:diagnose
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
 

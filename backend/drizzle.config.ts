@@ -9,7 +9,10 @@ import { defineConfig } from "drizzle-kit";
  */
 function loadEnvLocal(): Record<string, string> {
   try {
-    const raw = readFileSync(path.join(process.cwd(), ".env.local"), "utf8");
+    const raw = readFileSync(
+      path.join(import.meta.dirname, "..", ".env.local"),
+      "utf8"
+    );
     const out: Record<string, string> = {};
     for (const line of raw.split(/\r?\n/)) {
       const trimmed = line.trim();
@@ -48,8 +51,8 @@ if (!url) {
 }
 
 export default defineConfig({
-  schema: "./src/db/schema.ts",
-  out: "./drizzle",
+  schema: path.join(import.meta.dirname, "db", "schema.ts"),
+  out: path.join(import.meta.dirname, "migrations"),
   dialect: "postgresql",
   dbCredentials: { url },
 });

@@ -11,6 +11,31 @@ one or two asset filenames.
 
 ---
 
+## Project layout
+
+Application code is separated by responsibility:
+
+```text
+frontend/
+  src/          # App Router pages, layouts, styles, client code, and Proxy
+  components/   # reusable UI components
+  public/       # static browser assets
+  package.json  # Next.js application commands
+backend/
+  auth.ts       # Auth.js configuration
+  package.json  # backend package dependencies
+  db/           # Drizzle client and database schema
+  lib/          # server-side domain logic and tests
+  migrations/   # reviewed SQL migrations
+  scripts/      # database migration and diagnostic utilities
+```
+
+`frontend/` is the Next.js project root, so its `src/` and `public/` folders
+belong there. The repository root contains neither folder; run the root npm
+scripts to work with the frontend.
+
+---
+
 ## Stack
 
 | | |
@@ -35,6 +60,10 @@ npm install
 cp .env.example .env.local   # then fill it in — see below
 npm run dev
 ```
+
+This is an npm workspace. Install dependencies from the repository root so
+both `frontend` and `backend` resolve the shared packages from one
+root-level `node_modules` directory.
 
 ### Environment
 
@@ -83,11 +112,11 @@ were applied by hand), and `push` diffs the live database against `schema.ts`
 and decides for itself what to run. Neither is acceptable against a database
 holding real orders.
 
-Instead: migrations are **hand-written SQL** in `drizzle/`, applied one at a
+Instead: migrations are **hand-written SQL** in `backend/migrations/`, applied one at a
 time by a script that runs exactly the reviewed text and nothing else.
 
 ```bash
-node apply-migration.mjs drizzle/0013_commission_snapshot.sql
+npm run db:migrate -- backend/migrations/0013_commission_snapshot.sql
 ```
 
 Every migration is written to be safe to run twice — `IF NOT EXISTS`
@@ -96,7 +125,7 @@ throughout, `DO $$ ... EXCEPTION WHEN duplicate_object` around new enum types.
 To find out what the database actually has:
 
 ```bash
-node check-schema.mjs
+npm run db:check
 ```
 
 It reads `information_schema`, writes nothing, and prints OK / NOT RUN /
@@ -105,7 +134,7 @@ fix it. **Run it after pulling.** `tsc` passing only proves the code agrees
 with `schema.ts`; it says nothing about what Postgres has.
 
 When you add a migration, add its markers to the `EXPECT` list in
-`check-schema.mjs`.
+`backend/scripts/check-schema.mjs`.
 
 The SQL files carry the reasoning for each decision in comments. They are
 worth reading before changing the tables they touch — several of them explain
@@ -119,7 +148,7 @@ a choice that looks wrong until you know what went wrong before it.
 npm test            # vitest
 npm run typecheck   # tsc --noEmit
 npm run lint
-node check-schema.mjs
+npm run db:check
 ```
 
 `next dev` transpiles without type-checking, so **a page rendering cleanly
@@ -134,14 +163,14 @@ itself at the top:
 
 | File | Why it's worth reading |
 |---|---|
-| `src/lib/fees.ts` | Who pays what. Paystack's gross-up is reverse-solved so the page and the charge always agree; verified against a live test charge |
-| `src/lib/permissions.ts` | Four assignable roles plus an orthogonal "can see the money" switch, and why it isn't six roles |
-| `src/lib/earnings.ts` | The single source of truth for what an organisation is owed. Documents one known simplification in the organiser's favour |
-| `src/lib/registration.ts` | Custom checkout questions. Built around "a bad answer must never cost a sale that isn't the buyer's fault" |
-| `src/lib/notify-change.ts` | What counts as a change worth emailing ticket-holders about — and why a provisional date never leaks into an inbox |
-| `src/lib/promo.ts` | Discount vs refer-to-earn: identical at checkout, opposite in the ledger |
-| `src/lib/media.ts` | YouTube URL parsing, and `isSafeHttpUrl` — the check that `z.string().url()` is not |
-| `src/lib/cancel-event.ts` | Split in two on purpose: telling people is urgent and reversible, moving money is neither |
+| `backend/lib/fees.ts` | Who pays what. Paystack's gross-up is reverse-solved so the page and the charge always agree; verified against a live test charge |
+| `backend/lib/permissions.ts` | Four assignable roles plus an orthogonal "can see the money" switch, and why it isn't six roles |
+| `backend/lib/earnings.ts` | The single source of truth for what an organisation is owed. Documents one known simplification in the organiser's favour |
+| `backend/lib/registration.ts` | Custom checkout questions. Built around "a bad answer must never cost a sale that isn't the buyer's fault" |
+| `backend/lib/notify-change.ts` | What counts as a change worth emailing ticket-holders about — and why a provisional date never leaks into an inbox |
+| `backend/lib/promo.ts` | Discount vs refer-to-earn: identical at checkout, opposite in the ledger |
+| `backend/lib/media.ts` | YouTube URL parsing, and `isSafeHttpUrl` — the check that `z.string().url()` is not |
+| `backend/lib/cancel-event.ts` | Split in two on purpose: telling people is urgent and reversible, moving money is neither |
 | `src/app/globals.css` | The theming. CSS custom properties resolve where **declared**, not where used — the `.wd-night` block re-declares the compat names for that reason |
 
 ### Two conventions worth knowing
@@ -175,5 +204,5 @@ Stated plainly so nobody discovers it in production:
   displays a date must check `dateTbd` first. Three places do: the event page,
   the cards, and the change-notification email.
 - **`organizations.fee_percent`** exists in the schema and nothing reads it.
-  `PLATFORM_FEE_RATE` in `src/lib/fees.ts` is the only source of truth. Wire
+  `PLATFORM_FEE_RATE` in `backend/lib/fees.ts` is the only source of truth. Wire
   one up or drop the other; don't add a third.

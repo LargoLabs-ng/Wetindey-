@@ -1,6 +1,6 @@
 // Applies a migration SQL file against DATABASE_URL.
 //
-//   node apply-migration.mjs drizzle/0006_conversation.sql
+//   npm run db:migrate -- backend/migrations/0006_conversation.sql
 //
 // Why this and not drizzle-kit: `migrate` replays from a journal this
 // project doesn't keep — earlier migrations were applied by hand — and
@@ -15,7 +15,7 @@ import postgres from "postgres";
 
 const file = process.argv[2];
 if (!file) {
-  console.error("Usage: node apply-migration.mjs <path-to.sql>");
+  console.error("Usage: npm run db:migrate -- <path-to.sql>");
   process.exit(1);
 }
 

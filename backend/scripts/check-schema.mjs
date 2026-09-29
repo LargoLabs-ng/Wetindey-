@@ -1,7 +1,7 @@
 // Asks the database what it actually has, and names any migration that
 // hasn't landed.
 //
-//   node check-schema.mjs
+//   npm run db:check
 //
 // Reads nothing but information_schema and pg_type, writes nothing, and
 // changes nothing. Safe to run any time.
@@ -130,7 +130,9 @@ try {
       const label = missing.length === countOf(step) ? "NOT RUN" : "PARTIAL";
       console.log(`  ${label} ${step.migration}`);
       for (const m of missing) console.log(`            missing ${m}`);
-      console.log(`            fix: node apply-migration.mjs drizzle/${step.migration}`);
+      console.log(
+        `            fix: npm run db:migrate -- backend/migrations/${step.migration}`
+      );
     }
   }
 

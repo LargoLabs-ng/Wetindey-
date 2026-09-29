@@ -19,7 +19,12 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@/auth": ["../backend/auth.ts"],
+      "@/components/*": ["./components/*"],
+      "@/db": ["../backend/db/index.ts"],
+      "@/db/*": ["../backend/db/*"],
+      "@/lib/*": ["../backend/lib/*"]
     }
   },
   "include": [

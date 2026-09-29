@@ -1,23 +1,13 @@
 {
-  "name": "ticket-buddy",
+  "name": "@wetin-dey/frontend",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
   "scripts": {
-    "dev": "next dev frontend",
-    "build": "next build frontend",
-    "start": "next start frontend",
-    "lint": "eslint frontend",
-    "typecheck": "tsc --project frontend/tsconfig.json --noEmit",
-    "test": "vitest run --config backend/vitest.config.ts",
-    "test:watch": "vitest --config backend/vitest.config.ts",
-    "db:migrate": "node backend/scripts/apply-migration.mjs",
-    "db:check": "node backend/scripts/check-schema.mjs",
-    "db:diagnose": "node backend/scripts/db-check.mjs",
-    "db:studio": "drizzle-kit studio --config backend/drizzle.config.ts"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",

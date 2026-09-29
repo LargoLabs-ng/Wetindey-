@@ -1,6 +1,6 @@
 -- One-off: attach the existing account and events to their campus.
 --
---   node apply-migration.mjs attach-campus.sql
+--   npm run db:migrate -- backend/scripts/attach-campus.sql
 --
 -- Everything here predates the university_id column, so it all came out
 -- null. Nothing below invents an affiliation — each statement matches on a
