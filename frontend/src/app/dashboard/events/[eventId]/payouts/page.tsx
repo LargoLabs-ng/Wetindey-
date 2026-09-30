@@ -213,9 +213,9 @@ export default function PayoutsPage() {
 
               {/* Summary Row */}
               <div className="px-6 py-4 border-t font-semibold" style={{ borderColor: 'var(--color-line-dark)', backgroundColor: 'var(--color-canvas)' }}>
-                <div className="flex justify-between items-center text-sm">
+                <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                   <span style={{ color: 'var(--color-on-dark-2)' }}>TOTAL</span>
-                  <div className="flex gap-8 text-right">
+                  <div className="flex flex-wrap gap-x-5 gap-y-1 text-right sm:justify-end">
                     <div style={{ color: 'var(--color-on-dark)' }}>
                       {formatCurrency(totalRevenue)}
                     </div>

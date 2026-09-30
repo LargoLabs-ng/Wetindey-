@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { Search } from "lucide-react";
+import { Menu, Search, X } from "lucide-react";
 import { WordMark } from "@/components/wordmark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { OrganisingStrip } from "@/components/organising-strip";
@@ -36,6 +36,7 @@ export default function HomePage() {
   const signedIn = status === "authenticated";
   const [events, setEvents] = useState<CardEvent[] | null>(null);
   const [viewer, setViewer] = useState<Viewer>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/discover")
@@ -127,14 +128,14 @@ export default function HomePage() {
   return (
     <div className="wd-night min-h-screen bg-cream">
       {/* ── Nav ──────────────────────────────────────────────────────── */}
-      <header className="border-b border-line">
+      <header className="relative border-b border-line">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <WordMark />
           {/* The nav has to know who is looking at it. It offered "Sign in"
               and "Sign up" to everyone, including people already signed in —
               which reads as the app not recognising you, and buries the two
               links a signed-in student actually wants. */}
-          <nav className="flex items-center gap-2">
+          <nav className="hidden items-center gap-2 sm:flex">
             <ThemeToggle className="mr-1" />
             {signedIn ? (
               <>
@@ -180,7 +181,80 @@ export default function HomePage() {
               </>
             )}
           </nav>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-navigation"
+            aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line text-ink transition-colors hover:bg-surface-2 sm:hidden"
+          >
+            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
+        {menuOpen && (
+          <nav
+            id="mobile-navigation"
+            aria-label="Mobile navigation"
+            className="absolute inset-x-0 top-full z-50 border-b border-line bg-cream px-4 py-3 shadow-lg sm:hidden"
+          >
+            <div className="mx-auto flex max-w-5xl flex-col gap-1">
+              <div className="flex items-center justify-between border-b border-line pb-3">
+                <span className="text-sm font-semibold text-ink">Menu</span>
+                <ThemeToggle />
+              </div>
+              {signedIn ? (
+                <>
+                  <Link
+                    href="/dashboard/events"
+                    onClick={() => setMenuOpen(false)}
+                    className="rounded-lg px-3 py-3 text-sm font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink"
+                  >
+                    Organising
+                  </Link>
+                  <Link
+                    href="/my-events"
+                    onClick={() => setMenuOpen(false)}
+                    className="rounded-lg px-3 py-3 text-sm font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink"
+                  >
+                    My events
+                  </Link>
+                  <Link
+                    href="/profile"
+                    onClick={() => setMenuOpen(false)}
+                    className="rounded-lg px-3 py-3 text-sm font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink"
+                  >
+                    Profile
+                  </Link>
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setMenuOpen(false)}
+                    className="mt-2 rounded-lg bg-purple px-3.5 py-3 text-center text-sm font-semibold text-white hover:bg-purple-deep"
+                  >
+                    Post an event
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    onClick={() => setMenuOpen(false)}
+                    className="rounded-lg px-3 py-3 text-sm font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink"
+                  >
+                    Sign in
+                  </Link>
+                  <Link
+                    href="/signup"
+                    onClick={() => setMenuOpen(false)}
+                    className="mt-2 rounded-lg bg-purple px-3.5 py-3 text-center text-sm font-semibold text-white hover:bg-purple-deep"
+                  >
+                    Sign up
+                  </Link>
+                </>
+              )}
+            </div>
+          </nav>
+        )}
       </header>
 
       {/* ── Hero ─────────────────────────────────────────────────────── */}

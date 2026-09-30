@@ -25,8 +25,8 @@ export default async function EventsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-on-dark">Your events</h1>
           <p className="text-on-dark-2 text-sm mt-1">
             Everything under control.
@@ -59,11 +59,11 @@ export default async function EventsPage() {
             <Link
               key={event.id}
               href={`/dashboard/events/${event.id}`}
-              className="flex items-center justify-between px-6 py-4 hover:bg-surface-2 transition-colors"
+              className="flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-surface-2"
             >
-              <div>
-                <p className="font-semibold text-on-dark">{event.title}</p>
-                <p className="text-sm text-on-dark-2">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-on-dark">{event.title}</p>
+                <p className="truncate text-sm text-on-dark-2">
                   {new Date(event.startDatetime).toLocaleDateString("en-NG", {
                     day: "numeric",
                     month: "short",
@@ -73,7 +73,7 @@ export default async function EventsPage() {
                 </p>
               </div>
               <span
-                className={`text-xs font-medium px-2.5 py-1 rounded-full capitalize ${
+                className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
                   statusStyles[event.status] ?? statusStyles.draft
                 }`}
               >

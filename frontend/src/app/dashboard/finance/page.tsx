@@ -337,7 +337,7 @@ export default function FinancePage() {
             <p className="text-sm text-on-dark-2">No payouts yet.</p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-line-dark bg-surface">
+          <div className="overflow-x-auto rounded-2xl border border-line-dark bg-surface">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-line-dark text-on-dark-3">

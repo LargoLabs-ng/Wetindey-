@@ -45,3 +45,4 @@ next-env.d.ts
 
 # scratch from tooling that cannot delete files directly
 _to_delete/
+.vercel

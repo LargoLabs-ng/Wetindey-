@@ -188,7 +188,7 @@ export default async function EventDetailPage({
       {promoters.length > 0 && (
         <section className="mb-8">
           <h2 className="mb-4 font-bold text-on-dark">Promoters</h2>
-          <div className="overflow-hidden rounded-2xl border border-line-dark bg-surface">
+          <div className="overflow-x-auto rounded-2xl border border-line-dark bg-surface">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-line-dark text-on-dark-3">

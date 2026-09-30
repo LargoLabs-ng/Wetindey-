@@ -7,17 +7,17 @@ import {
 } from "@/lib/storage";
 import {
   getSessionUserId,
-  getOrganizationIdsForUser,
   requireEventCapability,
 } from "@/lib/authz";
+import { ensureOrganizationForUser } from "@/lib/organization";
 
 /**
  * POST /api/upload/event-cover
  *
  * Two callers: the edit form (an event already exists, so we check edit
- * rights on it) and the create form (no event yet, so we check the weaker
- * "this person runs an organization" rule). Either way an anonymous visitor
- * can never push bytes into our storage account.
+ * rights on it) and the create form. A first-time creator has no organization
+ * until their first event workflow begins, so the create path creates it here.
+ * Either way an anonymous visitor can never push bytes into our storage account.
  */
 export async function POST(request: NextRequest) {
   const userId = await getSessionUserId();
@@ -49,13 +49,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: access.error }, { status: access.status });
     }
   } else {
-    const orgs = await getOrganizationIdsForUser(userId);
-    if (orgs.length === 0) {
-      return NextResponse.json(
-        { error: "You need an organization before you can upload event art." },
-        { status: 403 }
-      );
-    }
+    await ensureOrganizationForUser(userId);
   }
 
   const file = form.get("file");
