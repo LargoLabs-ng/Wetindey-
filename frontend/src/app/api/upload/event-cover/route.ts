@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Image uploads aren't set up yet. Add a BLOB_READ_WRITE_TOKEN from your Vercel project's Storage tab.",
+          "Image uploads aren't set up yet. Connect a Vercel Blob store to this project, or add BLOB_READ_WRITE_TOKEN.",
       },
       { status: 503 }
     );

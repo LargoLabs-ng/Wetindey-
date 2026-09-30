@@ -83,7 +83,7 @@ root-level `node_modules` directory.
 |---|---|
 | `PAYSTACK_SECRET_KEY` | Checkout. Use a test key in dev |
 | `RESEND_API_KEY` + `EMAIL_FROM` | Tickets, QR codes, all notifications |
-| `BLOB_READ_WRITE_TOKEN` | Image uploads (cover art, logos, sponsors) |
+| Vercel Blob connection (`BLOB_STORE_ID` + Vercel-managed OIDC) or `BLOB_READ_WRITE_TOKEN` | Image uploads (cover art, logos, sponsors) |
 | `ADMIN_EMAILS` | Comma-separated. Who can reach `/admin` |
 
 **Optional:** `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (Google sign-in),

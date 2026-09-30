@@ -6,8 +6,9 @@ import { put } from "@vercel/blob";
  * Kept behind this module so the rest of the app never imports a vendor SDK
  * directly — swapping Vercel Blob for anything else later is one file.
  *
- * Uploads are only possible when BLOB_READ_WRITE_TOKEN is set. When it is
- * not, callers get a clear, actionable failure rather than a silent one:
+ * Uploads are possible with either a legacy read-write token or Vercel's
+ * project-connected OIDC credentials. When neither is available, callers get
+ * a clear, actionable failure rather than a silent one:
  * an event with no image is a real state the UI has to handle anyway, and
  * pretending an upload worked is worse than saying it did not.
  */
@@ -22,7 +23,10 @@ export const COVER_TYPES: Record<string, string> = {
 };
 
 export function storageConfigured(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  return Boolean(
+    process.env.BLOB_READ_WRITE_TOKEN ||
+      (process.env.BLOB_STORE_ID && process.env.VERCEL_OIDC_TOKEN)
+  );
 }
 
 export { isOptimizable, BLOB_HOST_SUFFIX } from "./image-url";
