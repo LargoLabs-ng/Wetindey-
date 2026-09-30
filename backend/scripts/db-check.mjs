@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import postgres from "postgres";
 
 const env = {};
-for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
+for (const line of readFileSync("frontend/.env.local", "utf8").split(/\r?\n/)) {
   const t = line.trim();
   if (!t || t.startsWith("#")) continue;
   const i = t.indexOf("=");

@@ -19,10 +19,10 @@ if (!file) {
   process.exit(1);
 }
 
-// Read .env.local the same way db-check.mjs does, so this works from a plain
+// Read frontend/.env.local the same way db-check.mjs does, so this works from a plain
 // `node` invocation with no loader.
 const env = {};
-for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
+for (const line of readFileSync("frontend/.env.local", "utf8").split(/\r?\n/)) {
   const t = line.trim();
   if (!t || t.startsWith("#")) continue;
   const i = t.indexOf("=");
@@ -36,7 +36,7 @@ for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
 
 const url = env.DATABASE_URL;
 if (!url) {
-  console.error("DATABASE_URL not found in .env.local");
+  console.error("DATABASE_URL not found in frontend/.env.local");
   process.exit(1);
 }
 

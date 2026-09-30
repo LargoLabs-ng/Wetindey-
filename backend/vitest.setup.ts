@@ -6,7 +6,7 @@ import path from "node:path";
  * same Neon instance the dev server uses. Values already in the environment
  * win, which is what makes CI overrides work.
  */
-const file = path.resolve(process.cwd(), ".env.local");
+const file = path.resolve(process.cwd(), "frontend", ".env.local");
 if (fs.existsSync(file)) {
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
     const trimmed = line.trim();

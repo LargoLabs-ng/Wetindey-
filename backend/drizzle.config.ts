@@ -9,10 +9,9 @@ import { defineConfig } from "drizzle-kit";
  */
 function loadEnvLocal(): Record<string, string> {
   try {
-    const raw = readFileSync(
-      path.join(import.meta.dirname, "..", ".env.local"),
-      "utf8"
-    );
+    // Next uses frontend/ as its project root, so its .env.local belongs there.
+    // Keep the database tools on the same environment file.
+    const raw = readFileSync(path.join(process.cwd(), "frontend", ".env.local"), "utf8");
     const out: Record<string, string> = {};
     for (const line of raw.split(/\r?\n/)) {
       const trimmed = line.trim();
@@ -46,13 +45,15 @@ const url = raw
 
 if (!url) {
   throw new Error(
-    "No DATABASE_URL found — check .env.local in the project root."
+    "No DATABASE_URL found — check frontend/.env.local."
   );
 }
 
 export default defineConfig({
-  schema: path.join(import.meta.dirname, "db", "schema.ts"),
-  out: path.join(import.meta.dirname, "migrations"),
+  // Drizzle Kit resolves these relative to the workspace command directory.
+  // Relative paths avoid its Windows absolute-path glob resolution bug.
+  schema: "./backend/db/schema.ts",
+  out: "./backend/migrations",
   dialect: "postgresql",
   dbCredentials: { url },
 });

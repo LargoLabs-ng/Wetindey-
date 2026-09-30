@@ -57,7 +57,7 @@ Route params are `Promise<{...}>` — this is Next 16, not 15.
 
 ```bash
 npm install
-cp .env.example .env.local   # then fill it in — see below
+cp .env.example frontend/.env.local   # then fill it in — see below
 npm run dev
 ```
 
@@ -67,7 +67,7 @@ root-level `node_modules` directory.
 
 ### Environment
 
-`.env.local` is gitignored and has never been committed. You need your own.
+`frontend/.env.local` is gitignored and has never been committed. You need your own.
 
 **Required to boot:**
 
