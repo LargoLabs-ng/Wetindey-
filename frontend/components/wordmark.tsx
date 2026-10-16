@@ -1,4 +1,7 @@
+import Image from "next/image";
 import Link from "next/link";
+import logoLight from "@/assets/logo light.png";
+import logoDark from "@/assets/logo dark.png";
 
 /**
  * The Wetin Dey wordmark.
@@ -24,24 +27,34 @@ export function WordMark({
   href?: string;
   className?: string;
 }) {
-  const sizes = {
-    sm: "text-base",
-    md: "text-lg",
-    lg: "text-2xl",
-  } as const;
+  const sizes = { sm: "h-8 w-8", md: "h-10 w-10", lg: "h-14 w-14" } as const;
 
   const body = (
-    <span
-      className={`inline-flex items-baseline font-extrabold tracking-[-0.035em] ${sizes[size]} ${
-        tone === "dark" ? "text-on-dark" : "text-ink"
-      } ${className}`}
-    >
-      Wetin&nbsp;Dey
+    <span className={`inline-flex shrink-0 items-center ${className}`}>
+      <span
+        className={`wd-logo wd-logo--${tone === "dark" ? "on-dark" : "adaptive"} relative inline-flex shrink-0 overflow-hidden ${sizes[size]}`}
+      >
+        <Image
+          src={logoDark}
+          alt="Wetin Dey"
+          className="wd-logo__dark absolute inset-0 h-full w-full scale-[2.42] object-contain"
+          priority={size === "lg"}
+        />
+        <Image
+          src={logoLight}
+          alt=""
+          aria-hidden="true"
+          className="wd-logo__light absolute inset-0 hidden h-full w-full scale-[2.42] object-contain"
+          priority={size === "lg"}
+        />
+      </span>
       <span
         aria-hidden="true"
-        className={tone === "dark" ? "text-purple-lift" : "text-purple"}
+        className={`ml-2 hidden whitespace-nowrap font-display font-extrabold tracking-[-0.035em] sm:inline ${
+          tone === "dark" ? "text-on-dark" : "text-ink"
+        }`}
       >
-        ?
+        Wetin Dey<span className="text-amber">?</span>
       </span>
     </span>
   );

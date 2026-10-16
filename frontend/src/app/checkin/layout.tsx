@@ -1,7 +1,7 @@
-import Image from "next/image";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { SignOutButton } from "@/components/sign-out-button";
+import { WordMark } from "@/components/wordmark";
 
 /**
  * The gate shell. Deliberately has no navigation: someone handed a phone at
@@ -20,14 +20,7 @@ export default async function CheckInLayout({
       <header className="border-b border-line-dark">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-2.5">
-            <Image
-              src="/logo-reversed.png"
-              alt=""
-              width={64}
-              height={64}
-              priority
-              className="h-9 w-9 rounded-lg object-contain"
-            />
+            <WordMark tone="dark" size="sm" />
             <div>
               <p className="font-bold leading-tight tracking-tight text-on-dark">
                 Check-in

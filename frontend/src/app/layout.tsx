@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import { Providers } from "./providers";
 import "./globals.css";
 import { appUrl } from "@/lib/app-url";
@@ -10,10 +10,27 @@ import { THEME_BOOTSTRAP } from "@/lib/theme";
 // so the full weight range is available — the design leans on 800 for
 // display headlines and 600 for prices and dates, which the old single
 // local file could not cover cleanly.
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-jakarta",
-  weight: ["400", "500", "600", "700", "800"],
+const degular = localFont({
+  src: [
+    { path: "../assets/font/degular-font-family/DegularDemo-Regular.otf", weight: "400", style: "normal" },
+    { path: "../assets/font/degular-font-family/DegularDemo-Medium.otf", weight: "500", style: "normal" },
+    { path: "../assets/font/degular-font-family/DegularDemo-Semibold.otf", weight: "600", style: "normal" },
+    { path: "../assets/font/degular-font-family/DegularDemo-Bold.otf", weight: "700", style: "normal" },
+    { path: "../assets/font/degular-font-family/DegularDemo-Black.otf", weight: "900", style: "normal" },
+  ],
+  variable: "--font-degular",
+  display: "swap",
+});
+
+const manrope = localFont({
+  src: [
+    { path: "../assets/font/manrope (1)/manrope-regular.otf", weight: "400", style: "normal" },
+    { path: "../assets/font/manrope (1)/manrope-medium.otf", weight: "500", style: "normal" },
+    { path: "../assets/font/manrope (1)/manrope-semibold.otf", weight: "600", style: "normal" },
+    { path: "../assets/font/manrope (1)/manrope-bold.otf", weight: "700", style: "normal" },
+    { path: "../assets/font/manrope (1)/manrope-extrabold.otf", weight: "800", style: "normal" },
+  ],
+  variable: "--font-manrope",
   display: "swap",
 });
 
@@ -44,7 +61,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     // mismatches anywhere else still surface normally.
     <html
       lang="en"
-      className={`${jakarta.variable} h-full antialiased`}
+      className={`${degular.variable} ${manrope.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

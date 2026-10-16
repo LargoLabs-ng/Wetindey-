@@ -1,8 +1,8 @@
 import Link from "next/link";
-import Image from "next/image";
 import { auth } from "@/auth";
 import { resolveInvite, INVITE_TTL_DAYS } from "@/lib/invites";
 import { AcceptInviteButton } from "@/components/accept-invite-button";
+import { WordMark } from "@/components/wordmark";
 
 const roleLabels: Record<string, string> = {
   owner: "Owner",
@@ -16,13 +16,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <main className="min-h-screen flex items-center justify-center bg-ivory px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <Image
-            src="/logo.png"
-            alt="Wetin Dey"
-            width={48}
-            height={48}
-            className="mx-auto mb-4"
-          />
+          <WordMark size="lg" />
         </div>
         <div className="bg-white border border-border rounded-2xl p-6">
           {children}
