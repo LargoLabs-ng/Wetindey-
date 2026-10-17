@@ -45,7 +45,9 @@ function SignupForm({ googleEnabled }: { googleEnabled: boolean }) {
   // Hosting is the minority path, so it is opt-in rather than the default.
   // An account with no organization is the normal state now; one is created
   // the first time somebody actually makes an event.
-  const [hosting, setHosting] = useState(false);
+  const [hosting, setHosting] = useState(
+    () => searchParams.get("hosting") === "1"
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -111,7 +113,7 @@ function SignupForm({ googleEnabled }: { googleEnabled: boolean }) {
             <WordMark size="lg" />
           </div>
           <h1 className="text-2xl font-bold text-charcoal">
-            Know what dey happen
+            Know wetin dey happen
           </h1>
           <p className="text-secondary-text text-sm mt-1">
             Events around your campus, and your tickets in one place.

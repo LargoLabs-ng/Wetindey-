@@ -302,7 +302,7 @@ export default function HomePage() {
               See wetin dey
             </Link>
             <Link
-              href={signedIn ? "/dashboard" : "/signup"}
+              href={signedIn ? "/dashboard" : "/signup?hosting=1"}
               className="inline-flex items-center justify-center rounded-xl border px-6 py-3.5 text-base font-semibold transition-colors"
               style={{
                 borderColor: "var(--color-indigo-line)",
@@ -410,8 +410,7 @@ export default function HomePage() {
               Running something?
             </h2>
             <p className="mt-1 max-w-md text-ink-2">
-              Set your tiers, share one link, scan people in at the door. You
-              keep the ticket price; we take 5%.
+              Set your tiers, share one link, scan people in at the door.
             </p>
           </div>
           <Link
