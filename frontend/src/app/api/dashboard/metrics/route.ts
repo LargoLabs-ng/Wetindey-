@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { tickets, orders, ticketTypes } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { requireEventCapability } from '@/lib/authz';
+import { analyzeEventSales } from '@/lib/event-analytics';
 
 /**
  * GET /api/dashboard/metrics?eventId=xyz
@@ -45,6 +46,24 @@ export async function GET(request: NextRequest) {
       return sum + totalNum;
     }, 0);
 
+    const analytics = analyzeEventSales({
+      now: new Date(),
+      eventStart: event.startDatetime,
+      eventDateTbd: event.dateTbd,
+      eventStatus: event.status,
+      ticketsTotal: totalTickets,
+      ticketsSold: soldTickets,
+      orders: eventOrders.map((order) => ({
+        id: order.id,
+        createdAt: order.createdAt,
+        subtotal: order.subtotal,
+      })),
+      tickets: eventTickets.map((ticket) => ({
+        orderId: ticket.orderId,
+        status: ticket.status,
+      })),
+    });
+
     // Build ticket breakdown by type
     const ticketBreakdown = eventTicketTypes.map((ticketType) => {
       const typeTickets = eventTickets.filter(
@@ -81,6 +100,7 @@ export async function GET(request: NextRequest) {
       checkedIn: checkedInTickets,
       eventTitle: event.title,
       ticketBreakdown,
+      analytics,
     });
   } catch (error) {
     console.error('Error fetching metrics:', error);

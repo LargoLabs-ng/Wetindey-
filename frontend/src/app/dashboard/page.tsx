@@ -30,6 +30,19 @@ interface EventMetrics {
   revenue: number;
   checkedIn: number;
   eventTitle: string;
+  analytics: {
+    dailySales: Array<{ date: string; tickets: number; revenue: number }>;
+    ticketsLast7Days: number;
+    ticketsPrevious7Days: number;
+    ticketSalesLast7Days: number;
+    averageDailyTickets: number;
+    sellThroughPercent: number;
+    salesTrend: "up" | "down" | "flat" | "new";
+    salesChangePercent: number | null;
+    estimatedSellOutAt: string | null;
+    requiredDailyTickets: number | null;
+    insight: string;
+  };
   ticketBreakdown: Array<{
     tier: string;
     sold: number;
@@ -132,6 +145,20 @@ export default function DashboardPage() {
     metrics && metrics.ticketsSold > 0
       ? Math.round((metrics.checkedIn / metrics.ticketsSold) * 100)
       : 0;
+  const chartMax = metrics
+    ? Math.max(1, ...metrics.analytics.dailySales.map((day) => day.tickets))
+    : 1;
+
+  const salesComparison =
+    metrics?.analytics.salesTrend === "new"
+      ? "New sales this week"
+      : metrics?.analytics.salesChangePercent === null
+        ? "No sales in either 7-day period"
+        : metrics?.analytics.salesChangePercent !== undefined
+          ? `${metrics.analytics.salesChangePercent > 0 ? "+" : ""}${
+              metrics.analytics.salesChangePercent
+            }% vs previous 7 days`
+          : "";
 
   if (loading) {
     return (
@@ -338,6 +365,115 @@ export default function DashboardPage() {
                 {Math.max(0, metrics.ticketsTotal - metrics.ticketsSold)}
               </p>
               <p className="mt-3 text-xs text-on-dark-3">Across all tiers</p>
+            </div>
+          </section>
+
+          {/* Recent sales pace and a conservative, event-date-aware forecast. */}
+          <section className="rounded-2xl border border-line-dark bg-surface p-6">
+            <div className="mb-5">
+              <h2 className="text-lg font-bold text-on-dark">Event analytics</h2>
+              <p className="mt-1 text-sm text-on-dark-2">
+                Recent ticket sales, sell-through, and a pace-based outlook.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-line-dark bg-canvas p-4">
+                <p className="text-sm text-on-dark-2">Tickets sold · last 7 days</p>
+                <p className="mt-1 text-2xl font-bold text-on-dark">
+                  {metrics.analytics.ticketsLast7Days}
+                </p>
+                <p className="mt-1 text-xs text-on-dark-3">
+                  {salesComparison}
+                </p>
+              </div>
+              <div className="rounded-xl border border-line-dark bg-canvas p-4">
+                <p className="text-sm text-on-dark-2">Ticket sales · last 7 days</p>
+                <p className="mt-1 text-2xl font-bold text-gold">
+                  {naira(metrics.analytics.ticketSalesLast7Days)}
+                </p>
+                <p className="mt-1 text-xs text-on-dark-3">
+                  Paid ticket subtotal, before fees
+                </p>
+              </div>
+              <div className="rounded-xl border border-line-dark bg-canvas p-4">
+                <p className="text-sm text-on-dark-2">Tickets sold</p>
+                <p className="mt-1 text-2xl font-bold text-on-dark">
+                  {metrics.analytics.sellThroughPercent}%
+                </p>
+                <p className="mt-1 text-xs text-on-dark-3">
+                  Of total ticket capacity
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="rounded-xl border border-line-dark bg-canvas p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="font-semibold text-on-dark">Daily ticket sales</h3>
+                  <span className="text-xs text-on-dark-3">
+                    Average {metrics.analytics.averageDailyTickets} per day · last 7 days
+                  </span>
+                </div>
+                <div
+                  className="mt-4 grid h-36 grid-cols-7 items-end gap-2"
+                  role="img"
+                  aria-label="Tickets sold per day during the last 7 completed days"
+                >
+                  {metrics.analytics.dailySales.map((day) => {
+                    const label = new Date(`${day.date}T12:00:00.000Z`)
+                      .toLocaleDateString("en-NG", {
+                        weekday: "short",
+                        timeZone: "UTC",
+                      });
+                    const barHeight = day.tickets
+                      ? Math.max(8, (day.tickets / chartMax) * 100)
+                      : 2;
+
+                    return (
+                      <div
+                        key={day.date}
+                        className="flex h-full min-w-0 flex-col items-center justify-end gap-1"
+                        title={`${label}: ${day.tickets} tickets, ${naira(day.revenue)}`}
+                      >
+                        <span className="text-xs tabular-nums text-on-dark-2">
+                          {day.tickets || ""}
+                        </span>
+                        <div className="flex h-24 w-full items-end">
+                          <div
+                            className="w-full rounded-t bg-gold"
+                            style={{ height: `${barHeight}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-on-dark-3">{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <aside className="rounded-xl border border-line-dark bg-canvas p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-gold" />
+                  <h3 className="font-semibold text-on-dark">Performance insight</h3>
+                </div>
+                <p className="text-sm leading-6 text-on-dark-2">
+                  {metrics.analytics.insight}
+                </p>
+                {metrics.analytics.estimatedSellOutAt && (
+                  <p className="mt-3 text-sm font-semibold text-gold">
+                    Estimated sell-out:{" "}
+                    {new Date(metrics.analytics.estimatedSellOutAt).toLocaleDateString(
+                      "en-NG",
+                      { day: "numeric", month: "short", year: "numeric" }
+                    )}
+                  </p>
+                )}
+                <p className="mt-3 text-xs leading-5 text-on-dark-3">
+                  The outlook uses ticket sales from the last 7 completed days.
+                  It is an estimate, not a guarantee.
+                </p>
+              </aside>
             </div>
           </section>
 
