@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { ticketTypes, orders } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { requireEventCapability } from '@/lib/authz';
 
-import { PLATFORM_FEE_RATE } from '@/lib/fees';
+import { PLATFORM_FEE_RATE, quoteOrder } from '@/lib/fees';
+import { monnifyFeeFromStoredResponse } from "@/lib/monnify";
+import { paystackFeeFromStoredResponse } from "@/lib/paystack";
 
 const PLATFORM_FEE_PERCENTAGE = PLATFORM_FEE_RATE;
 
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch paid orders for event
     const paidOrders = await db.query.orders.findMany({
-      where: eq(orders.eventId, eventId),
+      where: and(eq(orders.eventId, eventId), eq(orders.status, "paid")),
       with: {
         tickets: true,
         payments: true,
@@ -46,19 +48,38 @@ export async function GET(request: NextRequest) {
       sold: number;
       revenue: number;
       platformFee: number;
+      paystackFee: number;
+      monnifyFee: number;
       netRevenue: number;
     }> = {};
+    let totalPaystackFee = 0;
+    let totalMonnifyFee = 0;
+    let totalPlatformFee = 0;
 
     paidOrders.forEach((order) => {
-      const hasSuccessPayment = order.payments?.some((p) => p.status === 'success');
-      if (hasSuccessPayment) {
-        // Face value, not the buyer's total: when the buyer carries
-        // Paystack's fee their total is higher than the ticket price, and
-        // that difference is Paystack's money, never the organizer's. Basing
-        // the 8% on it would overcharge the organizer on every sale.
+      const successfulPayment = order.payments?.find((p) => p.status === 'success');
+      if (successfulPayment) {
         const faceValue =
           typeof order.subtotal === 'string' ? parseFloat(order.subtotal) : order.subtotal;
         totalRevenue += faceValue;
+        const paymentFee =
+          successfulPayment.provider === "monnify"
+            ? monnifyFeeFromStoredResponse(successfulPayment.rawProviderResponse) ?? 0
+            : successfulPayment.provider === "paystack"
+              ? paystackFeeFromStoredResponse(successfulPayment.rawProviderResponse) ?? 0
+              : 0;
+        const paystackFee =
+          successfulPayment.provider === "paystack" ? paymentFee : 0;
+        const monnifyFee =
+          successfulPayment.provider === "monnify" ? paymentFee : 0;
+        totalPaystackFee += paystackFee;
+        totalMonnifyFee += monnifyFee;
+        const quote = quoteOrder(faceValue, {
+          platformFeePaidBy: order.platformFeePaidBy,
+        });
+        if (quote.platformFeePaidBy === "organizer") {
+          totalPlatformFee += quote.platformFee;
+        }
 
         // Group by ticket tier
         order.tickets.forEach((ticket) => {
@@ -72,31 +93,47 @@ export async function GET(request: NextRequest) {
                 sold: 0,
                 revenue: 0,
                 platformFee: 0,
+                paystackFee: 0,
+                monnifyFee: 0,
                 netRevenue: 0,
               };
             }
             ticketTierBreakdown[ticketType.id].sold += 1;
             ticketTierBreakdown[ticketType.id].revenue += priceNum;
+            ticketTierBreakdown[ticketType.id].paystackFee +=
+              order.tickets.length > 0
+                ? paystackFee / order.tickets.length
+                : 0;
+            ticketTierBreakdown[ticketType.id].monnifyFee +=
+              order.tickets.length > 0
+                ? monnifyFee / order.tickets.length
+                : 0;
+            if (quote.platformFeePaidBy === "organizer") {
+              ticketTierBreakdown[ticketType.id].platformFee +=
+                order.tickets.length > 0
+                  ? quote.platformFee / order.tickets.length
+                  : 0;
+            }
           }
         });
       }
     });
 
-    // Calculate fees
-    const totalPlatformFee = totalRevenue * PLATFORM_FEE_PERCENTAGE;
-    const netRevenue = totalRevenue - totalPlatformFee;
+    const netRevenue = totalRevenue - totalPlatformFee - totalMonnifyFee;
 
-    // Add fees to breakdown
+    // Calculate net per ticket tier. Paystack fees are paid by buyers; only
+    // legacy Monnify fees reduce organiser proceeds.
     Object.keys(ticketTierBreakdown).forEach((key) => {
       const tier = ticketTierBreakdown[key];
-      tier.platformFee = tier.revenue * PLATFORM_FEE_PERCENTAGE;
-      tier.netRevenue = tier.revenue - tier.platformFee;
+      tier.netRevenue = tier.revenue - tier.platformFee - tier.monnifyFee;
     });
 
     return NextResponse.json({
       eventTitle: event.title,
       totalRevenue,
       totalPlatformFee,
+      totalPaystackFee,
+      totalMonnifyFee,
       netRevenue,
       ticketTierBreakdown: Object.values(ticketTierBreakdown),
       platformFeePercentage: PLATFORM_FEE_PERCENTAGE * 100,

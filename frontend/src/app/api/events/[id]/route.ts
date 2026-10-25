@@ -54,7 +54,6 @@ const updateEventSchema = z.object({
   endDatetime: z.coerce.date().optional(),
   salesStart: z.coerce.date().optional(),
   salesEnd: z.coerce.date().optional(),
-  feeStrategy: z.enum(["buyer_pays", "organizer_absorbs"]).optional(),
   platformFeePaidBy: z.enum(["organizer", "buyer"]).optional(),
 
   /**

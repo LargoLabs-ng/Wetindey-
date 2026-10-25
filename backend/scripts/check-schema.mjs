@@ -80,6 +80,18 @@ const EXPECT = [
     tables: [],
     types: [],
   },
+  {
+    migration: "0014_monnify_payments.sql",
+    columns: [["refunds", "status"]],
+    tables: [],
+    types: ["refund_status"],
+  },
+  {
+    migration: "0015_paystack_checkout.sql",
+    columns: [["orders", "platform_fee_paid_by"]],
+    tables: [],
+    types: [],
+  },
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });

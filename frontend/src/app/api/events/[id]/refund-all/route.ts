@@ -71,6 +71,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
     ...result,
     // Surfaced rather than buried: a partial failure needs someone to chase
     // it, and a count of successes alone reads like everything worked.
-    needsAttention: result.failed > 0,
+    needsAttention: result.failed > 0 || result.pending > 0,
   });
 }

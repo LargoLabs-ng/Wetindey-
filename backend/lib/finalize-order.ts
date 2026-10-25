@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { orders, payments, promoCodes, refunds, tickets } from "@/db/schema";
 import {
@@ -34,7 +34,7 @@ export async function finalizePaidOrder(reference: string): Promise<FinalizeResu
   const orderId = payment.order.id;
 
   // Claim with the write itself. Two callers racing — webhook and browser, or
-  // a Paystack retry — can both read 'initialized' before either writes, and
+  // a duplicate provider retry — can both read 'initialized' before either writes, and
   // would then both issue tickets and both email the buyer. Putting the status
   // in the WHERE means exactly one caller can claim it.
   const claimed = await db
@@ -68,29 +68,23 @@ export async function finalizePaidOrder(reference: string): Promise<FinalizeResu
   return { ok: true, orderId, alreadyDone: false, emailSent };
 }
 
-/**
- * Ask Paystack directly whether a reference was paid.
- *
- * The old /api/payment/verify only read our own database, so it reported
- * "pending" forever whenever the webhook had not arrived — which is precisely
- * the situation verification exists to rescue.
- */
-export async function isPaidAtPaystack(reference: string): Promise<boolean> {
-  const secret = process.env.PAYSTACK_SECRET_KEY;
-  if (!secret) return false;
+export async function finalizeFreeOrder(orderId: string): Promise<boolean> {
+  const claimed = await db
+    .update(orders)
+    .set({ status: "paid" })
+    .where(and(eq(orders.id, orderId), eq(orders.status, "pending")))
+    .returning({ id: orders.id });
+  if (claimed.length === 0) return false;
 
+  await db.update(tickets).set({ status: "valid" }).where(eq(tickets.orderId, orderId));
+  await confirmOrderInventory(orderId);
+  await countPromoUse(orderId);
   try {
-    const res = await fetch(
-      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-      { headers: { Authorization: `Bearer ${secret}` }, cache: "no-store" }
-    );
-    if (!res.ok) return false;
-    const body = await res.json();
-    return body?.status === true && body?.data?.status === "success";
+    await sendTicketsForOrder(orderId);
   } catch (error) {
-    console.error(`Paystack verify failed for ${reference}:`, error);
-    return false;
+    console.error(`Ticket email failed for free order ${orderId}:`, error);
   }
+  return true;
 }
 
 /**
@@ -164,6 +158,60 @@ export type ExternalRefundResult =
   | { ok: true; orderId: string; full: boolean; alreadyRecorded: boolean }
   | { ok: false; reason: "unknown-reference" | "no-amount" };
 
+export async function updateMonnifyRefundStatus(
+  refundReference: string,
+  status: "completed" | "failed",
+  raw: unknown
+): Promise<{ found: boolean; alreadyProcessed: boolean }> {
+  const refund = await db.query.refunds.findFirst({
+    where: eq(refunds.providerReference, refundReference),
+  });
+  if (!refund) return { found: false, alreadyProcessed: false };
+
+  const claimed = await db
+    .update(refunds)
+    .set({ status, providerResponse: raw })
+    .where(and(eq(refunds.id, refund.id), eq(refunds.status, "pending")))
+    .returning({ id: refunds.id });
+  if (claimed.length === 0) {
+    return { found: true, alreadyProcessed: true };
+  }
+  if (status === "failed") {
+    return { found: true, alreadyProcessed: false };
+  }
+
+  const [ticket] = await db
+    .select()
+    .from(tickets)
+    .where(eq(tickets.id, refund.ticketId))
+    .limit(1);
+  if (ticket && ticket.status !== "refunded" && ticket.status !== "cancelled") {
+    await db
+      .update(tickets)
+      .set({ status: "refunded" })
+      .where(eq(tickets.id, ticket.id));
+    await releaseRefundedTicket(ticket.ticketTypeId);
+  }
+
+  const remaining = await db
+    .select({ id: tickets.id })
+    .from(tickets)
+    .where(
+      and(
+        eq(tickets.orderId, refund.orderId),
+        inArray(tickets.status, ["valid", "checked_in"])
+      )
+    );
+  if (remaining.length === 0) {
+    await db
+      .update(orders)
+      .set({ status: "refunded" })
+      .where(eq(orders.id, refund.orderId));
+  }
+
+  return { found: true, alreadyProcessed: false };
+}
+
 /**
  * A refund that happened at Paystack rather than through this app.
  *
@@ -189,7 +237,13 @@ export async function recordExternalRefund(data: {
     with: { order: true },
   });
 
-  if (!payment || !payment.order) return { ok: false, reason: "unknown-reference" };
+  if (
+    !payment ||
+    payment.provider !== "paystack" ||
+    !payment.order
+  ) {
+    return { ok: false, reason: "unknown-reference" };
+  }
   if (typeof data.amountMinor !== "number") return { ok: false, reason: "no-amount" };
 
   const order = payment.order;
@@ -199,18 +253,33 @@ export async function recordExternalRefund(data: {
   // so the webhook that follows finds it here and stops. Without this check
   // every refund we issue would be recorded twice — once by us, once by the
   // echo of our own API call.
-  const existing = await db.query.refunds.findFirst({
+  const existingRefunds = await db.query.refunds.findMany({
     where: eq(refunds.orderId, order.id),
   });
-  if (existing) {
+  const pendingRefund = existingRefunds.find(
+    (refund) =>
+      refund.status === "pending" &&
+      Math.abs(Number(refund.amount) - amount) < 0.005
+  );
+  if (pendingRefund?.providerReference) {
+    await updateMonnifyRefundStatus(
+      pendingRefund.providerReference,
+      "completed",
+      data.raw
+    );
+    const full = amount >= Number(payment.amount) - 0.005;
+    return { ok: true, orderId: order.id, full, alreadyRecorded: false };
+  }
+  if (existingRefunds.length > 0) {
     return { ok: true, orderId: order.id, full: false, alreadyRecorded: true };
   }
 
-  const orderTotal = Number(order.total);
   // Half a kobo of tolerance, because comparing money that has been through
   // a currency conversion and back with === is how off-by-one-kobo bugs are
   // born.
-  const full = Number.isFinite(orderTotal) && amount >= orderTotal - 0.005;
+  const paymentAmount = Number(payment.amount);
+  const full =
+    Number.isFinite(paymentAmount) && amount >= paymentAmount - 0.005;
 
   const orderTickets = await db.query.tickets.findMany({
     where: eq(tickets.orderId, order.id),
@@ -250,11 +319,43 @@ export async function recordExternalRefund(data: {
   return { ok: true, orderId: order.id, full: true, alreadyRecorded: false };
 }
 
+export async function recordExternalRefundFailure(data: {
+  reference: string;
+  amountMinor?: number;
+  raw?: unknown;
+}): Promise<boolean> {
+  const payment = await db.query.payments.findFirst({
+    where: eq(payments.providerReference, data.reference),
+  });
+  if (!payment || payment.provider !== "paystack") return false;
+
+  const pendingRefunds = await db.query.refunds.findMany({
+    where: and(
+      eq(refunds.orderId, payment.orderId),
+      eq(refunds.status, "pending")
+    ),
+  });
+  const amount =
+    typeof data.amountMinor === "number" ? data.amountMinor / 100 : null;
+  const refund = pendingRefunds.find(
+    (item) =>
+      amount === null || Math.abs(Number(item.amount) - amount) < 0.005
+  );
+  if (!refund?.providerReference) return false;
+
+  await updateMonnifyRefundStatus(
+    refund.providerReference,
+    "failed",
+    data.raw
+  );
+  return true;
+}
+
 /**
  * Count a promo code's use — here, on payment, not at checkout.
  *
  * The obvious place is when the order is created, and it is wrong. Most
- * checkouts that start do not finish: somebody opens Paystack, changes their
+ * checkouts that start do not finish: somebody opens checkout, changes their
  * mind, closes the tab. Counting those would mean a code limited to fifty
  * uses stops working after twenty real sales, and the organiser has no way to
  * see why.
@@ -267,7 +368,7 @@ export async function recordExternalRefund(data: {
  * The trade: two people paying in the same instant can both slip past a limit
  * that had one use left, so a "first 50" code might give away 51. That is a
  * far better failure than turning away paying customers, and the window is
- * the width of a Paystack redirect.
+ * the width of a hosted-checkout redirect.
  *
  * Runs inside the block that only executes once per order (the payment claim
  * above), so a webhook and a browser return racing each other cannot both

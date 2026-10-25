@@ -14,6 +14,7 @@ import {
   ticketTypes,
 } from '@/db/schema';
 import { and, asc, eq, sql } from 'drizzle-orm';
+import { randomUUID } from "node:crypto";
 import { getSessionUserId } from '@/lib/authz';
 import { validateAnswers, type RegistrationField } from '@/lib/registration';
 import {
@@ -27,8 +28,9 @@ import {
   releaseExpiredReservations,
   releaseOrderReservation,
 } from '@/lib/inventory';
+import { initializePaystackCheckout } from "@/lib/paystack";
+import { finalizeFreeOrder } from "@/lib/finalize-order";
 
-const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 
 /**
  * Turn a share code into the promoter who owns it, for this event.
@@ -232,18 +234,10 @@ export async function POST(request: NextRequest) {
     const faceValue = parseFloat(ticketType.price) * quantity;
     const effect = applyPromo(faceValue, promo);
 
-    // The event decides who carries Paystack's fee. `buyerTotal` is what the
-    // event page quoted and what we record; `paystackAmount` is what the
-    // transaction is initialized for, which differs when the organizer
-    // absorbs the fee (the account adds its cut on top of whatever we send).
-    //
-    // Quoted on the DISCOUNTED face value, so the fees follow the money
-    // rather than the sticker — a buyer with 20% off pays 20% less card fee
-    // too, and the organiser's cut is calculated on what actually came in.
+    // The buyer covers Paystack's processing charge. Wetin Dey's 5% is
+    // deducted from the organiser's ticket proceeds.
     const quote = quoteOrder(effect.faceAfter, {
-      platformFeePaidBy: event.platformFeePaidBy,
-      processingFeePaidBy:
-        event.feeStrategy === "buyer_pays" ? "buyer" : "organizer",
+      platformFeePaidBy: "organizer",
     });
     const subtotal = quote.subtotal;
     const fees = quote.platformFee;
@@ -270,6 +264,7 @@ export async function POST(request: NextRequest) {
         subtotal: subtotal.toString(),
         fees: fees.toString(),
         total: total.toString(),
+        platformFeePaidBy: "organizer",
         status: 'pending' as const,
         reservationExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
       })
@@ -315,18 +310,58 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(ticketTypes.id, ticketTypeId));
 
-    // Any failure past this point must give the reserved inventory back,
-    // including a thrown Paystack error — previously a throw skipped the
-    // rollback entirely and the tickets stayed reserved forever.
-    let paystackResponse;
-    try {
-      paystackResponse = await initializePaystackPayment({
-        amount: Math.round(quote.paystackAmount * 100),
-        email: buyerEmail,
-        reference: `TB-${order.id.slice(0, 8)}-${Date.now()}`,
+    const paymentReference = `WD-${order.id.slice(0, 8)}-${randomUUID()}`;
+
+    if (quote.buyerTotal === 0) {
+      try {
+        await db.insert(payments).values({
+          orderId: order.id,
+          provider: "free",
+          providerReference: paymentReference,
+          amount: "0",
+          status: "success",
+          rawProviderResponse: { free: true },
+        });
+      } catch (paymentError) {
+        await releaseOrderReservation(order.id);
+        await db.delete(orders).where(eq(orders.id, order.id));
+        throw paymentError;
+      }
+      if (!(await finalizeFreeOrder(order.id))) {
+        throw new Error("Could not complete the free ticket order.");
+      }
+      return NextResponse.json({
         orderId: order.id,
-        eventTitle: event.title,
-        ticketCount: quantity,
+        paymentUrl: appUrl(
+          `/payment/callback?reference=${encodeURIComponent(paymentReference)}`
+        ),
+      });
+    }
+
+    // Any provider failure after inventory reservation gives held tickets back.
+    let paystackCheckout: Awaited<ReturnType<typeof initializePaystackCheckout>>;
+    try {
+      paystackCheckout = await initializePaystackCheckout({
+        amount: quote.paystackAmount,
+        email: buyerEmail,
+        reference: paymentReference,
+        callbackUrl: appUrl(
+          `/payment/callback?reference=${encodeURIComponent(paymentReference)}`
+        ),
+        metadata: {
+          orderId: order.id,
+          eventId,
+          eventTitle: event.title,
+          ticketCount: quantity,
+        },
+      });
+      await db.insert(payments).values({
+        orderId: order.id,
+        provider: "paystack",
+        providerReference: paymentReference,
+        amount: quote.paystackAmount.toString(),
+        status: "initialized",
+        rawProviderResponse: paystackCheckout.raw,
       });
     } catch (paymentError) {
       await releaseOrderReservation(order.id);
@@ -334,24 +369,9 @@ export async function POST(request: NextRequest) {
       throw paymentError;
     }
 
-    if (!paystackResponse.status) {
-      await releaseOrderReservation(order.id);
-      await db.delete(orders).where(eq(orders.id, order.id));
-      throw new Error('Failed to initialize payment');
-    }
-
-    await db.insert(payments).values({
-      orderId: order.id,
-      provider: 'paystack',
-      providerReference: paystackResponse.data.reference,
-      amount: quote.paystackAmount.toString(),
-      status: 'initialized',
-      rawProviderResponse: paystackResponse.data,
-    });
-
     return NextResponse.json({
       orderId: order.id,
-      paymentUrl: paystackResponse.data.authorization_url,
+      paymentUrl: paystackCheckout.checkout.authorization_url,
     });
   } catch (error) {
     console.error('Error creating order:', error);
@@ -360,40 +380,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-async function initializePaystackPayment(params: {
-  amount: number;
-  email: string;
-  reference: string;
-  orderId: string;
-  eventTitle: string;
-  ticketCount: number;
-}) {
-  const url = 'https://api.paystack.co/transaction/initialize';
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${PAYSTACK_SECRET}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      amount: params.amount,
-      email: params.email,
-      reference: params.reference,
-      metadata: {
-        orderId: params.orderId,
-        eventTitle: params.eventTitle,
-        ticketCount: params.ticketCount,
-      },
-      callback_url: appUrl('/payment/callback'),
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Paystack API error: ${response.statusText}`);
-  }
-
-  return response.json();
 }

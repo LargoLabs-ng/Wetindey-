@@ -153,7 +153,7 @@ export function RegistrationAnswersForm({
 /**
  * Whether every required question has something in it.
  *
- * Checked on the page so the buyer is told before they are sent to Paystack,
+ * Checked on the page so the buyer is told before they are sent to Monnify,
  * not after. The server checks again — this is a courtesy, not the gate.
  */
 export function missingRequired(

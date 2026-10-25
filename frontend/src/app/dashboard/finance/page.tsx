@@ -8,6 +8,7 @@ type Earnings = {
   grossSales: number;
   platformFee: number;
   processingFee: number;
+  buyerProcessingFee: number;
   refunded: number;
   netEarned: number;
   paidOut: number;
@@ -166,7 +167,8 @@ export default function FinancePage() {
               organiser who thinks we took all of it is owed an explanation. */}
           <p className="mt-1 text-xs text-on-dark-3">
             Us {naira(e.platformFee)} ({Math.round(PLATFORM_FEE_RATE * 100)}%) ·
-            Paystack {naira(e.processingFee)}
+            Monnify {naira(e.processingFee)} · Paystack paid by buyers{" "}
+            {naira(e.buyerProcessingFee)}
           </p>
         </div>
         <div className={card}>

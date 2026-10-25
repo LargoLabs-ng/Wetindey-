@@ -1,9 +1,17 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { db } from "@/db";
 import { events, orders, payments, refunds, tickets } from "@/db/schema";
 import { quoteCancellationRefund } from "@/lib/fees";
 import { sendEventCancelled } from "@/lib/email-service";
 import { appUrl } from "@/lib/app-url";
+import {
+  initiateMonnifyRefund,
+  monnifyFeeFromStoredResponse,
+  storedMonnifyTransaction,
+} from "@/lib/monnify";
+import { paystackFeeFromStoredResponse } from "@/lib/paystack";
+import { updateMonnifyRefundStatus } from "@/lib/finalize-order";
 
 /**
  * Calling off an event.
@@ -28,7 +36,7 @@ export type CancellationBill = {
   buyerRefundTotal: number;
   /** Our cut on this event, all of which we give up. */
   platformFeeForgone: number;
-  /** Paystack's charge, which nobody gets back. */
+  /** Actual provider fees, which are not returned with an event cancellation. */
   processingLost: number;
   /** Orders with no usable payment reference — these need manual handling. */
   unrefundable: number;
@@ -36,8 +44,6 @@ export type CancellationBill = {
 
 /** Money owed if this event were called off, without changing anything. */
 export async function cancellationBill(eventId: string): Promise<CancellationBill> {
-  const event = await db.query.events.findFirst({ where: eq(events.id, eventId) });
-
   const paid = await db.query.orders.findMany({
     where: and(eq(orders.eventId, eventId), eq(orders.status, "paid")),
   });
@@ -62,12 +68,15 @@ export async function cancellationBill(eventId: string): Promise<CancellationBil
   bill.tickets = live.length;
 
   const refs = await db.query.payments.findMany({
-    where: inArray(
-      payments.orderId,
-      paid.map((o) => o.id)
+    where: and(
+      inArray(
+        payments.orderId,
+        paid.map((o) => o.id)
+      ),
+      eq(payments.status, "success")
     ),
   });
-  const refByOrder = new Map(refs.map((p) => [p.orderId, p.providerReference]));
+  const paymentByOrder = new Map(refs.map((p) => [p.orderId, p]));
 
   for (const order of paid) {
     // subtotal is the face value — what the tickets cost before anyone's fee
@@ -75,12 +84,29 @@ export async function cancellationBill(eventId: string): Promise<CancellationBil
     // charge, which we never received and cannot return.
     const quote = quoteCancellationRefund(
       Number(order.subtotal),
-      event?.platformFeePaidBy ?? "organizer"
+      order.platformFeePaidBy
     );
     bill.buyerRefundTotal += quote.buyerRefund;
     bill.platformFeeForgone += quote.organizerRefunded;
-    bill.processingLost += quote.processingLost;
-    if (!refByOrder.get(order.id)) bill.unrefundable += 1;
+    const payment = paymentByOrder.get(order.id);
+    if (!payment?.providerReference) {
+      bill.unrefundable += 1;
+      continue;
+    }
+    if (payment.provider === "monnify") {
+      const transaction = storedMonnifyTransaction(payment.rawProviderResponse);
+      bill.processingLost +=
+        monnifyFeeFromStoredResponse(payment.rawProviderResponse) ?? 0;
+      if (
+        transaction?.paymentMethod !== "ACCOUNT_TRANSFER" ||
+        quote.buyerRefund < 100
+      ) {
+        bill.unrefundable += 1;
+      }
+    } else if (payment.provider === "paystack") {
+      bill.processingLost +=
+        paystackFeeFromStoredResponse(payment.rawProviderResponse) ?? 0;
+    }
   }
 
   bill.buyerRefundTotal = Math.round(bill.buyerRefundTotal * 100) / 100;
@@ -142,7 +168,7 @@ export async function cancelEvent(
     const current = byEmail.get(order.email) ?? { total: 0 };
     const quote = quoteCancellationRefund(
       Number(order.subtotal),
-      event.platformFeePaidBy
+      order.platformFeePaidBy
     );
     current.total += quote.buyerRefund;
     byEmail.set(order.email, current);
@@ -183,6 +209,7 @@ export async function cancelEvent(
 
 export type RefundAllResult = {
   refunded: number;
+  pending: number;
   failed: number;
   skipped: number;
   total: number;
@@ -205,16 +232,24 @@ export async function refundEverybody(
     where: and(eq(orders.eventId, eventId), eq(orders.status, "paid")),
   });
 
-  const result: RefundAllResult = { refunded: 0, failed: 0, skipped: 0, total: 0 };
+  const result: RefundAllResult = {
+    refunded: 0,
+    pending: 0,
+    failed: 0,
+    skipped: 0,
+    total: 0,
+  };
   if (!event || paid.length === 0) return result;
-
-  const secret = process.env.PAYSTACK_SECRET_KEY;
 
   for (const order of paid) {
     const already = await db.query.refunds.findFirst({
       where: eq(refunds.orderId, order.id),
     });
-    if (already) {
+    if (already?.status === "pending") {
+      result.pending += 1;
+      continue;
+    }
+    if (already?.status === "completed") {
       result.skipped += 1;
       continue;
     }
@@ -222,17 +257,118 @@ export async function refundEverybody(
     const payment = await db.query.payments.findFirst({
       where: eq(payments.orderId, order.id),
     });
-    if (!payment?.providerReference || !secret) {
+    if (!payment?.providerReference) {
       result.failed += 1;
       continue;
     }
 
     const quote = quoteCancellationRefund(
       Number(order.subtotal),
-      event.platformFeePaidBy
+      order.platformFeePaidBy
     );
 
     try {
+      if (payment.provider === "monnify") {
+        const transaction = storedMonnifyTransaction(payment.rawProviderResponse);
+        const ticketsForOrder = await db.query.tickets.findMany({
+          where: eq(tickets.orderId, order.id),
+        });
+        if (
+          !transaction?.transactionReference ||
+          transaction.paymentMethod !== "ACCOUNT_TRANSFER" ||
+          quote.buyerRefund < 100 ||
+          !ticketsForOrder[0]
+        ) {
+          result.failed += 1;
+          continue;
+        }
+
+        const refundReference = `WD-RF-${randomUUID()}`;
+        const [refundRecord] = await db
+          .insert(refunds)
+          .values({
+            ticketId: ticketsForOrder[0].id,
+            orderId: order.id,
+            eventId,
+            amount: quote.buyerRefund.toFixed(2),
+            reason: "Event cancelled",
+            providerReference: refundReference,
+            status: "pending",
+            refundedBy: actorId,
+          })
+          .returning({ id: refunds.id });
+        if (!refundRecord) {
+          throw new Error(`Could not record the refund for order ${order.id}.`);
+        }
+
+        const response = await initiateMonnifyRefund({
+          transactionReference: transaction.transactionReference,
+          refundReference,
+          refundAmount: quote.buyerRefund,
+          refundReason: `${event.title} cancelled`.slice(0, 64),
+          customerNote: "Event cancelled",
+        });
+        await db
+          .update(refunds)
+          .set({ providerResponse: response.raw })
+          .where(eq(refunds.id, refundRecord.id));
+
+        if (response.refund.refundStatus === "FAILED") {
+          await updateMonnifyRefundStatus(
+            refundReference,
+            "failed",
+            response.raw
+          );
+          result.failed += 1;
+        } else if (response.refund.refundStatus === "COMPLETED") {
+          await updateMonnifyRefundStatus(
+            refundReference,
+            "completed",
+            response.raw
+          );
+          result.refunded += 1;
+          result.total += quote.buyerRefund;
+        } else if (response.refund.refundStatus === "PENDING") {
+          result.pending += 1;
+        } else {
+          throw new Error(
+            `Monnify returned unknown refund status for order ${order.id}.`
+          );
+        }
+        continue;
+      }
+
+      const secret = process.env.PAYSTACK_SECRET_KEY;
+      if (payment.provider !== "paystack" || !secret) {
+        result.failed += 1;
+        continue;
+      }
+      const orderTickets = await db.query.tickets.findMany({
+        where: eq(tickets.orderId, order.id),
+      });
+      const ticket = orderTickets[0];
+      if (!ticket) {
+        result.failed += 1;
+        continue;
+      }
+      const refundReference = `WD-RF-${randomUUID()}`;
+      const [refundRecord] = await db
+        .insert(refunds)
+        .values({
+          ticketId: ticket.id,
+          orderId: order.id,
+          eventId,
+          amount: quote.buyerRefund.toFixed(2),
+          reason: "Event cancelled",
+          providerReference: refundReference,
+          status: "pending",
+          refundedBy: actorId,
+        })
+        .returning({ id: refunds.id });
+      if (!refundRecord) {
+        throw new Error(`Could not record the refund for order ${order.id}.`);
+      }
+
       const response = await fetch("https://api.paystack.co/refund", {
         method: "POST",
         headers: {
@@ -248,35 +384,22 @@ export async function refundEverybody(
 
       const body = await response.json().catch(() => null);
       if (!response.ok) {
+        await db
+          .update(refunds)
+          .set({ status: "failed", providerResponse: body })
+          .where(
+            and(eq(refunds.id, refundRecord.id), eq(refunds.status, "pending"))
+          );
         result.failed += 1;
         console.error(`Refund failed for order ${order.id}:`, body);
         continue;
       }
 
-      const orderTickets = await db.query.tickets.findMany({
-        where: eq(tickets.orderId, order.id),
-      });
-
-      // Written after the money moves, never before: a refunds row the bank
-      // never honoured is worse than no row, because the retry is skipped.
-      await db.insert(refunds).values({
-        ticketId: orderTickets[0]?.id ?? "",
-        orderId: order.id,
-        eventId,
-        amount: quote.buyerRefund.toFixed(2),
-        reason: "Event cancelled",
-        providerReference: body?.data?.reference ?? null,
-        providerResponse: body ?? null,
-        refundedBy: actorId,
-      });
-
       await db
-        .update(orders)
-        .set({ status: "refunded" })
-        .where(eq(orders.id, order.id));
-
-      result.refunded += 1;
-      result.total += quote.buyerRefund;
+        .update(refunds)
+        .set({ providerResponse: body })
+        .where(eq(refunds.id, refundRecord.id));
+      result.pending += 1;
     } catch (error) {
       result.failed += 1;
       console.error(`Refund threw for order ${order.id}:`, error);

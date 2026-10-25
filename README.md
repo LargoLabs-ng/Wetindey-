@@ -44,7 +44,7 @@ scripts to work with the frontend.
 | UI | React 19, Tailwind v4 |
 | Database | Neon Postgres via Drizzle ORM |
 | Auth | Auth.js v5 (beta), JWT sessions, credentials + Google |
-| Payments | Paystack |
+| Payments | Paystack (legacy Monnify transactions remain supported) |
 | Email | Resend (or SMTP/SendGrid — see `EMAIL_PROVIDER`) |
 | File storage | Vercel Blob |
 | Tests | Vitest |
@@ -81,7 +81,7 @@ root-level `node_modules` directory.
 
 | Variable | What breaks without it |
 |---|---|
-| `PAYSTACK_SECRET_KEY` | Checkout. Use a test key in dev |
+| `PAYSTACK_SECRET_KEY` | Hosted checkout, transaction verification, refunds, and webhook validation |
 | `RESEND_API_KEY` + `EMAIL_FROM` | Tickets, QR codes, all notifications |
 | Vercel Blob connection (`BLOB_STORE_ID` + Vercel-managed OIDC) or `BLOB_READ_WRITE_TOKEN` | Image uploads (cover art, logos, sponsors) |
 | `ADMIN_EMAILS` | Comma-separated. Who can reach `/admin` |
@@ -90,16 +90,30 @@ root-level `node_modules` directory.
 `NEXT_PUBLIC_SUPPORT_EMAIL`, `EMAIL_PROVIDER` with `SMTP_*` or
 `SENDGRID_API_KEY` if you'd rather not use Resend.
 
-### Paystack webhook
+### Paystack setup and webhook
 
-Point it at `POST /api/webhooks/paystack`. Signature is verified with
-HMAC-SHA512 against `PAYSTACK_SECRET_KEY`.
+Set `PAYSTACK_SECRET_KEY` to a test key for development and a live key for
+production. No public key is needed: checkout is initialized server-side and
+buyers are redirected to Paystack-hosted checkout. Configure Paystack to pass
+transaction charges to customers so the fee estimate shown before checkout is
+consistent with the actual charge. Paystack fees vary by account and payment
+method; the exact verified fee is reported as buyer-paid and is not deducted
+from organiser proceeds.
 
-The webhook is **not** the only thing that completes a purchase. The buyer's
-own return to the site calls the same `finalizeOrder()`, so a dropped or
-delayed webhook doesn't leave somebody paid-but-ticketless. Both paths claim
-the order with a conditional `UPDATE ... WHERE status = X RETURNING`, so
-whichever arrives second is a no-op rather than a double-send.
+Point Paystack transaction notifications at `POST /api/webhooks/paystack`.
+The webhook validates the `x-paystack-signature` HMAC-SHA512 header with
+`PAYSTACK_SECRET_KEY`; payment notifications are also verified server-to-server
+before tickets are issued. The buyer's return to the site also verifies
+directly, so a dropped webhook does not leave a successful payment unfulfilled.
+Fulfilment uses a conditional database update so the browser and webhook
+cannot issue duplicate tickets.
+
+The legacy `POST /api/webhooks/monnify` endpoint and Monnify verification/refund
+support remain for transactions created before the switch. Monnify refunds
+require the merchant refund API to be enabled and currently support
+account-transfer transactions only; they remain pending until Monnify confirms
+success. Keep the old Monnify credentials configured only if historical
+transactions still need to be verified or refunded.
 
 ---
 
@@ -116,7 +130,8 @@ Instead: migrations are **hand-written SQL** in `backend/migrations/`, applied o
 time by a script that runs exactly the reviewed text and nothing else.
 
 ```bash
-npm run db:migrate -- backend/migrations/0013_commission_snapshot.sql
+npm run db:migrate -- backend/migrations/0014_monnify_payments.sql
+npm run db:migrate -- backend/migrations/0015_paystack_checkout.sql
 ```
 
 Every migration is written to be safe to run twice — `IF NOT EXISTS`
@@ -163,7 +178,7 @@ itself at the top:
 
 | File | Why it's worth reading |
 |---|---|
-| `backend/lib/fees.ts` | Who pays what. Paystack's gross-up is reverse-solved so the page and the charge always agree; verified against a live test charge |
+| `backend/lib/fees.ts` | Platform fee and organiser earnings; provider fees come from verified payment data |
 | `backend/lib/permissions.ts` | Four assignable roles plus an orthogonal "can see the money" switch, and why it isn't six roles |
 | `backend/lib/earnings.ts` | The single source of truth for what an organisation is owed. Documents one known simplification in the organiser's favour |
 | `backend/lib/registration.ts` | Custom checkout questions. Built around "a bad answer must never cost a sale that isn't the buyer's fault" |

@@ -124,7 +124,7 @@ export function applyPromo(
   // refer_to_earn: the buyer pays the same. What changes is who is owed.
   //
   // Computed on the face value because that is what the buyer paid — the
-  // platform and processing fees are ours and Paystack's, not the
+  // platform and processing fees are ours and the provider's, not the
   // organiser's to hand a promoter a share of, and not the promoter's
   // problem either.
   return {

@@ -9,7 +9,7 @@ import { sendTicketsForOrder } from "@/lib/ticket-email";
  * POST /api/tickets/send-email — { orderId }
  * Resend an order's tickets. Organizer-only: the caller must belong to the
  * organization running the event. The purchase flow no longer calls this;
- * the Paystack webhook sends tickets by calling sendTicketsForOrder directly.
+ * payment webhooks send tickets by calling sendTicketsForOrder directly.
  */
 export async function POST(request: NextRequest) {
   try {

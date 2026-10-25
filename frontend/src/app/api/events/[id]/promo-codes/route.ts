@@ -51,7 +51,7 @@ async function loadCodes(eventId: string) {
   /**
    * PAID orders only.
    *
-   * A pending order is somebody who opened Paystack and wandered off.
+   * A pending order is somebody who opened checkout and wandered off.
    * Counting it would show an organiser revenue that never arrived and —
    * worse — commission they do not owe.
    */

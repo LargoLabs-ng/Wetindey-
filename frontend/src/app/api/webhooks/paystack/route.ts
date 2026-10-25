@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { payments } from "@/db/schema";
 import {
   failPendingOrder,
-  finalizePaidOrder,
   recordExternalRefund,
+  recordExternalRefundFailure,
 } from '@/lib/finalize-order';
+import { verifyAndFinalizePaystackPayment } from "@/lib/paystack";
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 
@@ -45,9 +49,15 @@ export async function POST(request: NextRequest) {
       if (!reference) {
         return NextResponse.json({ error: 'Missing reference' }, { status: 400 });
       }
+      const payment = await db.query.payments.findFirst({
+        where: eq(payments.providerReference, reference),
+      });
+      if (payment?.provider !== "paystack") {
+        return NextResponse.json({ success: true, message: "Not a Paystack payment" });
+      }
 
-      const result = await finalizePaidOrder(reference);
-      if (!result.ok) {
+      const result = await verifyAndFinalizePaystackPayment(reference);
+      if (result.status === "unknown") {
         // Unknown reference is not an error worth retrying — acknowledge it
         // so Paystack stops resending.
         console.log(`Webhook for unknown reference: ${reference}`);
@@ -56,14 +66,25 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        orderId: result.orderId,
-        alreadyProcessed: result.alreadyDone,
+        status: result.status,
+        orderId:
+          result.status === "paid" || result.status === "failed"
+            ? result.result.ok
+              ? result.result.orderId
+              : undefined
+            : result.orderId,
       });
     }
 
     if (event.event === 'charge.failed') {
       if (!reference) {
         return NextResponse.json({ error: 'Missing reference' }, { status: 400 });
+      }
+      const payment = await db.query.payments.findFirst({
+        where: eq(payments.providerReference, reference),
+      });
+      if (payment?.provider !== "paystack") {
+        return NextResponse.json({ success: true, message: "Not a Paystack payment" });
       }
 
       const result = await failPendingOrder(reference);
@@ -111,6 +132,27 @@ export async function POST(request: NextRequest) {
         full: result.full,
         alreadyRecorded: result.alreadyRecorded,
       });
+    }
+
+    if (event.event === 'refund.failed') {
+      const transactionRef: string | undefined =
+        event?.data?.transaction_reference ??
+        event?.data?.transaction?.reference ??
+        reference;
+      if (!transactionRef) {
+        console.error('refund.failed with no transaction reference', event?.data);
+        return NextResponse.json({ success: true, message: 'No transaction reference' });
+      }
+
+      const updated = await recordExternalRefundFailure({
+        reference: transactionRef,
+        amountMinor: event?.data?.amount,
+        raw: event?.data,
+      });
+      if (!updated) {
+        console.log(`refund.failed ignored: ${transactionRef}`);
+      }
+      return NextResponse.json({ success: true, updated });
     }
 
     // Anything else is acknowledged so Paystack stops resending, and logged

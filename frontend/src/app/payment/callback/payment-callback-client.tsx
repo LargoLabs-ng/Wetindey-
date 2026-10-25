@@ -46,7 +46,27 @@ export default function PaymentCallbackClient() {
   });
 
   useEffect(() => {
-    const verifyPayment = async () => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const retryLimit = 20;
+    const retryDelayMs = 3000;
+
+    const showPending = (orderId?: string, attempt = 0) => {
+      if (cancelled) return;
+      setPaymentStatus({
+        status: "pending",
+        message:
+          attempt < retryLimit
+            ? "Payment is being processed. Confirming with the payment provider…"
+            : "Your payment is still being confirmed. Keep this page open; your ticket will be emailed once it is verified.",
+        orderId,
+      });
+      if (attempt < retryLimit) {
+        retryTimer = setTimeout(() => verifyPayment(attempt + 1), retryDelayMs);
+      }
+    };
+
+    const verifyPayment = async (attempt = 0) => {
       if (!reference) {
         setPaymentStatus({
           status: 'failed',
@@ -58,6 +78,7 @@ export default function PaymentCallbackClient() {
       try {
         const response = await fetch(`/api/payment/verify?reference=${encodeURIComponent(reference)}`);
         const data = await response.json();
+        if (cancelled) return;
 
         if (data.status === 'success') {
           setPaymentStatus({
@@ -69,26 +90,26 @@ export default function PaymentCallbackClient() {
             afterPurchase: data.afterPurchase ?? null,
           });
         } else if (data.status === 'pending') {
-          setPaymentStatus({
-            status: 'pending',
-            message: 'Payment is being processed. Check your email shortly.',
-            orderId: data.orderId,
-          });
+          showPending(data.orderId, attempt);
+        } else if (!response.ok && response.status >= 500) {
+          showPending(undefined, attempt);
         } else {
           setPaymentStatus({
             status: 'failed',
             message: data.message || 'Payment verification failed',
           });
         }
-      } catch (error) {
-        setPaymentStatus({
-          status: 'failed',
-          message: 'Failed to verify payment. Please contact support.',
-        });
+      } catch {
+        if (cancelled) return;
+        showPending(undefined, attempt);
       }
     };
 
     verifyPayment();
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [reference]);
 
   return (

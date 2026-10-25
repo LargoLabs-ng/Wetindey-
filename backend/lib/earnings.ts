@@ -1,7 +1,9 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { events, orders, payouts, refunds } from "@/db/schema";
+import { events, orders, payments, payouts, refunds } from "@/db/schema";
 import { quoteOrder } from "@/lib/fees";
+import { monnifyFeeFromStoredResponse } from "@/lib/monnify";
+import { paystackFeeFromStoredResponse } from "@/lib/paystack";
 
 /**
  * What an organisation has earned, and what it can actually withdraw.
@@ -15,8 +17,10 @@ export type Earnings = {
   grossSales: number;
   /** Our cut, only counting sales where the organiser carried it. */
   platformFee: number;
-  /** Paystack's cut on sales where the organiser carried it. */
+  /** Actual Monnify fees deducted from organiser earnings. */
   processingFee: number;
+  /** Paystack fees collected from buyers rather than deducted from organisers. */
+  buyerProcessingFee: number;
   /** Face value of sales that were refunded and no longer count. */
   refunded: number;
   /** Owed to the organiser: gross, less whichever fees they carried. */
@@ -39,6 +43,7 @@ export async function earningsForOrganization(
     grossSales: 0,
     platformFee: 0,
     processingFee: 0,
+    buyerProcessingFee: 0,
     refunded: 0,
     netEarned: 0,
     paidOut: 0,
@@ -50,8 +55,6 @@ export async function earningsForOrganization(
   const orgEvents = await db
     .select({
       id: events.id,
-      platformFeePaidBy: events.platformFeePaidBy,
-      feeStrategy: events.feeStrategy,
     })
     .from(events)
     .where(eq(events.organizationId, organizationId));
@@ -59,13 +62,13 @@ export async function earningsForOrganization(
   if (orgEvents.length === 0) return empty;
 
   const eventIds = orgEvents.map((e) => e.id);
-  const settings = new Map(orgEvents.map((e) => [e.id, e]));
 
   const paid = await db
     .select({
       id: orders.id,
       eventId: orders.eventId,
       subtotal: orders.subtotal,
+      platformFeePaidBy: orders.platformFeePaidBy,
     })
     .from(orders)
     .where(and(inArray(orders.eventId, eventIds), eq(orders.status, "paid")));
@@ -84,13 +87,51 @@ export async function earningsForOrganization(
   const refundRows = await db
     .select({ orderId: refunds.orderId, amount: refunds.amount })
     .from(refunds)
-    .where(inArray(refunds.eventId, eventIds));
+    .where(
+      and(
+        inArray(refunds.eventId, eventIds),
+        eq(refunds.status, "completed")
+      )
+    );
 
   const refundedOrders = new Set(refundRows.map((r) => r.orderId));
+  const paidPayments = await db
+    .select({
+      orderId: payments.orderId,
+      provider: payments.provider,
+      rawProviderResponse: payments.rawProviderResponse,
+    })
+    .from(payments)
+    .where(
+      and(
+        inArray(
+          payments.orderId,
+          paid.map((order) => order.id)
+        ),
+        eq(payments.status, "success")
+      )
+    );
+  const organizerProcessingFeeByOrder = new Map<string, number>();
+  const buyerProcessingFeeByOrder = new Map<string, number>();
+  for (const payment of paidPayments) {
+    const fee =
+      payment.provider === "monnify"
+        ? monnifyFeeFromStoredResponse(payment.rawProviderResponse)
+        : payment.provider === "paystack"
+          ? paystackFeeFromStoredResponse(payment.rawProviderResponse)
+          : null;
+    if (fee === null) continue;
+    if (payment.provider === "monnify") {
+      organizerProcessingFeeByOrder.set(payment.orderId, fee);
+    } else if (payment.provider === "paystack") {
+      buyerProcessingFeeByOrder.set(payment.orderId, fee);
+    }
+  }
 
   let grossSales = 0;
   let platformFee = 0;
   let processingFee = 0;
+  let buyerProcessingFee = 0;
   let netEarned = 0;
   let refunded = 0;
   let ticketsSold = 0;
@@ -104,26 +145,23 @@ export async function earningsForOrganization(
       continue;
     }
 
-    const config = settings.get(order.eventId);
     // Same function the event page and the order API quote from, so a
     // payout can never disagree with the price a buyer was shown.
     const quote = quoteOrder(face, {
-      platformFeePaidBy: config?.platformFeePaidBy ?? "organizer",
-      processingFeePaidBy:
-        config?.feeStrategy === "organizer_absorbs" ? "organizer" : "buyer",
+      platformFeePaidBy: order.platformFeePaidBy,
     });
+    const organizerProcessingFee =
+      organizerProcessingFeeByOrder.get(order.id) ?? 0;
+    const actualBuyerProcessingFee =
+      buyerProcessingFeeByOrder.get(order.id) ?? 0;
 
     grossSales += face;
-    netEarned += quote.organizerNet;
+    netEarned += quote.organizerNet - organizerProcessingFee;
     ticketsSold += 1;
 
-    // Only count a fee against the organiser when they are the one paying
-    // it. On a buyer-pays event these are the buyer's costs and showing them
-    // as deductions would make the organiser think they had been charged.
     if (quote.platformFeePaidBy === "organizer") platformFee += quote.platformFee;
-    if (quote.processingFeePaidBy === "organizer") {
-      processingFee += quote.processingFee;
-    }
+    processingFee += organizerProcessingFee;
+    buyerProcessingFee += actualBuyerProcessingFee;
   }
 
   const payoutRows = await db
@@ -148,6 +186,7 @@ export async function earningsForOrganization(
     grossSales: round2(grossSales),
     platformFee: round2(platformFee),
     processingFee: round2(processingFee),
+    buyerProcessingFee: round2(buyerProcessingFee),
     refunded: round2(refunded),
     netEarned: round2(netEarned),
     paidOut: round2(paidOut),

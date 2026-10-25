@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { payments } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { verifyAndFinalizeMonnifyPayment } from "@/lib/monnify-payments";
+import { verifyAndFinalizePaystackPayment } from "@/lib/paystack";
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,6 +14,22 @@ export async function GET(request: NextRequest) {
         { error: 'Missing reference parameter' },
         { status: 400 }
       );
+    }
+
+    const existingPayment = await db.query.payments.findFirst({
+      where: eq(payments.providerReference, reference),
+    });
+
+    if (
+      existingPayment?.provider === "monnify" &&
+      existingPayment.status !== "success"
+    ) {
+      await verifyAndFinalizeMonnifyPayment(reference);
+    } else if (
+      existingPayment?.provider === "paystack" &&
+      existingPayment.status !== "success"
+    ) {
+      await verifyAndFinalizePaystackPayment(reference);
     }
 
     const payment = await db.query.payments.findFirst({

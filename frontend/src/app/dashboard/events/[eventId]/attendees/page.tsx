@@ -82,10 +82,12 @@ export default function AttendeesPage() {
         return;
       }
       setRefundNote(
-        `Refunded \u20a6${Number(data.amount).toLocaleString('en-NG')}.` +
-          (data.emailSent
-            ? ' The attendee has been emailed.'
-            : " We couldn't email the attendee — tell them yourself.")
+        data.pending
+          ? `Monnify is processing the \u20a6${Number(data.amount).toLocaleString('en-NG')} refund. The ticket remains valid until the refund is confirmed.`
+          : `Refunded \u20a6${Number(data.amount).toLocaleString('en-NG')}.` +
+              (data.emailSent
+                ? ' The attendee has been emailed.'
+                : " We couldn't email the attendee — tell them yourself.")
       );
       setRefundingId(null);
       setRefundReason('');
@@ -279,11 +281,10 @@ export default function AttendeesPage() {
                     Refund {target.name}&apos;s ticket?
                   </p>
                   <p className="mt-1 text-sm" style={{ color: 'var(--color-on-dark-2)' }}>
-                    The ticket price goes back to the card they paid with and
-                    the ticket stops working at the door. Your 3% service fee
-                    is kept. Paystack does not return its processing fee on a
-                    refund, so that part is a cost to you. This cannot be
-                    undone.
+                    Monnify API refunds are available for account-transfer
+                    payments only and stay pending until confirmed. Other
+                    payment methods may need a manual refund. The ticket stays
+                    valid until the refund completes. This cannot be undone.
                   </p>
                 </div>
                 <button

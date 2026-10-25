@@ -47,8 +47,6 @@ interface Event {
   slug: string;
   description: string | null;
   coverImage: string | null;
-  feeStrategy: 'buyer_pays' | 'organizer_absorbs';
-  platformFeePaidBy: 'organizer' | 'buyer';
   category: string | null;
   venueName: string | null;
   /** Provisional — see the schema. Gates every display of date and venue. */
@@ -253,13 +251,11 @@ export default function EventDetailPage() {
 
   // Same calculation the order API uses, so the page and the payment screen
   // can never quote different numbers.
-  // The page quotes the discounted figure so the buy button and the Paystack
-  // screen agree. The server recalculates this from scratch anyway.
+  // The page quotes the discounted figure; the server recalculates it too.
   const faceValue = parseFloat(selectedTicketType?.price || '0') * quantity;
-  const quote = quoteOrder(Math.max(0, faceValue - (promoEffect?.discount ?? 0)), {
-    platformFeePaidBy: event?.platformFeePaidBy ?? 'organizer',
-    processingFeePaidBy: event?.feeStrategy === 'organizer_absorbs' ? 'organizer' : 'buyer',
-  });
+  const quote = quoteOrder(
+    Math.max(0, faceValue - (promoEffect?.discount ?? 0))
+  );
 
   const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value);
@@ -891,17 +887,14 @@ export default function EventDetailPage() {
                             <dd className="tabular-nums text-ink-2">{naira(quote.platformFee)}</dd>
                           </div>
                         )}
-                        {quote.processingFeePaidBy === 'buyer' && (
-                          <div className="flex justify-between">
-                            <dt className="text-ink-2">Card fee</dt>
-                            <dd className="tabular-nums text-ink-2">{naira(quote.processingFee)}</dd>
-                          </div>
-                        )}
                         <div className="flex justify-between border-t border-line pt-2 text-base font-extrabold">
-                          <dt className="text-ink">Total</dt>
-                          <dd className="tabular-nums text-ink">{naira(quote.buyerTotal)}</dd>
+                          <dt className="text-ink">Ticket total</dt>
+                          <dd className="tabular-nums text-ink">{naira(quote.paystackAmount)}</dd>
                         </div>
                       </dl>
+                      <p className="mt-2 text-center text-xs text-ink-3">
+                        Paystack will show any processing fee before you complete payment.
+                      </p>
 
                       {!joining ? (
                         <button
@@ -910,7 +903,7 @@ export default function EventDetailPage() {
                           disabled={available === 0}
                           className="mt-4 w-full rounded-xl bg-purple py-3.5 text-base font-bold text-white transition-colors hover:bg-purple-deep disabled:opacity-50"
                         >
-                          {Number(selectedTicketType.price) === 0 ? "I'm in" : `I'm in · ${naira(quote.buyerTotal)}`}
+                          {Number(selectedTicketType.price) === 0 ? "I'm in" : `I'm in · ${naira(quote.paystackAmount)}`}
                         </button>
                       ) : (
                         <div className="mt-4 space-y-3 border-t border-line pt-4">
@@ -1014,13 +1007,10 @@ export default function EventDetailPage() {
                               ? 'Taking you to payment…'
                               : Number(selectedTicketType.price) === 0
                                 ? 'Confirm my spot'
-                                : `Pay ${naira(quote.buyerTotal)}`}
+                                : `Continue to Paystack · ${naira(quote.paystackAmount)}`}
                           </button>
                           <p className="text-center text-xs text-ink-3">
-                            {quote.processingFeePaidBy === 'organizer'
-                              ? 'The organiser covers the card fee. '
-                              : ''}
-                            Secure payment by Paystack. Your QR ticket arrives by email.
+                            Paystack adds any processing fee shown on its payment page. Your QR ticket arrives by email.
                           </p>
                         </div>
                       )}

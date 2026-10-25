@@ -15,8 +15,6 @@ import {
   naira,
   PLATFORM_FEE_RATE,
   REFUND_RETAINED_RATE,
-  type FeeStrategy,
-  type FeeBearer,
 } from "@/lib/fees";
 
 /**
@@ -37,7 +35,7 @@ type Step = 1 | 2 | 3;
 const STEPS: { n: Step; label: string; hint: string }[] = [
   { n: 1, label: "Details", hint: "What, where and when" },
   { n: 2, label: "Tickets", hint: "Tiers and prices" },
-  { n: 3, label: "Fees & publish", hint: "Who pays what" },
+  { n: 3, label: "Pricing & publish", hint: "Review your pricing" },
 ];
 
 type Details = {
@@ -95,8 +93,6 @@ export function NewEventWizard() {
 
   const [details, setDetails] = useState<Details>(EMPTY);
   const [tiers, setTiers] = useState<Tier[]>([]);
-  const [feeStrategy, setFeeStrategy] = useState<FeeStrategy>("buyer_pays");
-  const [platformFeePaidBy, setPlatformFeePaidBy] = useState<FeeBearer>("organizer");
   const [agreed, setAgreed] = useState(false);
 
   const [hydrating, setHydrating] = useState(Boolean(eventId));
@@ -147,8 +143,6 @@ export function NewEventWizard() {
           dateTbd: ev.dateTbd ?? false,
           venueTbd: ev.venueTbd ?? false,
         });
-        setFeeStrategy(ev.feeStrategy ?? "buyer_pays");
-        setPlatformFeePaidBy(ev.platformFeePaidBy ?? "organizer");
         await loadTiers(eventId);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Could not load draft.");
@@ -216,18 +210,6 @@ export function NewEventWizard() {
     setBusy(true);
     setError(null);
 
-    const saveFees = await fetch(`/api/events/${eventId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ feeStrategy, platformFeePaidBy }),
-    });
-    if (!saveFees.ok) {
-      const d = await saveFees.json().catch(() => ({}));
-      setBusy(false);
-      setError(d.error ?? "Could not save the fee setting.");
-      return;
-    }
-
     const res = await fetch(`/api/events/${eventId}/publish`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -243,15 +225,11 @@ export function NewEventWizard() {
     router.push(`/dashboard/events/${eventId}`);
   }
 
-  // Preview the real arithmetic on the organizer's own cheapest paid tier,
-  // rather than an invented round number that hides the awkward cases.
+  // Preview the platform fee on the organizer's cheapest paid tier.
   const paid = tiers.map((t) => Number(t.price)).filter((p) => p > 0);
   const samplePrice = paid.length ? Math.min(...paid) : 5000;
   const sampleIsReal = paid.length > 0;
-  const quote = quoteOrder(samplePrice, {
-    platformFeePaidBy,
-    processingFeePaidBy: feeStrategy === "buyer_pays" ? "buyer" : "organizer",
-  });
+  const quote = quoteOrder(samplePrice);
   const refundKeep = Math.round(REFUND_RETAINED_RATE * 100);
 
   if (hydrating) {
@@ -487,7 +465,7 @@ export function NewEventWizard() {
               onClick={() => goTo(3)}
               className="flex-1 rounded-lg bg-purple py-3 font-semibold text-white transition-colors hover:bg-purple-deep disabled:opacity-40"
             >
-              Continue to fees
+              Continue to pricing
             </button>
           </div>
         </div>
@@ -497,52 +475,33 @@ export function NewEventWizard() {
       {step === 3 && eventId && (
         <div className="space-y-6">
           <div className="rounded-2xl border border-line-dark bg-surface p-6">
-            <h2 className="font-bold text-on-dark">Fees</h2>
+            <h2 className="font-bold text-on-dark">Pricing</h2>
             <p className="mt-1 text-sm text-on-dark-2">
-              Two charges sit on a ticket sale, and you decide who carries
-              each. Whatever you pick, the buyer sees their full total on the
-              event page — nothing is added at the payment screen.
+              Wetin Dey keeps 5% from your ticket proceeds. Paystack&apos;s
+              processing fee is added at checkout and paid by the buyer.
             </p>
 
-            <div className="mt-5 space-y-5">
-              <FeeChoice
-                title={`Wetin Dey's ${Math.round(PLATFORM_FEE_RATE * 100)}% service fee`}
-                value={platformFeePaidBy}
-                onChange={setPlatformFeePaidBy}
-                organizerLabel="Comes out of my payout"
-                buyerLabel="Add it to the buyer's total"
-              />
-              <FeeChoice
-                title="Paystack's card charge"
-                value={feeStrategy === "buyer_pays" ? "buyer" : "organizer"}
-                onChange={(v) =>
-                  setFeeStrategy(v === "buyer" ? "buyer_pays" : "organizer_absorbs")
-                }
-                organizerLabel="I'll cover it"
-                buyerLabel="Add it to the buyer's total"
-              />
-            </div>
-
-            {/* One live summary rather than four hypothetical ones — the
-                organizer only needs to know what this combination does. */}
             <dl className="mt-6 space-y-1.5 border-t border-line-dark pt-4 text-sm">
               <div className="flex justify-between gap-4">
                 <dt className="text-on-dark-3">Ticket price</dt>
                 <dd className="tabular-nums text-on-dark-2">{naira(quote.subtotal)}</dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-on-dark-3">
-                  Buyer pays{" "}
-                  {quote.platformFeePaidBy === "buyer" || quote.processingFeePaidBy === "buyer"
-                    ? "(incl. fees they carry)"
-                    : "(sticker price)"}
-                </dt>
+                <dt className="text-on-dark-3">Estimated Paystack fee (buyer pays)</dt>
+                <dd className="tabular-nums text-on-dark-2">
+                  {naira(quote.processingFee)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-on-dark-3">Estimated checkout total</dt>
                 <dd className="font-semibold tabular-nums text-on-dark">
                   {naira(quote.buyerTotal)}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-on-dark-3">You receive per ticket</dt>
+                <dt className="text-on-dark-3">
+                  Your share after our {Math.round(PLATFORM_FEE_RATE * 100)}%
+                </dt>
                 <dd className="font-semibold tabular-nums text-purple-lift">
                   {naira(quote.organizerNet)}
                 </dd>
@@ -552,12 +511,10 @@ export function NewEventWizard() {
             <p className="mt-3 text-xs text-on-dark-3">
               {sampleIsReal
                 ? `Based on your ${naira(samplePrice)} ticket.`
-                : `Example on a ${naira(samplePrice)} ticket — your tiers are free, so no fees apply.`}
-              {" "}If you refund a ticket, we keep {refundKeep}% instead of the
-              full {Math.round(PLATFORM_FEE_RATE * 100)}%
-              {platformFeePaidBy === "buyer"
-                ? ", and the rest goes back to the buyer with the ticket price."
-                : ", so a refunded sale costs you half as much."}
+                : `Example on a ${naira(samplePrice)} ticket — your tiers are free, so no platform fee applies.`}
+              {" "}The Paystack fee is an estimate and may vary by payment
+              method. If you refund a ticket, we keep {refundKeep}% instead of
+              the full {Math.round(PLATFORM_FEE_RATE * 100)}%.
             </p>
           </div>
 
@@ -639,53 +596,5 @@ export function NewEventWizard() {
         </div>
       )}
     </div>
-  );
-}
-
-/** A two-option fee choice: who carries this particular charge. */
-function FeeChoice({
-  title,
-  value,
-  onChange,
-  organizerLabel,
-  buyerLabel,
-}: {
-  title: string;
-  value: FeeBearer;
-  onChange: (v: FeeBearer) => void;
-  organizerLabel: string;
-  buyerLabel: string;
-}) {
-  const options: { v: FeeBearer; label: string }[] = [
-    { v: "organizer", label: organizerLabel },
-    { v: "buyer", label: buyerLabel },
-  ];
-  return (
-    <fieldset>
-      <legend className="mb-2 text-sm font-semibold text-on-dark">{title}</legend>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {options.map(({ v, label: text }) => {
-          const selected = value === v;
-          return (
-            <label
-              key={v}
-              className={`flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-sm transition-colors ${
-                selected
-                  ? "border-purple bg-purple-dim text-on-dark"
-                  : "border-line-dark text-on-dark-2 hover:border-on-dark-3"
-              }`}
-            >
-              <input
-                type="radio"
-                checked={selected}
-                onChange={() => onChange(v)}
-                className="mt-0.5 accent-[#6C3CFF]"
-              />
-              <span>{text}</span>
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
   );
 }

@@ -9,7 +9,7 @@ import { applyPromo, checkCode, normalizeCode, type PromoCode } from "@/lib/prom
  * POST /api/events/:id/promo-codes/check
  *
  * Public, because the buy box has to tell somebody their code worked before
- * it sends them to Paystack. Otherwise they find out by being charged the
+ * it sends them to checkout. Otherwise they find out by being charged the
  * wrong amount.
  *
  * Three things it deliberately does NOT do:

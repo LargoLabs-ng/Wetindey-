@@ -71,8 +71,13 @@ export const feeStrategyEnum = pgEnum("fee_strategy", [
   "buyer_pays",
 ]);
 
-// Who carries a given fee. Used for the platform's own cut; the card fee
-// still uses feeStrategyEnum above.
+export const refundStatusEnum = pgEnum("refund_status", [
+  "pending",
+  "completed",
+  "failed",
+]);
+
+// Who carries the platform fee.
 export const feeBearerEnum = pgEnum("fee_bearer", ["organizer", "buyer"]);
 
 export const payoutStatusEnum = pgEnum("payout_status", [
@@ -319,11 +324,12 @@ export const events = pgTable("events", {
   salesStart: timestamp("sales_start"),
   salesEnd: timestamp("sales_end"),
   status: eventStatusEnum("status").default("draft").notNull(),
-  // Who carries Paystack's processing charge.
-  feeStrategy: feeStrategyEnum("fee_strategy").default("buyer_pays").notNull(),
-  // Who carries our platform cut. Defaults to the organizer — the buyer
-  // seeing the sticker price is the friendlier default for a student market
-  // — but an organizer can pass it on.
+  // Legacy pricing preference; new Paystack fees are passed to buyers.
+  feeStrategy: feeStrategyEnum("fee_strategy")
+    .default("buyer_pays")
+    .notNull(),
+  // Who carried our platform cut. New orders use organiser-paid; keep this
+  // event setting for historical reporting and existing event records.
   platformFeePaidBy: feeBearerEnum("platform_fee_paid_by")
     .default("organizer")
     .notNull(),
@@ -464,6 +470,9 @@ export const orders = pgTable("orders", {
   subtotal: numeric("subtotal", { precision: 12, scale: 2 }).notNull(),
   fees: numeric("fees", { precision: 12, scale: 2 }).notNull(),
   total: numeric("total", { precision: 12, scale: 2 }).notNull(),
+  platformFeePaidBy: feeBearerEnum("platform_fee_paid_by")
+    .default("organizer")
+    .notNull(),
   currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
   status: orderStatusEnum("status").default("pending").notNull(),
   /**
@@ -980,6 +989,7 @@ export const refunds = pgTable("refunds", {
     .notNull(),
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   currency: varchar("currency", { length: 3 }).default("NGN").notNull(),
+  status: refundStatusEnum("status").default("completed").notNull(),
   reason: text("reason"),
   providerReference: varchar("provider_reference", { length: 150 }),
   providerResponse: jsonb("provider_response"),

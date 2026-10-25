@@ -34,8 +34,8 @@ export async function GET(request: NextRequest) {
     // What buyers actually paid, fees included.
     const totalRevenue = paidOrders.reduce((sum, o) => sum + num(o.total), 0);
     // Ticket face value — the organizer's side, and the base our cut is taken
-    // from. Multiplying totalRevenue by the rate counts Paystack's fee as our
-    // revenue, which overstated platform earnings on every buyer-pays sale.
+    // from. Multiplying totalRevenue by the rate counts provider charges as
+    // platform revenue.
     const ticketValue = paidOrders.reduce((sum, o) => sum + num(o.subtotal), 0);
     // Our cut was worked out per order at checkout and stored; summing the
     // stored figure is exact, and survives any future rate change.

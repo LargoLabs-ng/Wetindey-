@@ -11,7 +11,7 @@ export type SendTicketsResult =
 /**
  * Builds the QR codes for an order's tickets and emails them to the buyer.
  *
- * This lives in lib rather than the API route so the Paystack webhook can
+ * This lives in lib rather than the API route so payment webhooks can
  * call it directly instead of making an HTTP request back into the app —
  * that round trip depended on NEXT_PUBLIC_APP_URL being set correctly and
  * left the endpoint open to anyone who could guess an order id.
