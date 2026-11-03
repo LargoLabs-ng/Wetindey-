@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, TrendingUp, Download, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Download, BarChart3 } from 'lucide-react';
+import { PLATFORM_FEE_RATE } from '@/lib/fees';
 
 interface DailyMetrics {
   date: string;
@@ -17,6 +18,7 @@ interface Analytics {
     totalRevenue: number;
     totalOrders: number;
     totalPlatformFee: number;
+    organizerPayouts: number;
     avgOrderValue: number;
     growthRate: number;
   };
@@ -190,7 +192,7 @@ export default function AdminAnalyticsPage() {
             </div>
             <div>
               <p className="text-sm font-semibold mb-2" style={{ color: 'var(--color-stone-mid)' }}>
-                Platform Fee (3%)
+                Platform Fee ({Math.round(PLATFORM_FEE_RATE * 100)}%)
               </p>
               <p className="text-2xl font-bold" style={{ color: 'var(--color-sage)' }}>
                 {formatCurrency(analytics.metrics.totalPlatformFee)}
@@ -201,9 +203,7 @@ export default function AdminAnalyticsPage() {
                 Organizer Payouts
               </p>
               <p className="text-2xl font-bold" style={{ color: '#3b82f6' }}>
-                {formatCurrency(
-                  analytics.metrics.totalRevenue - analytics.metrics.totalPlatformFee
-                )}
+                {formatCurrency(analytics.metrics.organizerPayouts)}
               </p>
             </div>
           </div>

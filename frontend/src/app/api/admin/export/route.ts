@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PLATFORM_FEE_RATE } from '@/lib/fees';
+import { PLATFORM_FEE_RATE, recordedOrderFeeBreakdown } from '@/lib/fees';
 import { auth } from '@/auth';
 import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
-import { events, orders, tickets } from '@/db/schema';
+import { orders, tickets } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
 /**
@@ -72,8 +72,9 @@ export async function GET(request: NextRequest) {
           const successPayment = order.payments?.find((p) => p.status === 'success');
           if (successPayment) {
             const totalNum = typeof order.total === 'string' ? parseFloat(order.total) : order.total;
-            const fee = totalNum * PLATFORM_FEE_RATE;
-            const net = totalNum - fee;
+            const { platformFee, organizerPayout } = recordedOrderFeeBreakdown(order);
+            const fee = platformFee;
+            const net = organizerPayout;
             csv += `"${order.id}","${order.event?.title || 'N/A'}",${totalNum},${fee},${net},"${successPayment.status}","${order.createdAt}","${order.event?.organizationId || 'N/A'}"\n`;
           }
         }

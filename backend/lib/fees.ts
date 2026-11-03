@@ -34,6 +34,22 @@ const PAYSTACK_FEE_CAP = 2000;
 /** Who carries a given fee. */
 export type FeeBearer = "organizer" | "buyer";
 
+export function recordedOrderFeeBreakdown(order: {
+  subtotal: string | number;
+  fees: string | number;
+  platformFeePaidBy: FeeBearer;
+}): { platformFee: number; organizerPayout: number } {
+  const subtotal = Number(order.subtotal);
+  const platformFee = Number(order.fees);
+  return {
+    platformFee,
+    organizerPayout:
+      order.platformFeePaidBy === "organizer"
+        ? subtotal - platformFee
+        : subtotal,
+  };
+}
+
 /**
  * What the platform keeps when a ticket is refunded.
  *

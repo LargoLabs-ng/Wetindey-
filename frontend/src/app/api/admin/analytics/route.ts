@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PLATFORM_FEE_RATE } from '@/lib/fees';
+import { recordedOrderFeeBreakdown } from '@/lib/fees';
 import { auth } from '@/auth';
 import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
-import { orders } from '@/db/schema';
 
 export async function GET(request: NextRequest) {
   try {
@@ -39,7 +38,7 @@ export async function GET(request: NextRequest) {
         const totalNum = typeof order.total === 'string' ? parseFloat(order.total) : order.total;
         dailyData[dateStr].revenue += totalNum;
         dailyData[dateStr].orders += 1;
-        dailyData[dateStr].platformFee += totalNum * PLATFORM_FEE_RATE;
+        dailyData[dateStr].platformFee += recordedOrderFeeBreakdown(order).platformFee;
       }
     });
 
@@ -55,7 +54,15 @@ export async function GET(request: NextRequest) {
       return sum + totalNum;
     }, 0);
     const totalOrders = relevantOrders.length;
-    const totalPlatformFee = totalRevenue * PLATFORM_FEE_RATE;
+    const feeBreakdowns = relevantOrders.map(recordedOrderFeeBreakdown);
+    const totalPlatformFee = feeBreakdowns.reduce(
+      (sum, breakdown) => sum + breakdown.platformFee,
+      0
+    );
+    const organizerPayouts = feeBreakdowns.reduce(
+      (sum, breakdown) => sum + breakdown.organizerPayout,
+      0
+    );
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
     const prevPeriodStart = new Date(Date.now() - days * 2 * 24 * 60 * 60 * 1000);
@@ -69,7 +76,14 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       period: `Last ${days} days`,
-      metrics: { totalRevenue: parseFloat(totalRevenue.toFixed(2)), totalOrders, totalPlatformFee: parseFloat(totalPlatformFee.toFixed(2)), avgOrderValue: parseFloat(avgOrderValue.toFixed(2)), growthRate: parseFloat(growthRate as string) },
+      metrics: {
+        totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+        totalOrders,
+        totalPlatformFee: parseFloat(totalPlatformFee.toFixed(2)),
+        organizerPayouts: parseFloat(organizerPayouts.toFixed(2)),
+        avgOrderValue: parseFloat(avgOrderValue.toFixed(2)),
+        growthRate: parseFloat(growthRate as string),
+      },
       dailyRevenue: revenueData,
       topMetrics: { highestDayRevenue: Math.max(...revenueData.map((d) => d.revenue)), bestDay: revenueData.reduce((prev, current) => current.revenue > prev.revenue ? current : prev) },
     });

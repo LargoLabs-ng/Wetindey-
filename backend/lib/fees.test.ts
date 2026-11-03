@@ -8,6 +8,7 @@ import {
   quoteCancellationRefund,
   quoteOrder,
   quoteRefund,
+  recordedOrderFeeBreakdown,
   type FeeBearer,
 } from "./fees";
 
@@ -57,6 +58,29 @@ describe("quoteOrder", () => {
     expect(quote.paystackAmount).toBe(5250);
     expect(quote.buyerTotal).toBe(paystackGrossUp(5250));
     expect(quote.organizerNet).toBe(5000);
+  });
+});
+
+describe("recordedOrderFeeBreakdown", () => {
+  it("uses the fee recorded at checkout and keeps card charges out of the platform fee", () => {
+    expect(
+      recordedOrderFeeBreakdown({
+        subtotal: "5000.00",
+        fees: "250.00",
+        total: "5482.24",
+        platformFeePaidBy: "organizer",
+      })
+    ).toEqual({ platformFee: 250, organizerPayout: 4750 });
+  });
+
+  it("does not deduct a buyer-paid platform fee from organiser proceeds", () => {
+    expect(
+      recordedOrderFeeBreakdown({
+        subtotal: "5000.00",
+        fees: "250.00",
+        platformFeePaidBy: "buyer",
+      })
+    ).toEqual({ platformFee: 250, organizerPayout: 5000 });
   });
 });
 
