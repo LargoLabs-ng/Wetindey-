@@ -4,7 +4,6 @@ import { events } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireEventAccess } from '@/lib/authz';
 import { can } from '@/lib/permissions';
-import { activeTicketPrice } from "@/lib/early-bird";
 
 type RouteContext = { params: Promise<{ slug: string }> };
 
@@ -58,10 +57,10 @@ export async function GET(
     const now = new Date();
     return NextResponse.json({
       ...publicEvent,
-      ticketTypes: event.ticketTypes.map((ticketType) => ({
-        ...ticketType,
-        ...activeTicketPrice(ticketType, now),
-      })),
+      // Keep `price` as the stored Regular price. The public page uses the
+      // Early Bird fields and serverTime to calculate the active price and
+      // switch it on an already-open page when the deadline arrives.
+      ticketTypes: event.ticketTypes,
       serverTime: now.toISOString(),
     });
   } catch (error) {
