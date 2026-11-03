@@ -15,6 +15,8 @@
     "test": "vitest run --root backend --config vitest.config.ts",
     "test:watch": "vitest --root backend --config vitest.config.ts",
     "db:migrate": "node backend/scripts/apply-migration.mjs",
+    "db:admin-account": "node backend/scripts/create-admin-account.mjs",
+    "db:admin-provision": "node backend/scripts/provision-admin.mjs",
     "db:check": "node backend/scripts/check-schema.mjs",
     "db:diagnose": "node backend/scripts/db-check.mjs",
     "db:studio": "drizzle-kit studio --config backend/drizzle.config.ts"

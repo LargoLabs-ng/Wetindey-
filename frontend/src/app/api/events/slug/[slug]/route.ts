@@ -4,6 +4,7 @@ import { events } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { requireEventAccess } from '@/lib/authz';
 import { can } from '@/lib/permissions';
+import { activeTicketPrice } from "@/lib/early-bird";
 
 type RouteContext = { params: Promise<{ slug: string }> };
 
@@ -22,6 +23,9 @@ export async function GET(
     });
 
     if (!event) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    }
+    if (event.archivedAt) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
@@ -51,7 +55,15 @@ export async function GET(
     void afterPurchaseNote;
     void afterPurchaseUrl;
 
-    return NextResponse.json(publicEvent);
+    const now = new Date();
+    return NextResponse.json({
+      ...publicEvent,
+      ticketTypes: event.ticketTypes.map((ticketType) => ({
+        ...ticketType,
+        ...activeTicketPrice(ticketType, now),
+      })),
+      serverTime: now.toISOString(),
+    });
   } catch (error) {
     console.error('Error fetching event:', error);
     return NextResponse.json(

@@ -5,6 +5,10 @@ import { db } from "@/db";
 import { events, ticketTypes } from "@/db/schema";
 import { getEventRole, getSessionUserId } from "@/lib/authz";
 import { can } from "@/lib/permissions";
+import {
+  datetimeLocalToUtc,
+  isValidEarlyBirdConfiguration,
+} from "@/lib/early-bird";
 
 const updateTicketTypeSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -17,6 +21,9 @@ const updateTicketTypeSchema = z.object({
   // Nullable so a sales window set at creation can also be cleared.
   salesStart: z.coerce.date().nullable().optional(),
   salesEnd: z.coerce.date().nullable().optional(),
+  earlyBirdEnabled: z.boolean().optional(),
+  earlyBirdPrice: z.coerce.number().min(0).nullable().optional(),
+  earlyBirdEndsAtLocal: z.string().nullable().optional(),
 });
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -27,13 +34,13 @@ async function loadTierWithMembership(tierId: string, userId: string) {
     .from(ticketTypes)
     .where(eq(ticketTypes.id, tierId))
     .limit(1);
-  if (!tier) return { tier: null, membership: null };
+  if (!tier) return { tier: null, membership: null, event: null };
 
   const [event] = await db.select().from(events).where(eq(events.id, tier.eventId)).limit(1);
-  if (!event) return { tier: null, membership: null };
+  if (!event) return { tier: null, membership: null, event: null };
 
   const role = await getEventRole(userId, event);
-  return { tier, membership: role ? { role } : null };
+  return { tier, membership: role ? { role } : null, event };
 }
 
 // PATCH /api/ticket-types/:id — Owner or Event Manager only.
@@ -44,7 +51,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { tier, membership } = await loadTierWithMembership(id, userId);
+  const { tier, membership, event } = await loadTierWithMembership(id, userId);
   if (!tier) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -54,12 +61,42 @@ export async function PATCH(request: Request, context: RouteContext) {
       { status: 403 }
     );
   }
+  if (!event) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await request.json().catch(() => null);
   const parsed = updateTicketTypeSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid input", details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
+  const earlyBirdEnabled =
+    parsed.data.earlyBirdEnabled ?? tier.earlyBirdEnabled;
+  const regularPrice = parsed.data.price ?? Number(tier.price);
+  const earlyBirdPrice =
+    parsed.data.earlyBirdPrice !== undefined
+      ? parsed.data.earlyBirdPrice
+      : tier.earlyBirdPrice === null
+        ? null
+        : Number(tier.earlyBirdPrice);
+  const earlyBirdEndsAt =
+    parsed.data.earlyBirdEndsAtLocal !== undefined
+      ? parsed.data.earlyBirdEndsAtLocal
+        ? datetimeLocalToUtc(parsed.data.earlyBirdEndsAtLocal, event.timeZone)
+        : null
+      : tier.earlyBirdEndsAt;
+  if (
+    earlyBirdEnabled &&
+    !isValidEarlyBirdConfiguration(
+      regularPrice,
+      earlyBirdPrice,
+      earlyBirdEndsAt
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Early Bird needs a valid deadline and a price lower than the Regular price." },
       { status: 400 }
     );
   }
@@ -115,11 +152,25 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
+  const fields = {
+    name: parsed.data.name,
+    description: parsed.data.description,
+    price: parsed.data.price,
+    quantityTotal: parsed.data.quantityTotal,
+    maxPerOrder: parsed.data.maxPerOrder,
+    admits: parsed.data.admits,
+    status: parsed.data.status,
+    salesStart: parsed.data.salesStart,
+    salesEnd: parsed.data.salesEnd,
+  };
   const [updated] = await db
     .update(ticketTypes)
     .set({
-      ...parsed.data,
+      ...fields,
       price: parsed.data.price !== undefined ? parsed.data.price.toFixed(2) : undefined,
+      earlyBirdEnabled,
+      earlyBirdPrice: earlyBirdEnabled ? earlyBirdPrice!.toFixed(2) : null,
+      earlyBirdEndsAt: earlyBirdEnabled ? earlyBirdEndsAt : null,
     })
     .where(eq(ticketTypes.id, id))
     .returning();

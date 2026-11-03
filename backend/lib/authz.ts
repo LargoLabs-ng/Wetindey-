@@ -2,7 +2,15 @@ import { and, eq, inArray } from "drizzle-orm";
 import { auth } from "@/auth";
 import { can, type Capability } from "@/lib/permissions";
 import { db } from "@/db";
-import { eventStaff, events, organizationMembers } from "@/db/schema";
+import {
+  eventStaff,
+  events,
+  organizationMembers,
+  platformAdminAssignments,
+  platformAdminPermissions,
+  platformAdminRolePermissions,
+} from "@/db/schema";
+import type { AdminPermission } from "@/lib/admin-rbac";
 
 export type OrgRole =
   | "owner"
@@ -262,22 +270,93 @@ export async function requireOrgAccess(input: {
 /**
  * Platform admin check.
  *
- * There is no admin column on the users table yet, so admin access is an
- * explicit email allowlist from the ADMIN_EMAILS env var
- * (comma-separated). It fails closed: with the var unset, nobody is an
- * admin. Replace this with a real users.role column when you add one.
+ * The environment allowlist remains the trusted bootstrap path. Additional
+ * Super Admin access is backed by an explicit, active database assignment.
  */
 export async function isPlatformAdmin(): Promise<boolean> {
   const session = await auth();
   const email = session?.user?.email?.toLowerCase();
-  if (!email) return false;
+  if (email && isTrustedPlatformAdmin(email)) return true;
+  const userId = session?.user?.id;
+  if (!userId || !isUuid(userId)) return false;
 
+  try {
+    const [assignment] = await db
+      .select({ roleId: platformAdminAssignments.roleId })
+      .from(platformAdminAssignments)
+      .where(
+        and(
+          eq(platformAdminAssignments.userId, userId),
+          eq(platformAdminAssignments.status, "active"),
+          eq(platformAdminAssignments.roleId, "super_admin")
+        )
+      )
+      .limit(1);
+    return Boolean(assignment);
+  } catch (error) {
+    if (isMissingAdminRbacSchema(error)) return false;
+    throw error;
+  }
+}
+
+function isTrustedPlatformAdmin(email: string): boolean {
   const allowed = (process.env.ADMIN_EMAILS ?? "")
     .split(",")
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean);
 
   return allowed.includes(email);
+}
+
+function isMissingAdminRbacSchema(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "42P01"
+  );
+}
+
+export async function hasAdminPermission(
+  permission: AdminPermission
+): Promise<boolean> {
+  const session = await auth();
+  const email = session?.user?.email?.toLowerCase();
+  if (email && isTrustedPlatformAdmin(email)) return true;
+  const userId = session?.user?.id;
+  if (!userId || !isUuid(userId)) return false;
+
+  try {
+    const [row] = await db
+      .select({ assignmentId: platformAdminAssignments.id })
+      .from(platformAdminAssignments)
+      .innerJoin(
+        platformAdminRolePermissions,
+        eq(
+          platformAdminRolePermissions.roleId,
+          platformAdminAssignments.roleId
+        )
+      )
+      .innerJoin(
+        platformAdminPermissions,
+        eq(
+          platformAdminPermissions.id,
+          platformAdminRolePermissions.permissionId
+        )
+      )
+      .where(
+        and(
+          eq(platformAdminAssignments.userId, userId),
+          eq(platformAdminAssignments.status, "active"),
+          eq(platformAdminPermissions.id, permission)
+        )
+      )
+      .limit(1);
+    return Boolean(row);
+  } catch (error) {
+    if (isMissingAdminRbacSchema(error)) return false;
+    throw error;
+  }
 }
 
 /**

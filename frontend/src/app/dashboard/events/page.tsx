@@ -74,10 +74,12 @@ export default async function EventsPage() {
               </div>
               <span
                 className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
-                  statusStyles[event.status] ?? statusStyles.draft
+                  event.archivedAt
+                    ? statusStyles.cancelled
+                    : statusStyles[event.status] ?? statusStyles.draft
                 }`}
               >
-                {event.status}
+                {event.archivedAt ? "archived" : event.status}
               </span>
             </Link>
           ))}

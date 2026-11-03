@@ -18,6 +18,7 @@ export type EditableEvent = {
   country: string | null;
   startDatetime: string;
   endDatetime: string;
+  timeZone: string;
   status: string;
   /** The date and venue are stored; these say not to show them. */
   dateTbd: boolean;
@@ -49,6 +50,7 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
     country: event.country ?? "Nigeria",
     startDatetime: toLocalInput(event.startDatetime),
     endDatetime: toLocalInput(event.endDatetime),
+    timeZone: event.timeZone,
   });
   const [coverImage, setCoverImage] = useState<string | null>(event.coverImage);
   const [dateTbd, setDateTbd] = useState(event.dateTbd);
@@ -88,6 +90,7 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
           country: form.country.trim(),
           startDatetime: new Date(form.startDatetime).toISOString(),
           endDatetime: new Date(form.endDatetime).toISOString(),
+          timeZone: form.timeZone,
           dateTbd,
           venueTbd,
         }),
@@ -206,6 +209,19 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
               placeholder="e.g. Conference"
               className={field}
             />
+          </div>
+          <div>
+            <label className={label}>Event time zone</label>
+            <input
+              required
+              value={form.timeZone}
+              onChange={(e) => set("timeZone", e.target.value)}
+              placeholder="Africa/Lagos"
+              className={field}
+            />
+            <p className="mt-1 text-xs text-on-dark-3">
+              Used for Early Bird deadlines. Use an IANA zone such as Africa/Lagos.
+            </p>
           </div>
           <div>
             <label className={label}>Country</label>

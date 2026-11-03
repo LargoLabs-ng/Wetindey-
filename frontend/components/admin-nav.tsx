@@ -19,6 +19,7 @@ const LINKS = [
   { href: "/admin/events", label: "Events" },
   { href: "/admin/analytics", label: "Analytics" },
   { href: "/admin/departments", label: "Departments", countKey: "pending" },
+  { href: "/admin/payment-reviews", label: "Payment reviews" },
 ];
 
 export function AdminNav() {

@@ -12,12 +12,15 @@ const links = [
   { href: "/dashboard/finance", label: "Finance" },
 ];
 
-export function DashboardNav() {
+export function DashboardNav({ showCrm = false }: { showCrm?: boolean }) {
   const pathname = usePathname();
+  const visibleLinks = showCrm
+    ? [...links, { href: "/dashboard/crm", label: "CRM" }]
+    : links;
 
   return (
     <nav className="flex items-center gap-1">
-      {links.map((link) => {
+      {visibleLinks.map((link) => {
         const active =
           link.href === "/dashboard"
             ? pathname === "/dashboard"

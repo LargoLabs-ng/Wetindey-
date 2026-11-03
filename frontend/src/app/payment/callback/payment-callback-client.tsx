@@ -23,7 +23,7 @@ interface Ticket {
 }
 
 interface PaymentStatus {
-  status: 'success' | 'failed' | 'pending' | 'loading';
+  status: 'success' | 'failed' | 'pending' | 'manual_review' | 'loading';
   message: string;
   orderId?: string;
   eventTitle?: string;
@@ -91,6 +91,13 @@ export default function PaymentCallbackClient() {
           });
         } else if (data.status === 'pending') {
           showPending(data.orderId, attempt);
+        } else if (data.status === 'manual_review') {
+          setPaymentStatus({
+            status: 'manual_review',
+            message:
+              data.message ??
+              "Your payment reached us, but the ticket price changed during checkout. No ticket was issued. Our team will review the charge and contact you.",
+          });
         } else if (!response.ok && response.status >= 500) {
           showPending(undefined, attempt);
         } else {
@@ -132,6 +139,9 @@ export default function PaymentCallbackClient() {
           {paymentStatus.status === 'failed' && (
             <XCircle className="mx-auto h-16 w-16 text-red-500" />
           )}
+          {paymentStatus.status === 'manual_review' && (
+            <Clock className="mx-auto h-16 w-16" style={{ color: 'var(--color-forest)' }} />
+          )}
           {(paymentStatus.status === 'pending' || paymentStatus.status === 'loading') && (
             <Clock className="mx-auto h-16 w-16 animate-spin" style={{ color: 'var(--color-forest)' }} />
           )}
@@ -139,6 +149,7 @@ export default function PaymentCallbackClient() {
           <h1 className="mt-6 text-3xl font-bold" style={{ color: 'var(--color-forest)' }}>
             {paymentStatus.status === 'success' && 'Payment Confirmed! 🎉'}
             {paymentStatus.status === 'failed' && 'Payment Failed'}
+            {paymentStatus.status === 'manual_review' && 'Payment Under Review'}
             {paymentStatus.status === 'pending' && 'Processing Payment'}
             {paymentStatus.status === 'loading' && 'Verifying Payment'}
           </h1>

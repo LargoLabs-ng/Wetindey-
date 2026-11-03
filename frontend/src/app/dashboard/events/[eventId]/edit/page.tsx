@@ -47,6 +47,7 @@ export default async function EditEventPage({
           venueAddress: event.venueAddress,
           city: event.city,
           country: event.country,
+          timeZone: event.timeZone,
           startDatetime: event.startDatetime.toISOString(),
           endDatetime: event.endDatetime.toISOString(),
           status: event.status,

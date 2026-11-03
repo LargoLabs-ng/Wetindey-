@@ -149,6 +149,60 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const platformAdminRoles = pgTable("platform_admin_roles", {
+  id: varchar("id", { length: 40 }).primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  isSystem: boolean("is_system").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const platformAdminPermissions = pgTable("platform_admin_permissions", {
+  id: varchar("id", { length: 80 }).primaryKey(),
+  description: text("description").notNull(),
+});
+
+export const platformAdminRolePermissions = pgTable(
+  "platform_admin_role_permissions",
+  {
+    roleId: varchar("role_id", { length: 40 })
+      .references(() => platformAdminRoles.id, { onDelete: "cascade" })
+      .notNull(),
+    permissionId: varchar("permission_id", { length: 80 })
+      .references(() => platformAdminPermissions.id, { onDelete: "cascade" })
+      .notNull(),
+  },
+  (t) => ({
+    rolePermission: uniqueIndex("platform_admin_role_permission_unique").on(
+      t.roleId,
+      t.permissionId
+    ),
+  })
+);
+
+export const platformAdminAssignments = pgTable(
+  "platform_admin_assignments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull()
+      .unique(),
+    roleId: varchar("role_id", { length: 40 })
+      .references(() => platformAdminRoles.id)
+      .notNull(),
+    status: varchar("status", { length: 20 }).default("active").notNull(),
+    assignedBy: uuid("assigned_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+    suspendedAt: timestamp("suspended_at"),
+  },
+  (t) => ({
+    byRole: index("platform_admin_assignments_role_idx").on(t.roleId, t.status),
+  })
+);
+
 // Required by the Auth.js Drizzle adapter to support OAuth providers
 // (Google). Field names must match the adapter's expected shape exactly
 // (userId, providerAccountId, etc.) — see @auth/drizzle-adapter's
@@ -295,6 +349,9 @@ export const events = pgTable("events", {
   venueAddress: text("venue_address"),
   city: varchar("city", { length: 100 }),
   country: varchar("country", { length: 100 }).default("Nigeria"),
+  timeZone: varchar("time_zone", { length: 64 })
+    .default("Africa/Lagos")
+    .notNull(),
   startDatetime: timestamp("start_datetime").notNull(),
   endDatetime: timestamp("end_datetime").notNull(),
   /**
@@ -324,6 +381,7 @@ export const events = pgTable("events", {
   salesStart: timestamp("sales_start"),
   salesEnd: timestamp("sales_end"),
   status: eventStatusEnum("status").default("draft").notNull(),
+  archivedAt: timestamp("archived_at"),
   // Legacy pricing preference; new Paystack fees are passed to buyers.
   feeStrategy: feeStrategyEnum("fee_strategy")
     .default("buyer_pays")
@@ -366,6 +424,9 @@ export const ticketTypes = pgTable("ticket_types", {
   quantityReserved: integer("quantity_reserved").default(0).notNull(), // held during active checkout
   salesStart: timestamp("sales_start"),
   salesEnd: timestamp("sales_end"),
+  earlyBirdEnabled: boolean("early_bird_enabled").default(false).notNull(),
+  earlyBirdPrice: numeric("early_bird_price", { precision: 12, scale: 2 }),
+  earlyBirdEndsAt: timestamp("early_bird_ends_at"),
   maxPerOrder: integer("max_per_order").default(10).notNull(),
   /**
    * How many people one ticket lets through the door.
@@ -395,6 +456,31 @@ export const ticketTypes = pgTable("ticket_types", {
   flashEndsAt: timestamp("flash_ends_at"),
   status: ticketTypeStatusEnum("status").default("active").notNull(),
 });
+
+export const ticketTypePriceHistory = pgTable(
+  "ticket_type_price_history",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    ticketTypeId: uuid("ticket_type_id")
+      .references(() => ticketTypes.id, { onDelete: "cascade" })
+      .notNull(),
+    price: numeric("price", { precision: 12, scale: 2 }).notNull(),
+    earlyBirdEnabled: boolean("early_bird_enabled").notNull(),
+    earlyBirdPrice: numeric("early_bird_price", {
+      precision: 12,
+      scale: 2,
+    }),
+    earlyBirdEndsAt: timestamp("early_bird_ends_at"),
+    validFrom: timestamp("valid_from").notNull(),
+    validUntil: timestamp("valid_until"),
+  },
+  (t) => ({
+    byTierAndStart: index("ticket_type_price_history_tier_start_idx").on(
+      t.ticketTypeId,
+      t.validFrom
+    ),
+  })
+);
 
 /**
  * Codes somebody types at checkout.
@@ -500,6 +586,8 @@ export const orders = pgTable("orders", {
   discountAmount: numeric("discount_amount", { precision: 12, scale: 2 })
     .default("0")
     .notNull(),
+  /** Regular or Early Bird unit price used to create this checkout. */
+  ticketUnitPrice: numeric("ticket_unit_price", { precision: 12, scale: 2 }),
   /**
    * What a promoter earned on this order, in naira, frozen at checkout.
    *
@@ -511,6 +599,7 @@ export const orders = pgTable("orders", {
   commissionAmount: numeric("commission_amount", { precision: 12, scale: 2 })
     .default("0")
     .notNull(),
+  marketingConsent: boolean("marketing_consent").default(false).notNull(),
   paymentReference: varchar("payment_reference", { length: 100 }).unique(),
   reservationExpiresAt: timestamp("reservation_expires_at"), // inventory hold deadline
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -618,6 +707,13 @@ export const payments = pgTable("payments", {
   status: paymentStatusEnum("status").default("initialized").notNull(),
   paidAt: timestamp("paid_at"),
   rawProviderResponse: jsonb("raw_provider_response"),
+  manualReviewRequired: boolean("manual_review_required").default(false).notNull(),
+  manualReviewReason: text("manual_review_reason"),
+  manualReviewResolvedAt: timestamp("manual_review_resolved_at"),
+  manualReviewNote: text("manual_review_note"),
+  manualReviewResolvedBy: uuid("manual_review_resolved_by").references(
+    () => users.id
+  ),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -1002,6 +1098,65 @@ export const refundsRelations = relations(refunds, ({ one }) => ({
   order: one(orders, { fields: [refunds.orderId], references: [orders.id] }),
   event: one(events, { fields: [refunds.eventId], references: [events.id] }),
 }));
+
+export const crmTags = pgTable(
+  "crm_tags",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    name: varchar("name", { length: 60 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    byOrganization: index("crm_tags_organization_idx").on(t.organizationId),
+    uniqueName: uniqueIndex("crm_tags_organization_name_idx").on(
+      t.organizationId,
+      t.name
+    ),
+  })
+);
+
+export const crmContactTags = pgTable(
+  "crm_contact_tags",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tagId: uuid("tag_id")
+      .references(() => crmTags.id, { onDelete: "cascade" })
+      .notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    byEmail: index("crm_contact_tags_email_idx").on(t.email),
+    uniqueContactTag: uniqueIndex("crm_contact_tags_tag_email_idx").on(
+      t.tagId,
+      t.email
+    ),
+  })
+);
+
+export const crmContactPreferences = pgTable(
+  "crm_contact_preferences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+    marketingOptOutAt: timestamp("marketing_opt_out_at")
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueContact: uniqueIndex("crm_contact_preferences_org_email_idx").on(
+      t.organizationId,
+      t.email
+    ),
+  })
+);
 
 // ─── Conversation, updates and moderation ────────────────────────────────
 //

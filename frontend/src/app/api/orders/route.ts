@@ -30,6 +30,7 @@ import {
 } from '@/lib/inventory';
 import { initializePaystackCheckout } from "@/lib/paystack";
 import { finalizeFreeOrder } from "@/lib/finalize-order";
+import { activeTicketPrice } from "@/lib/early-bird";
 
 
 /**
@@ -94,6 +95,7 @@ interface CreateOrderRequest {
    * this route calculates never trusts anything the page worked out.
    */
   promoCode?: string;
+  marketingConsent?: boolean;
 }
 
 function generateQRToken(): string {
@@ -108,7 +110,16 @@ export async function POST(request: NextRequest) {
     await releaseExpiredReservations();
 
     const body: CreateOrderRequest = await request.json();
-    const { eventId, ticketTypeId, quantity, buyerEmail, buyerPhone, attendees, ref } = body;
+    const {
+      eventId,
+      ticketTypeId,
+      quantity,
+      buyerEmail,
+      buyerPhone,
+      attendees,
+      ref,
+      marketingConsent,
+    } = body;
     const submittedAnswers = body.answers;
     const typedPromoCode = body.promoCode;
 
@@ -134,7 +145,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
-    if (event.status !== 'published') {
+    if (event.status !== 'published' || event.archivedAt) {
       return NextResponse.json(
         { error: 'Event is not available for ticket sales' },
         { status: 400 }
@@ -149,6 +160,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Ticket type not found' },
         { status: 404 }
+      );
+    }
+    if (ticketType.eventId !== eventId) {
+      return NextResponse.json({ error: "Ticket type does not belong to this event." }, { status: 400 });
+    }
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > ticketType.maxPerOrder) {
+      return NextResponse.json(
+        { error: `You can buy up to ${ticketType.maxPerOrder} tickets per order.` },
+        { status: 400 }
       );
     }
 
@@ -231,7 +251,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const faceValue = parseFloat(ticketType.price) * quantity;
+    const activePrice = activeTicketPrice(ticketType, new Date()).price;
+    const faceValue = activePrice * quantity;
     const effect = applyPromo(faceValue, promo);
 
     // The buyer covers Paystack's processing charge. Wetin Dey's 5% is
@@ -256,9 +277,11 @@ export async function POST(request: NextRequest) {
         promoterId: await resolvePromoter(eventId, ref),
         promoCodeId: promo?.id ?? null,
         discountAmount: effect.discount.toString(),
+        ticketUnitPrice: activePrice.toFixed(2),
         // Frozen here. The code's rate can be edited tomorrow; what this
         // promoter earned tonight cannot.
         commissionAmount: effect.commission.toString(),
+        marketingConsent: marketingConsent === true,
         email: buyerEmail,
         phone: buyerPhone,
         subtotal: subtotal.toString(),

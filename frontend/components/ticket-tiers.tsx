@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import { datetimeLocalFromUtc } from "@/lib/early-bird";
 
 export type Tier = {
   id: string;
@@ -15,6 +16,9 @@ export type Tier = {
   status: string;
   salesStart: string | null;
   salesEnd: string | null;
+  earlyBirdEnabled: boolean;
+  earlyBirdPrice: string | null;
+  earlyBirdEndsAt: string | null;
   /**
    * How many people one ticket lets through the door. 1 is an ordinary
    * ticket; higher makes this a table, a couple's entry, a block booking.
@@ -69,6 +73,9 @@ type FormValues = {
   salesStart: string;
   salesEnd: string;
   admits: string;
+  earlyBirdEnabled: boolean;
+  earlyBirdPrice: string;
+  earlyBirdEndsAt: string;
 };
 
 const emptyForm: FormValues = {
@@ -80,6 +87,9 @@ const emptyForm: FormValues = {
   salesStart: "",
   salesEnd: "",
   admits: "1",
+  earlyBirdEnabled: false,
+  earlyBirdPrice: "",
+  earlyBirdEndsAt: "",
 };
 
 function TierForm({
@@ -89,6 +99,7 @@ function TierForm({
   onCancel,
   busy,
   error,
+  timeZone,
 }: {
   initial: FormValues;
   submitLabel: string;
@@ -96,6 +107,7 @@ function TierForm({
   onCancel: () => void;
   busy: boolean;
   error: string | null;
+  timeZone: string;
 }) {
   const [values, setValues] = useState<FormValues>(initial);
   const [showExtras, setShowExtras] = useState(
@@ -133,8 +145,49 @@ function TierForm({
           />
         </div>
 
+        <div className="rounded-lg border border-line-dark bg-surface/40 p-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-on-dark-2">
+            <input
+              type="checkbox"
+              checked={values.earlyBirdEnabled}
+              onChange={(e) => set("earlyBirdEnabled", e.target.checked)}
+              className="accent-[#6C3CFF]"
+            />
+            Enable Early Bird pricing
+          </label>
+          {values.earlyBirdEnabled && (
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelClass}>Early Bird price (₦)</label>
+                <input
+                  required
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={values.earlyBirdPrice}
+                  onChange={(e) => set("earlyBirdPrice", e.target.value)}
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Offer ends ({timeZone})</label>
+                <input
+                  required
+                  type="datetime-local"
+                  value={values.earlyBirdEndsAt}
+                  onChange={(e) => set("earlyBirdEndsAt", e.target.value)}
+                  className={fieldClass}
+                />
+              </div>
+              <p className="text-xs text-on-dark-3 sm:col-span-2">
+                The Regular price remains saved and automatically applies at the deadline.
+              </p>
+            </div>
+          )}
+        </div>
+
         <div>
-          <label className={labelClass}>Price (₦)</label>
+          <label className={labelClass}>Regular price (₦)</label>
           <input
             required
             type="number"
@@ -297,10 +350,12 @@ function TierForm({
 export function TicketTiers({
   eventId,
   tiers,
+  timeZone,
   onChange,
 }: {
   eventId: string;
   tiers: Tier[];
+  timeZone: string;
   /**
    * Called after any successful change. The dashboard page is a server
    * component and re-renders from router.refresh(), but the creation wizard
@@ -325,6 +380,9 @@ export function TicketTiers({
       description: values.description.trim() || undefined,
       salesStart: values.salesStart ? new Date(values.salesStart).toISOString() : null,
       salesEnd: values.salesEnd ? new Date(values.salesEnd).toISOString() : null,
+      earlyBirdEnabled: values.earlyBirdEnabled,
+      earlyBirdPrice: values.earlyBirdEnabled ? Number(values.earlyBirdPrice) : null,
+      earlyBirdEndsAtLocal: values.earlyBirdEnabled ? values.earlyBirdEndsAt : null,
     };
   }
 
@@ -416,6 +474,7 @@ export function TicketTiers({
             }}
             busy={busy}
             error={error}
+            timeZone={timeZone}
           />
         )}
 
@@ -438,6 +497,11 @@ export function TicketTiers({
                 salesStart: toLocalInput(tier.salesStart),
                 salesEnd: toLocalInput(tier.salesEnd),
                 admits: String(tier.admits ?? 1),
+                earlyBirdEnabled: tier.earlyBirdEnabled,
+                earlyBirdPrice: tier.earlyBirdPrice ? String(Number(tier.earlyBirdPrice)) : "",
+                earlyBirdEndsAt: tier.earlyBirdEndsAt
+                  ? datetimeLocalFromUtc(new Date(tier.earlyBirdEndsAt), timeZone)
+                  : "",
               }}
               submitLabel="Save changes"
               onSubmit={(values) => update(tier.id, values)}
@@ -447,6 +511,7 @@ export function TicketTiers({
               }}
               busy={busy}
               error={error}
+              timeZone={timeZone}
             />
           ) : (
             <div
@@ -480,6 +545,18 @@ export function TicketTiers({
                     {" · "}
                     max {tier.maxPerOrder} per order
                   </p>
+                  {tier.earlyBirdEnabled && (
+                    <p className="mt-1 text-sm text-on-dark-2">
+                      Early Bird {naira(tier.earlyBirdPrice ?? tier.price)} until{" "}
+                      {tier.earlyBirdEndsAt
+                        ? new Intl.DateTimeFormat("en-NG", {
+                            timeZone,
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          }).format(new Date(tier.earlyBirdEndsAt))
+                        : "deadline not set"}
+                    </p>
+                  )}
                   {(tier.admits ?? 1) > 1 && (
                     // Spelled out rather than left as "admits 6", because the
                     // number that has to match the hall is the seat count,

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import Script from "next/script";
 import { Providers } from "./providers";
 import "./globals.css";
 import { appUrl } from "@/lib/app-url";
@@ -64,18 +65,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${degular.variable} ${manrope.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <head>
-        {/* Applies the reader's saved light/dark choice before the first
-            paint. In <head> and synchronous on purpose: done from a React
-            effect instead, the page would paint light and snap to dark a
-            frame later. The string is a constant we wrote, never user
-            input — nothing from the reader reaches it. */}
-        <script
-          suppressHydrationWarning
+      <body className="min-h-full flex flex-col font-sans">
+        {/* Set the saved theme before paint; Next injects beforeInteractive
+            scripts into the document head. */}
+        <Script
+          id="theme-bootstrap"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }}
         />
-      </head>
-      <body className="min-h-full flex flex-col font-sans">
         <Providers>{children}</Providers>
       </body>
     </html>

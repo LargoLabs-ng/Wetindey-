@@ -53,6 +53,14 @@ export async function GET(request: NextRequest) {
 
     const order = payment.order;
 
+    if (payment.manualReviewRequired) {
+      return NextResponse.json({
+        status: "manual_review",
+        message:
+          "Your payment reached us, but the ticket price changed during checkout. No ticket was issued. Our team will review the charge and contact you about the next step.",
+      });
+    }
+
     if (payment.status === 'success') {
       return NextResponse.json({
         status: 'success',

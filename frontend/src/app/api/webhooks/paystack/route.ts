@@ -72,7 +72,9 @@ export async function POST(request: NextRequest) {
             ? result.result.ok
               ? result.result.orderId
               : undefined
-            : result.orderId,
+            : result.status === "pending" || result.status === "manual_review"
+              ? result.orderId
+              : undefined,
       });
     }
 

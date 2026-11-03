@@ -1,11 +1,22 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lte, ne, or } from "drizzle-orm";
 import { db } from "@/db";
-import { payments } from "@/db/schema";
+import {
+  orders,
+  payments,
+  ticketTypePriceHistory,
+  tickets,
+} from "@/db/schema";
 import {
   failPendingOrder,
   finalizePaidOrder,
   type FinalizeResult,
 } from "@/lib/finalize-order";
+import {
+  activeTicketPrice,
+  checkoutPriceChanged,
+  ticketPriceConfigurationAt,
+} from "@/lib/early-bird";
+import { releaseOrderReservation } from "@/lib/inventory";
 type PaystackEnvelope<T> = {
   status: true;
   message?: string;
@@ -23,6 +34,7 @@ export type PaystackTransaction = {
   status: string;
   amount: number | string;
   currency: string;
+  paid_at?: string | null;
   fees?: number | string | null;
 };
 
@@ -167,6 +179,7 @@ export type PaystackPaymentResult =
   | { status: "paid"; result: FinalizeResult }
   | { status: "pending"; orderId: string }
   | { status: "failed"; result: FinalizeResult }
+  | { status: "manual_review"; orderId: string }
   | { status: "unknown" };
 
 export async function verifyAndFinalizePaystackPayment(
@@ -174,10 +187,14 @@ export async function verifyAndFinalizePaystackPayment(
 ): Promise<PaystackPaymentResult> {
   const payment = await db.query.payments.findFirst({
     where: eq(payments.providerReference, reference),
-    with: { order: true },
+    with: { order: { with: { tickets: true } } },
   });
   if (!payment || payment.provider !== "paystack" || !payment.order) {
     return { status: "unknown" };
+  }
+
+  if (payment.manualReviewRequired) {
+    return { status: "manual_review", orderId: payment.order.id };
   }
 
   if (payment.status === "success") {
@@ -201,6 +218,89 @@ export async function verifyAndFinalizePaystackPayment(
   if (transaction.status === "success") {
     if (!matchesPaystackAmount(transaction, Number(payment.amount))) {
       throw new Error(`Paystack transaction did not match order ${reference}.`);
+    }
+
+    const ticket = payment.order.tickets[0];
+    const providerPaidAt = transaction.paid_at
+        ? new Date(transaction.paid_at)
+        : null;
+    const invalidProviderPaidAt =
+        providerPaidAt !== null && !Number.isFinite(providerPaidAt.getTime());
+    const paidAt = invalidProviderPaidAt || providerPaidAt === null
+        ? new Date()
+        : providerPaidAt;
+    const priceVersions =
+        ticket && !invalidProviderPaidAt
+          ? await db
+              .select({
+                price: ticketTypePriceHistory.price,
+                earlyBirdEnabled: ticketTypePriceHistory.earlyBirdEnabled,
+                earlyBirdPrice: ticketTypePriceHistory.earlyBirdPrice,
+                earlyBirdEndsAt: ticketTypePriceHistory.earlyBirdEndsAt,
+                validFrom: ticketTypePriceHistory.validFrom,
+                validUntil: ticketTypePriceHistory.validUntil,
+              })
+              .from(ticketTypePriceHistory)
+              .where(
+                and(
+                  eq(ticketTypePriceHistory.ticketTypeId, ticket.ticketTypeId),
+                  lte(ticketTypePriceHistory.validFrom, paidAt),
+                  or(
+                    isNull(ticketTypePriceHistory.validUntil),
+                    gt(ticketTypePriceHistory.validUntil, paidAt)
+                  )
+                )
+              )
+              .orderBy(desc(ticketTypePriceHistory.validFrom))
+          : [];
+    const pricingAtPayment = ticketPriceConfigurationAt(
+        priceVersions,
+        paidAt
+    );
+    const stalePrice = checkoutPriceChanged(
+        payment.order.ticketUnitPrice,
+        pricingAtPayment && !invalidProviderPaidAt
+            ? activeTicketPrice(pricingAtPayment, paidAt)
+            : null,
+      Math.round(
+        (Number(payment.order.subtotal) +
+          Number(payment.order.discountAmount)) *
+          100
+      ),
+      payment.order.tickets.length
+    );
+    if (stalePrice) {
+      const claimed = await db
+        .update(payments)
+        .set({
+          status: "success",
+          paidAt,
+          manualReviewRequired: true,
+          manualReviewReason:
+            "The active ticket price changed after checkout was initialized. Verify the amount and refund or resolve manually; no ticket was issued.",
+          rawProviderResponse: {
+            initialization: payment.rawProviderResponse,
+            verification: raw,
+          },
+        })
+        .where(and(eq(payments.id, payment.id), ne(payments.status, "success")))
+        .returning({ id: payments.id });
+
+      if (claimed.length > 0) {
+        const cancelled = await db
+          .update(orders)
+          .set({ status: "cancelled" })
+          .where(and(eq(orders.id, payment.order.id), eq(orders.status, "pending")))
+          .returning({ id: orders.id });
+        if (cancelled.length > 0) {
+          await db
+            .update(tickets)
+            .set({ status: "cancelled" })
+            .where(and(eq(tickets.orderId, payment.order.id), eq(tickets.status, "pending")));
+          await releaseOrderReservation(payment.order.id);
+        }
+      }
+      return { status: "manual_review", orderId: payment.order.id };
     }
 
     await db

@@ -47,6 +47,7 @@ type Details = {
   venueName: string;
   startDatetime: string;
   endDatetime: string;
+  timeZone: string;
   /** See the schema: the dates are still stored, just not shown to anyone. */
   dateTbd: boolean;
   venueTbd: boolean;
@@ -61,6 +62,7 @@ const EMPTY: Details = {
   venueName: "",
   startDatetime: "",
   endDatetime: "",
+  timeZone: "Africa/Lagos",
   dateTbd: false,
   venueTbd: false,
 };
@@ -140,6 +142,7 @@ export function NewEventWizard() {
           venueName: ev.venueName ?? "",
           startDatetime: toLocalInput(ev.startDatetime),
           endDatetime: toLocalInput(ev.endDatetime),
+          timeZone: ev.timeZone ?? "Africa/Lagos",
           dateTbd: ev.dateTbd ?? false,
           venueTbd: ev.venueTbd ?? false,
         });
@@ -175,6 +178,7 @@ export function NewEventWizard() {
       venueName: details.venueName.trim(),
       startDatetime: new Date(details.startDatetime).toISOString(),
       endDatetime: new Date(details.endDatetime).toISOString(),
+      timeZone: details.timeZone,
       dateTbd: details.dateTbd,
       venueTbd: details.venueTbd,
     };
@@ -349,6 +353,19 @@ export function NewEventWizard() {
               />
             </div>
           </div>
+          <div>
+            <label className={label}>Event time zone</label>
+            <input
+              required
+              value={details.timeZone}
+              onChange={(e) => set("timeZone", e.target.value)}
+              placeholder="Africa/Lagos"
+              className={field}
+            />
+            <p className="mt-1 text-xs text-on-dark-3">
+              Used for Early Bird deadlines. Use an IANA zone such as Africa/Lagos.
+            </p>
+          </div>
 
           <div>
             <label className={label}>Venue</label>
@@ -440,6 +457,7 @@ export function NewEventWizard() {
         <div className="space-y-6">
           <TicketTiers
             eventId={eventId}
+            timeZone={details.timeZone}
             tiers={tiers}
             onChange={() => void loadTiers(eventId)}
           />

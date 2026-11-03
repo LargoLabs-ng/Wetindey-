@@ -7,6 +7,7 @@ import { getEventRole, getSessionUserId } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 import { MAX_GALLERY, MAX_SPONSORS, isSafeHttpUrl } from "@/lib/media";
 import { describeChanges, notifyDetailsChanged } from "@/lib/notify-change";
+import { isValidTimeZone } from "@/lib/early-bird";
 
 /**
  * An optional field whose blank is a deletion.
@@ -50,6 +51,7 @@ const updateEventSchema = z.object({
   venueAddress: z.string().optional(),
   city: z.string().max(100).optional(),
   country: z.string().max(100).optional(),
+  timeZone: z.string().min(1).max(64).optional(),
   startDatetime: z.coerce.date().optional(),
   endDatetime: z.coerce.date().optional(),
   salesStart: z.coerce.date().optional(),
@@ -182,6 +184,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       { error: "endDatetime must be after startDatetime" },
       { status: 400 }
     );
+  }
+  if (parsed.data.timeZone && !isValidTimeZone(parsed.data.timeZone)) {
+    return NextResponse.json({ error: "Pick a valid event time zone." }, { status: 400 });
   }
 
   // Publishing requires a venue and a city. Editing must not be a back door

@@ -2,16 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/db';
 import { events, users } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { getSessionUserId } from '@/lib/authz';
 import { ensureOrganizationForUser } from '@/lib/organization';
 import { generateUniqueSlug } from '@/lib/slug';
 import { isSafeHttpUrl } from "@/lib/media";
+import { isValidTimeZone } from "@/lib/early-bird";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const publishedEvents = await db.query.events.findMany({
-      where: eq(events.status, 'published'),
+      where: and(eq(events.status, 'published'), isNull(events.archivedAt)),
       with: {
         ticketTypes: true,
       },
@@ -42,6 +43,7 @@ const createEventSchema = z.object({
   city: z.string().trim().optional(),
   startDatetime: z.string().datetime('Pick a valid start date and time.'),
   endDatetime: z.string().datetime('Pick a valid end date and time.'),
+  timeZone: z.string().min(1).max(64).default("Africa/Lagos"),
 });
 
 /**
@@ -69,6 +71,9 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parsed.data;
+    if (!isValidTimeZone(data.timeZone)) {
+      return NextResponse.json({ error: "Pick a valid event time zone." }, { status: 400 });
+    }
     const start = new Date(data.startDatetime);
     const end = new Date(data.endDatetime);
     if (end <= start) {
@@ -110,6 +115,7 @@ export async function POST(request: NextRequest) {
         category: data.category || null,
         venueName: data.venueName || null,
         city: data.city || null,
+        timeZone: data.timeZone,
         startDatetime: start,
         endDatetime: end,
         universityId: creator?.universityId ?? null,

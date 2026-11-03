@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { events, ticketTypes, tickets, universities, users } from "@/db/schema";
 import { availableQuantity } from "@/lib/inventory";
@@ -50,7 +50,7 @@ export async function GET() {
   const published = await db
     .select()
     .from(events)
-    .where(eq(events.status, "published"))
+    .where(and(eq(events.status, "published"), isNull(events.archivedAt)))
     .orderBy(asc(events.startDatetime));
 
   const tiers = await db.select().from(ticketTypes);

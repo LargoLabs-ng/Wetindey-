@@ -26,6 +26,7 @@ import {
   type AnswerMap,
   type PublicField,
 } from '@/components/registration-answers-form';
+import { activeTicketPrice, formatDeadline } from "@/lib/early-bird";
 
 interface TicketType {
   id: string;
@@ -39,6 +40,9 @@ interface TicketType {
   status: string;
   /** People one ticket lets in. 1 is an ordinary ticket. */
   admits?: number;
+  earlyBirdEnabled: boolean;
+  earlyBirdPrice: string | null;
+  earlyBirdEndsAt: string | null;
 }
 
 interface Event {
@@ -57,6 +61,7 @@ interface Event {
   country: string | null;
   startDatetime: string;
   endDatetime: string;
+  timeZone: string;
   ticketTypes: TicketType[];
   organization?: { name: string } | null;
   /** The organiser's mark, as opposed to this event's flyer. */
@@ -82,6 +87,7 @@ export default function EventDetailPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [buyerEmail, setBuyerEmail] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [attendees, setAttendees] = useState<Array<{ name: string; email: string }>>([]);
   const [processing, setProcessing] = useState(false);
   // The brief's primary call to action is "I'm In". Showing a name/email form
@@ -90,6 +96,16 @@ export default function EventDetailPage() {
   const [joining, setJoining] = useState(false);
   const [copied, setCopied] = useState(false);
   const [ref, setRef] = useState<string | null>(null);
+  const [priceClock, setPriceClock] = useState(() => Date.now());
+  const [serverOffset, setServerOffset] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setPriceClock(Date.now() + serverOffset),
+      1000
+    );
+    return () => window.clearInterval(timer);
+  }, [serverOffset]);
 
   // The organiser's own questions. Fetched separately from the event so a
   // failure here costs the extra questions and not the whole page — an
@@ -155,6 +171,11 @@ export default function EventDetailPage() {
         if (!response.ok) throw new Error('Event not found');
         const data = await response.json();
         setEvent(data);
+        const serverTime = Date.parse(data.serverTime);
+        if (Number.isFinite(serverTime)) {
+          setServerOffset(serverTime - Date.now());
+          setPriceClock(serverTime);
+        }
         if (data.ticketTypes.length > 0) {
           setSelectedTicket(data.ticketTypes[0].id);
         }
@@ -252,7 +273,10 @@ export default function EventDetailPage() {
   // Same calculation the order API uses, so the page and the payment screen
   // can never quote different numbers.
   // The page quotes the discounted figure; the server recalculates it too.
-  const faceValue = parseFloat(selectedTicketType?.price || '0') * quantity;
+  const selectedPrice = selectedTicketType
+    ? activeTicketPrice(selectedTicketType, priceClock).price
+    : 0;
+  const faceValue = selectedPrice * quantity;
   const quote = quoteOrder(
     Math.max(0, faceValue - (promoEffect?.discount ?? 0))
   );
@@ -282,7 +306,7 @@ export default function EventDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: typed,
-          faceValue: Number(selectedTicketType.price) * quantity,
+          faceValue: selectedPrice * quantity,
         }),
       });
       const data = await res.json();
@@ -353,6 +377,7 @@ export default function EventDetailPage() {
           // Unverified here, like `ref` below: the server resolves it and
           // ignores anything it doesn't recognise.
           promoCode: promoEffect?.code ?? undefined,
+          marketingConsent,
           // Unverified on purpose: the server resolves the code itself and
           // ignores anything it does not recognise, so a made-up value here
           // credits nobody rather than crediting the wrong person.
@@ -417,7 +442,7 @@ export default function EventDetailPage() {
 
   const start = new Date(event.startDatetime);
   const end = new Date(event.endDatetime);
-  const daysAway = Math.ceil((start.getTime() - Date.now()) / 86400000);
+  const daysAway = Math.ceil((start.getTime() - priceClock) / 86400000);
 
   /**
    * The provisional date exists but nobody is meant to see it.
@@ -429,8 +454,8 @@ export default function EventDetailPage() {
   const dateTbd = event.dateTbd === true;
   const venueTbd = event.venueTbd === true;
 
-  const hasStarted = !dateTbd && start.getTime() <= Date.now();
-  const isOver = !dateTbd && end.getTime() < Date.now();
+  const hasStarted = !dateTbd && start.getTime() <= priceClock;
+  const isOver = !dateTbd && end.getTime() < priceClock;
   const place = venueTbd
     ? ''
     : [event.venueName, event.city].filter(Boolean).join(', ');
@@ -791,6 +816,7 @@ export default function EventDetailPage() {
                       const paused = t.status === 'paused';
                       const disabled = gone || paused;
                       const selected = selectedTicket === t.id;
+                      const currentPrice = activeTicketPrice(t, priceClock);
                       return (
                         <button
                           key={t.id}
@@ -806,12 +832,27 @@ export default function EventDetailPage() {
                         >
                           <div className="flex items-baseline justify-between gap-3">
                             <span className="font-semibold text-ink">{t.name}</span>
-                            <span className="font-bold tabular-nums text-ink">
-                              {Number(t.price) === 0 ? 'Free' : naira(Number(t.price))}
+                            <span className="text-right">
+                              <span className="block font-bold tabular-nums text-ink">
+                                {currentPrice.price === 0 ? 'Free' : naira(currentPrice.price)}
+                              </span>
+                              {currentPrice.earlyBirdActive && (
+                                <>
+                                  <span className="block text-xs font-semibold text-purple">Early Bird</span>
+                                  <span className="block text-xs text-ink-3 line-through">
+                                    {naira(Number(t.price))}
+                                  </span>
+                                </>
+                              )}
                             </span>
                           </div>
                           {t.description && (
                             <span className="mt-0.5 block text-xs text-ink-2">{t.description}</span>
+                          )}
+                          {currentPrice.earlyBirdActive && t.earlyBirdEndsAt && (
+                            <span className="mt-1 block text-xs text-ink-3">
+                              Offer ends {formatDeadline(t.earlyBirdEndsAt, event.timeZone)}
+                            </span>
                           )}
                           {(t.admits ?? 1) > 1 && (
                             // Said before the price sinks in, not after. A
@@ -903,7 +944,7 @@ export default function EventDetailPage() {
                           disabled={available === 0}
                           className="mt-4 w-full rounded-xl bg-purple py-3.5 text-base font-bold text-white transition-colors hover:bg-purple-deep disabled:opacity-50"
                         >
-                          {Number(selectedTicketType.price) === 0 ? "I'm in" : `I'm in · ${naira(quote.paystackAmount)}`}
+                          {selectedPrice === 0 ? "I'm in" : `I'm in · ${naira(quote.paystackAmount)}`}
                         </button>
                       ) : (
                         <div className="mt-4 space-y-3 border-t border-line pt-4">
@@ -998,6 +1039,19 @@ export default function EventDetailPage() {
                             </div>
                           )}
 
+                          <label className="flex items-start gap-2 text-xs text-ink-3">
+                            <input
+                              type="checkbox"
+                              checked={marketingConsent}
+                              onChange={(e) => setMarketingConsent(e.target.checked)}
+                              className="mt-0.5 accent-purple"
+                            />
+                            <span>
+                              Email me occasional updates about this organiser&apos;s future events.
+                              Optional; this does not affect your ticket.
+                            </span>
+                          </label>
+
                           <button
                             onClick={handleCheckout}
                             disabled={processing || available === 0}
@@ -1005,7 +1059,7 @@ export default function EventDetailPage() {
                           >
                             {processing
                               ? 'Taking you to payment…'
-                              : Number(selectedTicketType.price) === 0
+                              : selectedPrice === 0
                                 ? 'Confirm my spot'
                                 : `Continue to Paystack · ${naira(quote.paystackAmount)}`}
                           </button>
@@ -1038,9 +1092,9 @@ export default function EventDetailPage() {
               <p className="truncate text-lg font-extrabold leading-tight text-ink">
                 {soldOut
                   ? 'Sold out'
-                  : Math.min(...event.ticketTypes.map((t) => Number(t.price))) === 0
+                  : Math.min(...event.ticketTypes.map((t) => activeTicketPrice(t, priceClock).price)) === 0
                     ? 'Free'
-                    : naira(Math.min(...event.ticketTypes.map((t) => Number(t.price))))}
+                    : naira(Math.min(...event.ticketTypes.map((t) => activeTicketPrice(t, priceClock).price)))}
               </p>
             </div>
             <a

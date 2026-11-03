@@ -92,6 +92,61 @@ const EXPECT = [
     tables: [],
     types: [],
   },
+  {
+    migration: "0016_owner_crm_and_admin_archive.sql",
+    columns: [
+      ["events", "archived_at"],
+      ["orders", "marketing_consent"],
+    ],
+    tables: [
+      "crm_tags",
+      "crm_contact_tags",
+      "crm_contact_preferences",
+    ],
+    types: [],
+  },
+  {
+    migration: "0017_early_bird_pricing.sql",
+    columns: [
+      ["events", "time_zone"],
+      ["ticket_types", "early_bird_enabled"],
+      ["ticket_types", "early_bird_price"],
+      ["ticket_types", "early_bird_ends_at"],
+      ["orders", "ticket_unit_price"],
+      ["payments", "manual_review_required"],
+      ["payments", "manual_review_reason"],
+      ["payments", "manual_review_resolved_at"],
+      ["payments", "manual_review_note"],
+      ["payments", "manual_review_resolved_by"],
+    ],
+    tables: [],
+    types: [],
+  },
+  {
+    migration: "0018_platform_admin_rbac.sql",
+    columns: [
+      ["platform_admin_roles", "is_system"],
+      ["platform_admin_assignments", "assigned_by"],
+      ["platform_admin_assignments", "status"],
+    ],
+    tables: [
+      "platform_admin_roles",
+      "platform_admin_permissions",
+      "platform_admin_role_permissions",
+      "platform_admin_assignments",
+    ],
+    types: [],
+  },
+  {
+    migration: "0019_ticket_price_history.sql",
+    columns: [
+      ["ticket_type_price_history", "ticket_type_id"],
+      ["ticket_type_price_history", "valid_from"],
+      ["ticket_type_price_history", "valid_until"],
+    ],
+    tables: ["ticket_type_price_history"],
+    types: [],
+  },
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });

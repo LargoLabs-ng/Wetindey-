@@ -132,6 +132,10 @@ time by a script that runs exactly the reviewed text and nothing else.
 ```bash
 npm run db:migrate -- backend/migrations/0014_monnify_payments.sql
 npm run db:migrate -- backend/migrations/0015_paystack_checkout.sql
+npm run db:migrate -- backend/migrations/0016_owner_crm_and_admin_archive.sql
+npm run db:migrate -- backend/migrations/0017_early_bird_pricing.sql
+npm run db:migrate -- backend/migrations/0018_platform_admin_rbac.sql
+npm run db:migrate -- backend/migrations/0019_ticket_price_history.sql
 ```
 
 Every migration is written to be safe to run twice — `IF NOT EXISTS`
@@ -150,6 +154,29 @@ with `schema.ts`; it says nothing about what Postgres has.
 
 When you add a migration, add its markers to the `EXPECT` list in
 `backend/scripts/check-schema.mjs`.
+
+### Provisioning additional platform administrators
+
+The existing comma-separated `ADMIN_EMAILS` allowlist remains a trusted
+Super Admin bootstrap path. Add the initial administrator's email to
+`frontend/.env.local`, then create or reset their login from the IDE terminal:
+
+```bash
+npm run db:admin-account
+```
+
+The command prompts for the authorized email and name, then asks for the
+password without echoing it to the terminal. It hashes the password and saves
+the account to the existing `users` table in Neon; it never stores plaintext
+passwords. The email must already appear in `ADMIN_EMAILS`. Sign in at
+`/admin` with those credentials. This initial allowlist-based setup does not
+require migrations.
+
+The database role-assignment command is an optional next step after applying
+migration 0018. It can assign the existing account a role such as
+`super_admin`, `admin`, `finance_admin`, `event_moderator`, or `support_admin`.
+Public signup never grants platform-admin access. Granular permissions are
+available through `hasAdminPermission()` as admin endpoints are migrated.
 
 The SQL files carry the reasoning for each decision in comments. They are
 worth reading before changing the tables they touch — several of them explain

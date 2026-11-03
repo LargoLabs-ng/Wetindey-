@@ -5,6 +5,10 @@ import { db } from "@/db";
 import { events, ticketTypes } from "@/db/schema";
 import { getEventRole, getSessionUserId } from "@/lib/authz";
 import { can } from "@/lib/permissions";
+import {
+  datetimeLocalToUtc,
+  isValidEarlyBirdConfiguration,
+} from "@/lib/early-bird";
 
 const createTicketTypeSchema = z.object({
   name: z.string().min(1).max(100),
@@ -25,6 +29,9 @@ const createTicketTypeSchema = z.object({
   // below even when the organizer left both fields blank.
   salesStart: z.coerce.date().nullable().optional(),
   salesEnd: z.coerce.date().nullable().optional(),
+  earlyBirdEnabled: z.boolean().default(false),
+  earlyBirdPrice: z.coerce.number().min(0).nullable().optional(),
+  earlyBirdEndsAtLocal: z.string().nullable().optional(),
 });
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -97,6 +104,23 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
+  const earlyBirdEndsAt = parsed.data.earlyBirdEndsAtLocal
+    ? datetimeLocalToUtc(parsed.data.earlyBirdEndsAtLocal, event.timeZone)
+    : null;
+  if (
+    parsed.data.earlyBirdEnabled &&
+    !isValidEarlyBirdConfiguration(
+      parsed.data.price,
+      parsed.data.earlyBirdPrice ?? null,
+      earlyBirdEndsAt
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Early Bird needs a valid deadline and a price lower than the Regular price." },
+      { status: 400 }
+    );
+  }
+
   const [tier] = await db
     .insert(ticketTypes)
     .values({
@@ -109,6 +133,11 @@ export async function POST(request: Request, context: RouteContext) {
       admits: parsed.data.admits ?? 1,
       salesStart: parsed.data.salesStart,
       salesEnd: parsed.data.salesEnd,
+      earlyBirdEnabled: parsed.data.earlyBirdEnabled,
+      earlyBirdPrice: parsed.data.earlyBirdEnabled
+        ? parsed.data.earlyBirdPrice!.toFixed(2)
+        : null,
+      earlyBirdEndsAt: parsed.data.earlyBirdEnabled ? earlyBirdEndsAt : null,
     })
     .returning();
 

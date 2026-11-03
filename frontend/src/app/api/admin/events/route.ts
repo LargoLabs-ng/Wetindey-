@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
-import { events as eventsTable, orders, tickets } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { orders, tickets, users } from '@/db/schema';
+import { and, eq, inArray } from 'drizzle-orm';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
 
@@ -22,22 +22,36 @@ export async function GET(request: NextRequest) {
     const allEvents = await db.query.events.findMany({
       with: { organization: true, ticketTypes: true },
     });
+    const ownerIds = [...new Set(
+      allEvents
+        .map((event) => event.organization?.ownerId)
+        .filter((ownerId): ownerId is string => Boolean(ownerId))
+    )];
+    const ownerRows = ownerIds.length
+      ? await db
+          .select({ id: users.id, email: users.email })
+          .from(users)
+          .where(inArray(users.id, ownerIds))
+      : [];
+    const ownerEmailById = new Map(ownerRows.map((owner) => [owner.id, owner.email]));
 
     const eventsWithMetrics = await Promise.all(
       allEvents.map(async (event) => {
         const eventOrders = await db.query.orders.findMany({
           where: eq(orders.eventId, event.id),
-          with: { payments: true },
         });
 
-        const paidOrders = eventOrders.filter((o) => o.payments?.some((p) => p.status === 'success'));
+        const paidOrders = eventOrders.filter((o) => o.status === 'paid');
         const totalRevenue = paidOrders.reduce((sum, o) => {
           const totalNum = typeof o.total === 'string' ? parseFloat(o.total) : o.total;
           return sum + totalNum;
         }, 0);
 
         const attendees = await db.query.tickets.findMany({
-          where: eq(tickets.eventId, event.id),
+          where: and(
+            eq(tickets.eventId, event.id),
+            inArray(tickets.status, ['valid', 'checked_in'])
+          ),
         });
 
         const checkedIn = attendees.filter((t) => t.status === 'checked_in').length;
@@ -46,8 +60,9 @@ export async function GET(request: NextRequest) {
           id: event.id,
           title: event.title,
           organizer: event.organization?.name || 'Unknown',
-          organizerEmail: event.organization?.ownerId,
+          organizerEmail: ownerEmailById.get(event.organization?.ownerId ?? '') ?? '',
           status: event.status,
+          archivedAt: event.archivedAt?.toISOString() ?? null,
           startDatetime: event.startDatetime,
           endDatetime: event.endDatetime,
           venue: `${event.venueName}, ${event.city}`,

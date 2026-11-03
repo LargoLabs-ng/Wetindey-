@@ -36,6 +36,13 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 
+  if (event.archivedAt) {
+    return NextResponse.json(
+      { error: "This event is archived. A platform admin must restore it before it can be published." },
+      { status: 409 }
+    );
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = publishSchema.safeParse(body);
   if (!parsed.success) {

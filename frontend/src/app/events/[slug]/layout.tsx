@@ -29,7 +29,7 @@ export async function generateMetadata({
     return { title: "Event" };
   }
 
-  if (!event || event.status !== "published") {
+  if (!event || event.status !== "published" || event.archivedAt) {
     return { title: "Event", robots: { index: false } };
   }
 

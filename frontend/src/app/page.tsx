@@ -158,10 +158,10 @@ export default function HomePage() {
                   Profile
                 </Link>
                 <Link
-                  href="/dashboard"
+                  href="/organiser"
                   className="rounded-lg bg-purple px-3.5 py-2 text-sm font-semibold text-white hover:bg-purple-deep"
                 >
-                  Post an event
+                  Host an Event
                 </Link>
               </>
             ) : (
@@ -174,9 +174,15 @@ export default function HomePage() {
                 </Link>
                 <Link
                   href="/signup"
-                  className="rounded-lg bg-purple px-3.5 py-2 text-sm font-semibold text-white hover:bg-purple-deep"
+                  className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
                 >
                   Sign up
+                </Link>
+                <Link
+                  href="/organiser"
+                  className="rounded-lg bg-purple px-3.5 py-2 text-sm font-semibold text-white hover:bg-purple-deep"
+                >
+                  Host an Event
                 </Link>
               </>
             )}
@@ -227,11 +233,11 @@ export default function HomePage() {
                     Profile
                   </Link>
                   <Link
-                    href="/dashboard"
+                    href="/organiser"
                     onClick={() => setMenuOpen(false)}
                     className="mt-2 rounded-lg bg-purple px-3.5 py-3 text-center text-sm font-semibold text-white hover:bg-purple-deep"
                   >
-                    Post an event
+                    Host an Event
                   </Link>
                 </>
               ) : (
@@ -246,9 +252,16 @@ export default function HomePage() {
                   <Link
                     href="/signup"
                     onClick={() => setMenuOpen(false)}
-                    className="mt-2 rounded-lg bg-purple px-3.5 py-3 text-center text-sm font-semibold text-white hover:bg-purple-deep"
+                    className="rounded-lg px-3 py-3 text-sm font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink"
                   >
                     Sign up
+                  </Link>
+                  <Link
+                    href="/organiser"
+                    onClick={() => setMenuOpen(false)}
+                    className="mt-2 rounded-lg bg-purple px-3.5 py-3 text-center text-sm font-semibold text-white hover:bg-purple-deep"
+                  >
+                    Host an Event
                   </Link>
                 </>
               )}

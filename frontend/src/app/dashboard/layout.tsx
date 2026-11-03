@@ -5,6 +5,9 @@ import { hasDashboardAccess } from "@/lib/authz";
 import { SignOutButton } from "@/components/sign-out-button";
 import { DashboardNav } from "@/components/dashboard-nav";
 import { WordMark } from "@/components/wordmark";
+import { db } from "@/db";
+import { organizations } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export default async function DashboardLayout({
   children,
@@ -17,6 +20,14 @@ export default async function DashboardLayout({
   if (session?.user?.id && !(await hasDashboardAccess(session.user.id))) {
     redirect("/checkin");
   }
+  const isOrganizationOwner = session?.user?.id
+    ? Boolean(
+        await db.query.organizations.findFirst({
+          where: eq(organizations.ownerId, session.user.id),
+          columns: { id: true },
+        })
+      )
+    : false;
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -27,7 +38,7 @@ export default async function DashboardLayout({
               <WordMark tone="dark" asLink={false} />
             </Link>
             <div className="hidden sm:block">
-              <DashboardNav />
+              <DashboardNav showCrm={isOrganizationOwner} />
             </div>
           </div>
 
@@ -40,7 +51,7 @@ export default async function DashboardLayout({
         </div>
 
         <div className="border-t border-line-dark px-4 py-2 sm:hidden">
-          <DashboardNav />
+          <DashboardNav showCrm={isOrganizationOwner} />
         </div>
       </header>
 

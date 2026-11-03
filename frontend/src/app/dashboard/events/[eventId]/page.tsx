@@ -8,6 +8,7 @@ import { requireEventCapability } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 import { PublishToggle } from "@/components/publish-toggle";
 import { TicketTiers } from "@/components/ticket-tiers";
+import { CopyEventLink } from "@/components/copy-event-link";
 
 const statusStyles: Record<string, string> = {
   draft: "bg-surface-2 text-on-dark-2",
@@ -114,10 +115,12 @@ export default async function EventDetailPage({
           <div className="mb-2 flex items-center gap-3">
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
-                statusStyles[event.status] ?? statusStyles.draft
+                event.archivedAt
+                  ? statusStyles.cancelled
+                  : statusStyles[event.status] ?? statusStyles.draft
               }`}
             >
-              {event.status}
+              {event.archivedAt ? "archived" : event.status}
             </span>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-on-dark">
@@ -138,7 +141,13 @@ export default async function EventDetailPage({
 
         {can(role, "event:edit", grant) && (
           <div className="flex flex-col items-start gap-3 sm:items-end">
-            <PublishToggle eventId={event.id} status={event.status} />
+            {event.archivedAt ? (
+              <p className="max-w-sm text-sm text-warning">
+                This event is archived and hidden from public pages. A platform admin must restore it before it can be published.
+              </p>
+            ) : (
+              <PublishToggle eventId={event.id} status={event.status} />
+            )}
             <Link
               href={`/dashboard/events/${event.id}/edit`}
               className="inline-flex items-center gap-1.5 text-sm font-medium text-on-dark-2 transition-colors hover:text-gold"
@@ -158,12 +167,15 @@ export default async function EventDetailPage({
               Share this link and people can start buying.
             </p>
           </div>
-          <Link
-            href={`/events/${event.slug}`}
-            className="shrink-0 rounded-lg border border-line-dark px-4 py-2 text-sm font-semibold text-on-dark transition-colors hover:border-gold hover:text-gold"
-          >
-            View public page
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/events/${event.slug}`}
+              className="shrink-0 rounded-lg border border-line-dark px-4 py-2 text-sm font-semibold text-on-dark transition-colors hover:border-gold hover:text-gold"
+            >
+              View public page
+            </Link>
+            <CopyEventLink slug={event.slug} />
+          </div>
         </div>
       )}
 
@@ -181,7 +193,12 @@ export default async function EventDetailPage({
           status: tier.status,
           salesStart: tier.salesStart ? tier.salesStart.toISOString() : null,
           salesEnd: tier.salesEnd ? tier.salesEnd.toISOString() : null,
+          earlyBirdEnabled: tier.earlyBirdEnabled,
+          earlyBirdPrice: tier.earlyBirdPrice,
+          earlyBirdEndsAt: tier.earlyBirdEndsAt?.toISOString() ?? null,
+          admits: tier.admits,
         }))}
+        timeZone={event.timeZone}
       />
       )}
 

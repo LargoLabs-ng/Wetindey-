@@ -93,19 +93,24 @@ export async function releaseExpiredReservations(): Promise<number> {
 
   if (stale.length === 0) return 0;
 
+  let released = 0;
   for (const order of stale) {
+    const claimed = await db
+      .update(orders)
+      .set({ status: "expired" })
+      .where(and(eq(orders.id, order.id), eq(orders.status, "pending")))
+      .returning({ id: orders.id });
+    if (claimed.length === 0) continue;
+
     await releaseOrderReservation(order.id);
     await db
       .update(tickets)
       .set({ status: "cancelled" })
       .where(and(eq(tickets.orderId, order.id), eq(tickets.status, "pending")));
-    await db
-      .update(orders)
-      .set({ status: "expired" })
-      .where(eq(orders.id, order.id));
+    released += 1;
   }
 
-  return stale.length;
+  return released;
 }
 
 /** The single definition of "can someone buy this right now". */
