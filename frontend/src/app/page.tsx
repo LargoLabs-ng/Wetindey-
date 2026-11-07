@@ -435,14 +435,16 @@ export default function HomePage() {
         </div>
       </section>
 
-      <footer className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      <footer className="mx-auto max-w-5xl px-4 py-4 sm:px-6 sm:py-5">
+        <div className="flex flex-nowrap items-center justify-between gap-2">
           <WordMark asLink={false} />
-          <p className="text-sm text-ink-3">Calabar, Nigeria</p>
+          <p className="whitespace-nowrap text-[10px] text-ink-3 sm:text-sm">
+            © {new Date().getFullYear()} Largo Labs Ltd. All rights reserved.
+          </p>
+          <p className="whitespace-nowrap text-[10px] text-ink-3 sm:text-sm">
+            Calabar, Nigeria
+          </p>
         </div>
-        <p className="mt-6 text-sm text-ink-3">
-          © {new Date().getFullYear()} Wetin Dey. All rights reserved.
-        </p>
       </footer>
     </div>
   );
