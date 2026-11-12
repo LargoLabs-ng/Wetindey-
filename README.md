@@ -248,3 +248,5 @@ Stated plainly so nobody discovers it in production:
 - **`organizations.fee_percent`** exists in the schema and nothing reads it.
   `PLATFORM_FEE_RATE` in `backend/lib/fees.ts` is the only source of truth. Wire
   one up or drop the other; don't add a third.
+
+Wetin Dey - Preview Deployment Test
