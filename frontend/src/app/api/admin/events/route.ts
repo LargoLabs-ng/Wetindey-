@@ -62,6 +62,7 @@ export async function GET() {
           organizer: event.organization?.name || 'Unknown',
           organizerEmail: ownerEmailById.get(event.organization?.ownerId ?? '') ?? '',
           status: event.status,
+          visibility: event.visibility,
           archivedAt: event.archivedAt?.toISOString() ?? null,
           startDatetime: event.startDatetime,
           endDatetime: event.endDatetime,

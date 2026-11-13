@@ -10,6 +10,8 @@ import { EventBrandingFields } from "@/components/event-branding-fields";
 import { PromoCodesEditor } from "@/components/promo-codes-editor";
 import { RegistrationFieldsEditor } from "@/components/registration-fields-editor";
 import { TicketTiers, type Tier } from "@/components/ticket-tiers";
+import { VisibilityPicker } from "@/components/visibility-picker";
+import type { EventVisibility } from "@/lib/event-visibility";
 import {
   quoteOrder,
   naira,
@@ -96,6 +98,10 @@ export function NewEventWizard() {
   const [details, setDetails] = useState<Details>(EMPTY);
   const [tiers, setTiers] = useState<Tier[]>([]);
   const [agreed, setAgreed] = useState(false);
+  // Public by default. `savedVisibility` is what the draft holds, so the
+  // publish step only writes it when the organiser changed it.
+  const [visibility, setVisibility] = useState<EventVisibility>("public");
+  const [savedVisibility, setSavedVisibility] = useState<EventVisibility>("public");
 
   const [hydrating, setHydrating] = useState(Boolean(eventId));
   const [busy, setBusy] = useState(false);
@@ -146,6 +152,9 @@ export function NewEventWizard() {
           dateTbd: ev.dateTbd ?? false,
           venueTbd: ev.venueTbd ?? false,
         });
+        const v: EventVisibility = ev.visibility === "unlisted" ? "unlisted" : "public";
+        setVisibility(v);
+        setSavedVisibility(v);
         await loadTiers(eventId);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Could not load draft.");
@@ -213,6 +222,21 @@ export function NewEventWizard() {
     if (!eventId) return;
     setBusy(true);
     setError(null);
+
+    if (visibility !== savedVisibility) {
+      const saved = await fetch(`/api/events/${eventId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility }),
+      });
+      if (!saved.ok) {
+        const data = await saved.json().catch(() => ({}));
+        setBusy(false);
+        setError(data.error ?? "Could not save who can find this event.");
+        return;
+      }
+      setSavedVisibility(visibility);
+    }
 
     const res = await fetch(`/api/events/${eventId}/publish`, {
       method: "POST",
@@ -550,6 +574,10 @@ export function NewEventWizard() {
 
           <div className="rounded-2xl border border-line-dark bg-surface p-6">
             <PromoCodesEditor eventId={eventId} />
+          </div>
+
+          <div className="rounded-2xl border border-line-dark bg-surface p-6">
+            <VisibilityPicker value={visibility} onChange={setVisibility} disabled={busy} />
           </div>
 
           <div className="rounded-2xl border border-line-dark bg-surface p-6">

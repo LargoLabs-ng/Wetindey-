@@ -2,17 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/db';
 import { events, users } from '@/db/schema';
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getSessionUserId } from '@/lib/authz';
 import { ensureOrganizationForUser } from '@/lib/organization';
 import { generateUniqueSlug } from '@/lib/slug';
 import { isSafeHttpUrl } from "@/lib/media";
 import { isValidTimeZone } from "@/lib/early-bird";
+import { publicListingWhere } from "@/lib/event-visibility";
 
 export async function GET() {
   try {
     const publishedEvents = await db.query.events.findMany({
-      where: and(eq(events.status, 'published'), isNull(events.archivedAt)),
+      // Public and unauthenticated, so unlisted events stay out of it.
+      where: publicListingWhere(),
       with: {
         ticketTypes: true,
       },

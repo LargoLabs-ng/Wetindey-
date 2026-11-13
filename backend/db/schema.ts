@@ -35,6 +35,15 @@ export const eventStatusEnum = pgEnum("event_status", [
   "cancelled",
 ]);
 
+/**
+ * Whether a published event is LISTED — separate from whether it is live.
+ * See migrations/0020_event_visibility.sql and lib/event-visibility.ts.
+ */
+export const eventVisibilityEnum = pgEnum("event_visibility", [
+  "public",
+  "unlisted",
+]);
+
 export const ticketTypeStatusEnum = pgEnum("ticket_type_status", [
   "active",
   "paused",
@@ -381,6 +390,12 @@ export const events = pgTable("events", {
   salesStart: timestamp("sales_start"),
   salesEnd: timestamp("sales_end"),
   status: eventStatusEnum("status").default("draft").notNull(),
+  /**
+   * 'unlisted' keeps a published event out of discovery, the public events
+   * API and search engines; its link still works for anyone who has it.
+   * Every listing goes through publicListingWhere() in lib/event-visibility.
+   */
+  visibility: eventVisibilityEnum("visibility").default("public").notNull(),
   archivedAt: timestamp("archived_at"),
   // Legacy pricing preference; new Paystack fees are passed to buyers.
   feeStrategy: feeStrategyEnum("fee_strategy")

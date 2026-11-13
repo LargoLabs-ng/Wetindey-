@@ -10,6 +10,7 @@ interface EventData {
   organizer: string;
   organizerEmail: string;
   status: string;
+  visibility?: string;
   archivedAt: string | null;
   startDatetime: string;
   endDatetime: string;
@@ -297,6 +298,11 @@ export default function AdminEventsPage() {
                         >
                           {event.archivedAt ? 'archived' : event.status}
                         </span>
+                        {event.visibility === 'unlisted' && (
+                          <div className="text-xs mt-1" style={{ color: 'var(--color-stone-mid)' }}>
+                            unlisted
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-right text-sm" style={{ color: 'var(--color-stone)' }}>
                         {event.metrics.ticketsSold}

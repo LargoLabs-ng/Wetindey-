@@ -147,6 +147,12 @@ const EXPECT = [
     tables: ["ticket_type_price_history"],
     types: [],
   },
+  {
+    migration: "0020_event_visibility.sql",
+    columns: [["events", "visibility"]],
+    tables: [],
+    types: ["event_visibility"],
+  },
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });

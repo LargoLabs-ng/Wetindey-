@@ -53,6 +53,7 @@ export default async function EditEventPage({
           status: event.status,
           dateTbd: event.dateTbd,
           venueTbd: event.venueTbd,
+          visibility: event.visibility,
         }}
       />
 

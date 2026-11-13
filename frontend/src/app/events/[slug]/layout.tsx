@@ -4,6 +4,7 @@ import { events } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { appUrl } from "@/lib/app-url";
 import { BRAND_NAME } from "@/lib/brand";
+import { eventRobots } from "@/lib/event-visibility";
 
 /**
  * The event page itself is a client component (it runs the checkout), so it
@@ -56,7 +57,13 @@ export async function generateMetadata({
       : appUrl(event.coverImage)
     : undefined;
 
+  // Unlisted: keep the link preview (sharing the link is the point) but tell
+  // search engines not to index it. Undefined for public events, so their
+  // metadata is unchanged.
+  const robots = eventRobots(event);
+
   return {
+    ...(robots ? { robots } : {}),
     // Bare title: the root layout's metadata template already appends
     // the brand name, and returning it here produced "<event> · Wetin Dey ·
     // Wetin Dey" in the tab and in every shared link preview.
