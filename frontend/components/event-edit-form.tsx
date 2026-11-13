@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { CoverImageField } from "@/components/cover-image-field";
+import { VisibilityPicker } from "@/components/visibility-picker";
+import type { EventVisibility } from "@/lib/event-visibility";
 
 export type EditableEvent = {
   id: string;
@@ -23,6 +25,7 @@ export type EditableEvent = {
   /** The date and venue are stored; these say not to show them. */
   dateTbd: boolean;
   venueTbd: boolean;
+  visibility: EventVisibility;
 };
 
 /** datetime-local wants "YYYY-MM-DDTHH:mm" in local time. */
@@ -55,6 +58,7 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
   const [coverImage, setCoverImage] = useState<string | null>(event.coverImage);
   const [dateTbd, setDateTbd] = useState(event.dateTbd);
   const [venueTbd, setVenueTbd] = useState(event.venueTbd);
+  const [visibility, setVisibility] = useState<EventVisibility>(event.visibility);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -93,6 +97,8 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
           timeZone: form.timeZone,
           dateTbd,
           venueTbd,
+          // Only sent when changed, so an ordinary edit never touches it.
+          ...(visibility !== event.visibility ? { visibility } : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -328,6 +334,10 @@ export function EventEditForm({ event }: { event: EditableEvent }) {
             holding a ticket.
           </p>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-line-dark bg-surface p-6">
+        <VisibilityPicker value={visibility} onChange={setVisibility} />
       </div>
 
       {error && (

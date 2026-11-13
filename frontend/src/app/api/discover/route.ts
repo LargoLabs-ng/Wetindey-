@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { events, ticketTypes, tickets, universities, users } from "@/db/schema";
 import { availableQuantity } from "@/lib/inventory";
+import { publicListingWhere } from "@/lib/event-visibility";
 import { getSessionUserId } from "@/lib/authz";
 
 /**
@@ -50,7 +51,8 @@ export async function GET() {
   const published = await db
     .select()
     .from(events)
-    .where(and(eq(events.status, "published"), isNull(events.archivedAt)))
+    // Live AND listed — unlisted events are reachable by link, never listed.
+    .where(publicListingWhere())
     .orderBy(asc(events.startDatetime));
 
   const tiers = await db.select().from(ticketTypes);

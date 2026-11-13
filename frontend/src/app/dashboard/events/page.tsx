@@ -81,6 +81,9 @@ export default async function EventsPage() {
               >
                 {event.archivedAt ? "archived" : event.status}
               </span>
+              {event.visibility === "unlisted" && (
+                <span className="shrink-0 rounded-full bg-purple/15 px-2.5 py-1 text-xs font-medium text-purple-lift">Unlisted</span>
+              )}
             </Link>
           ))}
         </div>

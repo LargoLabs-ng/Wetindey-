@@ -122,6 +122,14 @@ export default async function EventDetailPage({
             >
               {event.archivedAt ? "archived" : event.status}
             </span>
+            {event.visibility === "unlisted" && (
+              <span
+                className="rounded-full bg-purple/15 px-2.5 py-1 text-xs font-medium text-purple-lift"
+                title="Not listed on Wetin Dey or in search engines. Anyone with the link can open it."
+              >
+                Unlisted
+              </span>
+            )}
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-on-dark">
             {event.title}

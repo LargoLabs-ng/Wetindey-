@@ -160,3 +160,13 @@ describe("describeChanges — provisional dates and venues", () => {
     ]);
   });
 });
+
+describe("describeChanges — visibility is not news to ticket-holders", () => {
+  it("switching public ↔ unlisted emails nobody", () => {
+    // The PATCH route compares whole event rows; a visibility-only change
+    // must not produce an email-worthy difference.
+    const before = { ...BASE, visibility: "public" };
+    const after = { ...BASE, visibility: "unlisted" };
+    expect(describeChanges(before, after)).toEqual([]);
+  });
+});

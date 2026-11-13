@@ -8,6 +8,7 @@ import { can } from "@/lib/permissions";
 import { MAX_GALLERY, MAX_SPONSORS, isSafeHttpUrl } from "@/lib/media";
 import { describeChanges, notifyDetailsChanged } from "@/lib/notify-change";
 import { isValidTimeZone } from "@/lib/early-bird";
+import { EVENT_VISIBILITIES } from "@/lib/event-visibility";
 
 /**
  * An optional field whose blank is a deletion.
@@ -57,6 +58,9 @@ const updateEventSchema = z.object({
   salesStart: z.coerce.date().optional(),
   salesEnd: z.coerce.date().optional(),
   platformFeePaidBy: z.enum(["organizer", "buyer"]).optional(),
+  // Listed or unlisted. Unlisted stays published — link, checkout and tickets
+  // all keep working; it is only left out of discovery and search engines.
+  visibility: z.enum(EVENT_VISIBILITIES).optional(),
 
   /**
    * "Not confirmed yet." The date and venue are still stored — see the
