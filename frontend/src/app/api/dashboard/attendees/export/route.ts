@@ -7,9 +7,13 @@ import {
   tickets,
   ticketTypes,
   orders,
+  promoCodes,
 } from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
 import { answerColumns } from "@/lib/registration";
+import { describeOrderCode } from "@/lib/promo";
+import { promoExportCells, promoExportHeader } from "@/lib/attendee-export";
+import { can } from "@/lib/permissions";
 
 /** Wrap a value so commas, quotes and newlines can't break the CSV. */
 function csvCell(value: unknown): string {
@@ -34,6 +38,10 @@ export async function GET(request: NextRequest) {
       );
     }
     const { event } = access;
+    // The naira column follows the payouts page: finance:view only.
+    const canSeeFinances = can(access.role, "finance:view", {
+      canSeeFinances: access.canSeeFinances,
+    });
 
     const rows = await db
       .select({
@@ -46,10 +54,17 @@ export async function GET(request: NextRequest) {
         ticketType: ticketTypes.name,
         orderId: tickets.orderId,
         orderCreatedAt: orders.createdAt,
+        // Which code the order used. Read-only: what checkout recorded.
+        discountAmount: orders.discountAmount,
+        commissionAmount: orders.commissionAmount,
+        promoCode: promoCodes.code,
+        promoKind: promoCodes.kind,
+        promoterName: promoCodes.promoterName,
       })
       .from(tickets)
       .leftJoin(ticketTypes, eq(tickets.ticketTypeId, ticketTypes.id))
       .leftJoin(orders, eq(tickets.orderId, orders.id))
+      .leftJoin(promoCodes, eq(orders.promoCodeId, promoCodes.id))
       .where(eq(tickets.eventId, event.id));
 
     // One extra column per question the organiser asked. Answers live on the
@@ -92,6 +107,7 @@ export async function GET(request: NextRequest) {
       "Status",
       "Purchased",
       "Checked in",
+      ...promoExportHeader(canSeeFinances),
       ...extraColumns,
     ];
 
@@ -105,6 +121,18 @@ export async function GET(request: NextRequest) {
         row.status,
         (row.orderCreatedAt ?? row.createdAt).toISOString(),
         row.checkedInAt ? row.checkedInAt.toISOString() : "",
+        ...promoExportCells(
+          {
+            orderId: row.orderId,
+            orderCode: describeOrderCode(row, {
+              code: row.promoCode,
+              kind: row.promoKind,
+              promoterName: row.promoterName,
+            }),
+            discountAmount: row.discountAmount,
+          },
+          canSeeFinances
+        ),
         ...extraColumns.map((c) => bag[c] ?? ""),
       ]
         .map(csvCell)

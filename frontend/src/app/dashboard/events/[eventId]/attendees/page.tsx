@@ -25,6 +25,48 @@ interface Attendee {
    * matric number still works from the top of the page.
    */
   answers?: { label: string; value: string }[];
+  /**
+   * The code the ORDER used, if any. `deleted` means the order recorded a
+   * discount or commission but the code itself has since been deleted.
+   */
+  promoCode?: {
+    code: string;
+    kind: 'discount' | 'refer_to_earn';
+    promoterName: string | null;
+    deleted: boolean;
+  } | null;
+  /** The order's discount in naira — only sent to people who see finances. */
+  orderDiscount?: number;
+}
+
+/** "SUMMER20", "AMAKA10 · Referral (Amaka)", "Deleted code · Referral". */
+function codeLabel(promo: NonNullable<Attendee['promoCode']>): string {
+  if (promo.kind !== 'refer_to_earn') return promo.code;
+  return `${promo.code} · Referral${promo.promoterName ? ` (${promo.promoterName})` : ''}`;
+}
+
+function CodeBadge({ attendee }: { attendee: Attendee }) {
+  const promo = attendee.promoCode;
+  if (!promo) return <span style={{ color: 'var(--color-on-dark-3)' }}>—</span>;
+  const referral = promo.kind === 'refer_to_earn';
+  const discount =
+    typeof attendee.orderDiscount === 'number' && attendee.orderDiscount > 0
+      ? `₦${attendee.orderDiscount.toLocaleString('en-NG')} off this order`
+      : undefined;
+  return (
+    <span
+      title={discount}
+      className={`inline-block rounded px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${
+        promo.deleted ? 'italic' : 'font-mono'
+      }`}
+      style={{
+        backgroundColor: referral ? 'rgba(255, 107, 74, 0.12)' : 'rgba(108, 60, 255, 0.15)',
+        color: referral ? 'var(--color-coral)' : 'var(--color-on-dark)',
+      }}
+    >
+      {codeLabel(promo)}
+    </span>
+  );
 }
 
 export default function AttendeesPage() {
@@ -125,7 +167,11 @@ export default function AttendeesPage() {
           // this box, and it only exists as an answer.
           (a.answers ?? []).some((ans) =>
             ans.value.toLowerCase().includes(query)
-          )
+          ) ||
+          // "Who used SUMMER20?" — the code, and the promoter behind a
+          // referral code.
+          (a.promoCode?.code ?? '').toLowerCase().includes(query) ||
+          (a.promoCode?.promoterName ?? '').toLowerCase().includes(query)
       );
     }
 
@@ -222,7 +268,7 @@ export default function AttendeesPage() {
             <Search className="absolute left-3 top-3 h-5 w-5" style={{ color: 'var(--color-on-dark-3)' }} />
             <input
               type="text"
-              placeholder="Search by name, email, or ticket ID"
+              placeholder="Search by name, email, ticket ID or promo code"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full rounded border pl-10 pr-4 py-2"
@@ -353,6 +399,9 @@ export default function AttendeesPage() {
                       Ticket Type
                     </th>
                     <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-on-dark-2)' }}>
+                      Code
+                    </th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-on-dark-2)' }}>
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-sm font-semibold" style={{ color: 'var(--color-on-dark-2)' }}>
@@ -381,6 +430,9 @@ export default function AttendeesPage() {
                         </td>
                         <td className="px-6 py-4 text-sm" style={{ color: 'var(--color-on-dark-2)' }}>
                           {attendee.ticketType}
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          <CodeBadge attendee={attendee} />
                         </td>
                         <td className="px-6 py-4">
                           <span
@@ -456,6 +508,18 @@ export default function AttendeesPage() {
                   TICKET TYPE
                 </p>
                 <p style={{ color: 'var(--color-on-dark-2)' }}>{selectedAttendee.ticketType}</p>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold" style={{ color: 'var(--color-on-dark-3)' }}>
+                  PROMO CODE
+                </p>
+                <p style={{ color: 'var(--color-on-dark-2)' }}>
+                  {selectedAttendee.promoCode ? codeLabel(selectedAttendee.promoCode) : 'None'}
+                  {typeof selectedAttendee.orderDiscount === 'number' &&
+                    selectedAttendee.orderDiscount > 0 &&
+                    ` · ₦${selectedAttendee.orderDiscount.toLocaleString('en-NG')} off this order`}
+                </p>
               </div>
 
               <div>
