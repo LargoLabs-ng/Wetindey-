@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyPromo,
   checkCode,
+  DELETED_CODE_LABEL,
+  describeOrderCode,
   normalizeCode,
+  promoKindLabel,
   type PromoCode,
 } from "./promo";
 
@@ -153,3 +156,62 @@ describe("applyPromo — no code", () => {
 });
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+describe("describeOrderCode — what the guest list shows", () => {
+  const none = { discountAmount: "0", commissionAmount: "0" };
+
+  it("shows the code on a discount order", () => {
+    expect(
+      describeOrderCode(
+        { discountAmount: "1000.00", commissionAmount: "0" },
+        { code: "SUMMER20", kind: "discount", promoterName: null }
+      )
+    ).toEqual({ code: "SUMMER20", kind: "discount", promoterName: null, deleted: false });
+  });
+
+  it("identifies a referral code and who earns on it", () => {
+    expect(
+      describeOrderCode(
+        { discountAmount: "0", commissionAmount: "500.00" },
+        { code: "AMAKA10", kind: "refer_to_earn", promoterName: "Amaka" }
+      )
+    ).toEqual({ code: "AMAKA10", kind: "refer_to_earn", promoterName: "Amaka", deleted: false });
+  });
+
+  it("shows nothing when no code was used", () => {
+    expect(describeOrderCode(none, null)).toBeNull();
+    // A left join with no match comes back as a row of nulls.
+    expect(describeOrderCode(none, { code: null, kind: null, promoterName: null })).toBeNull();
+  });
+
+  it("says 'Deleted code' when a discount was recorded but the code is gone", () => {
+    expect(
+      describeOrderCode({ discountAmount: "2500.00", commissionAmount: "0" }, null)
+    ).toEqual({ code: DELETED_CODE_LABEL, kind: "discount", promoterName: null, deleted: true });
+  });
+
+  it("says 'Deleted code' for a deleted referral code, and keeps it a referral", () => {
+    const shown = describeOrderCode({ discountAmount: "0", commissionAmount: "300" }, null);
+    expect(shown?.code).toBe(DELETED_CODE_LABEL);
+    expect(shown?.kind).toBe("refer_to_earn");
+    expect(shown?.deleted).toBe(true);
+  });
+
+  it("ignores junk amounts rather than inventing a code", () => {
+    expect(describeOrderCode({ discountAmount: null, commissionAmount: undefined }, null)).toBeNull();
+    expect(describeOrderCode({ discountAmount: "abc", commissionAmount: "-5" }, null)).toBeNull();
+  });
+
+  it("never shows a promoter name on a discount code", () => {
+    expect(
+      describeOrderCode(none, { code: "X1", kind: "discount", promoterName: "Stale name" })?.promoterName
+    ).toBeNull();
+  });
+});
+
+describe("promoKindLabel", () => {
+  it("names the two kinds the way organisers see them", () => {
+    expect(promoKindLabel("discount")).toBe("Discount");
+    expect(promoKindLabel("refer_to_earn")).toBe("Referral");
+  });
+});

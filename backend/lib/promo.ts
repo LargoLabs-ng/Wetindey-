@@ -161,3 +161,71 @@ export type CodePerformance = {
   usedCount: number;
   active: boolean;
 };
+
+/**
+ * Which code an order used, as the guest list shows it.
+ *
+ * Read-only: this describes what an order already recorded at checkout. It
+ * never decides a price.
+ *
+ * Deleting a code sets the order's promo_code_id to null (ON DELETE SET
+ * NULL) but leaves the order's own discount and commission figures alone.
+ * So an order with money recorded against it and no code row is an order
+ * whose code was deleted — shown as "Deleted code" rather than as if no
+ * code had been used. A deleted code that moved no money (a 0% code) can't
+ * be told apart from no code at all, and shows as none.
+ */
+export const DELETED_CODE_LABEL = "Deleted code";
+
+export type OrderCode = {
+  /** The code as typed, or DELETED_CODE_LABEL. */
+  code: string;
+  kind: PromoKind;
+  /** Who earns on a referral code. Null for discounts and deleted codes. */
+  promoterName: string | null;
+  deleted: boolean;
+};
+
+const positive = (n: string | number | null | undefined) => {
+  const v = Number(n);
+  return Number.isFinite(v) && v > 0;
+};
+
+export function describeOrderCode(
+  order: {
+    discountAmount: string | number | null | undefined;
+    commissionAmount: string | number | null | undefined;
+  },
+  code:
+    | { code: string | null; kind: PromoKind | null; promoterName: string | null }
+    | null
+    | undefined
+): OrderCode | null {
+  if (code?.code && code.kind) {
+    return {
+      code: code.code,
+      kind: code.kind,
+      promoterName: code.kind === "refer_to_earn" ? code.promoterName : null,
+      deleted: false,
+    };
+  }
+
+  const discounted = positive(order.discountAmount);
+  if (discounted || positive(order.commissionAmount)) {
+    return {
+      code: DELETED_CODE_LABEL,
+      // The figures still say which kind it was: a discount takes money off,
+      // a referral leaves the price alone and records a commission.
+      kind: discounted ? "discount" : "refer_to_earn",
+      promoterName: null,
+      deleted: true,
+    };
+  }
+
+  return null;
+}
+
+/** "Discount" or "Referral" — the words organisers see for each kind. */
+export function promoKindLabel(kind: PromoKind): string {
+  return kind === "refer_to_earn" ? "Referral" : "Discount";
+}

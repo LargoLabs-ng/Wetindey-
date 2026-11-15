@@ -7,10 +7,12 @@ import {
   tickets,
   ticketTypes,
   orders,
+  promoCodes,
 } from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 import { answerColumns } from "@/lib/registration";
+import { describeOrderCode } from "@/lib/promo";
 
 /**
  * GET /api/dashboard/attendees?eventId=...
@@ -30,6 +32,10 @@ export async function GET(request: NextRequest) {
       );
     }
     const { event } = access;
+    // Naira amounts follow the payouts page: finance:view only.
+    const canSeeFinances = can(access.role, "finance:view", {
+      canSeeFinances: access.canSeeFinances,
+    });
 
     const rows = await db
       .select({
@@ -42,10 +48,17 @@ export async function GET(request: NextRequest) {
         ticketType: ticketTypes.name,
         orderId: tickets.orderId,
         orderCreatedAt: orders.createdAt,
+        // Which code the order used. Read-only: what checkout recorded.
+        discountAmount: orders.discountAmount,
+        commissionAmount: orders.commissionAmount,
+        promoCode: promoCodes.code,
+        promoKind: promoCodes.kind,
+        promoterName: promoCodes.promoterName,
       })
       .from(tickets)
       .leftJoin(ticketTypes, eq(tickets.ticketTypeId, ticketTypes.id))
       .leftJoin(orders, eq(tickets.orderId, orders.id))
+      .leftJoin(promoCodes, eq(orders.promoCodeId, promoCodes.id))
       .where(eq(tickets.eventId, event.id));
 
     // The organiser's extra questions are answered once per ORDER, so three
@@ -90,6 +103,13 @@ export async function GET(request: NextRequest) {
         purchaseTime: (row.orderCreatedAt ?? row.createdAt).toISOString(),
         checkedInAt: row.checkedInAt ? row.checkedInAt.toISOString() : undefined,
         answers: byOrder.get(row.orderId) ?? [],
+        promoCode: describeOrderCode(row, {
+          code: row.promoCode,
+          kind: row.promoKind,
+          promoterName: row.promoterName,
+        }),
+        // The ORDER's discount, shared by every ticket bought together.
+        ...(canSeeFinances ? { orderDiscount: Number(row.discountAmount) || 0 } : {}),
       }))
       .sort((a, b) => b.purchaseTime.localeCompare(a.purchaseTime));
 
@@ -100,6 +120,7 @@ export async function GET(request: NextRequest) {
       // any label that only survives in old answers.
       answerColumns: answerColumns(fieldRows, answerRows),
       canRefund: can(access.role, "refund:issue"),
+      canSeeFinances,
     });
   } catch (error) {
     console.error("Error fetching attendees:", error);
