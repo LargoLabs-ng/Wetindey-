@@ -406,6 +406,14 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
         {saved && <span className="text-sm text-purple-lift">Saved.</span>}
       </div>
 
+      {/* Repeated beside the button: on a phone the message at the top of
+          the editor is a long scroll away from where Save was tapped. */}
+      {error && (
+        <p role="alert" className="text-sm text-coral">
+          {error}
+        </p>
+      )}
+
       {owed > 0 && (
         // Said plainly, because the alternative is an organiser assuming we
         // handle it and a promoter never being paid.
@@ -447,11 +455,14 @@ function TierScope({
   const limited = !row.appliesToAllTiers;
   // Tiers deleted since this code was limited are not shown or sent.
   const picked = row.ticketTypeIds.filter((id) => tiers.some((t) => t.id === id));
+  // Selected = the dashboard's accent colour (the `gold` token), so it reads
+  // at a glance on a phone in either theme. `bg-purple` sits too close to
+  // the dashboard background to tell on from off.
   const segment = (on: boolean) =>
-    `min-h-11 rounded-lg px-3 text-sm font-semibold transition-colors ${
+    `min-h-11 rounded-lg border px-3 text-sm font-semibold transition-colors ${
       on
-        ? "bg-purple text-white"
-        : "border border-line-dark text-on-dark-2 hover:text-on-dark"
+        ? "border-gold bg-gold/15 text-on-dark"
+        : "border-line-dark text-on-dark-2 hover:text-on-dark"
     }`;
 
   return (
@@ -502,11 +513,11 @@ function TierScope({
                   }
                   className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-4 text-sm font-medium transition-colors ${
                     on
-                      ? "border-purple bg-purple/15 text-on-dark"
+                      ? "border-gold bg-gold/15 font-semibold text-on-dark"
                       : "border-line-dark text-on-dark-2 hover:text-on-dark"
                   }`}
                 >
-                  {on && <Check className="h-4 w-4 text-purple-lift" />}
+                  {on && <Check className="h-4 w-4 text-gold" />}
                   {t.name}
                 </button>
               );

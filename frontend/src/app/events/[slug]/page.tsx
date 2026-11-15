@@ -282,10 +282,15 @@ export default function EventDetailPage() {
     Math.max(0, faceValue - (promoEffect?.discount ?? 0))
   );
 
-  /** After the tier or quantity changes, re-check an applied code against them. */
+  /**
+   * After the tier or quantity changes, re-check the code in the box against
+   * them — whether it was applied or had just been refused. So a buyer who
+   * taps Regular (code refused) and back to VIP gets the discount back
+   * without having to tap Apply again.
+   */
   const refreshPromo = (tier: typeof selectedTicketType, qty: number) => {
-    if (!promoEffect) return;
-    const code = promoEffect.code;
+    const code = promoEffect?.code ?? (promoError ? promoInput : '');
+    if (!code.trim()) return;
     setPromoEffect(null);
     void applyPromo(tier, qty, code);
   };
