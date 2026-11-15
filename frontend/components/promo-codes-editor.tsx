@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Check, Loader2, Plus, Trash2 } from "lucide-react";
 import { naira } from "@/lib/fees";
 import type { PromoKind } from "@/lib/promo";
 
@@ -24,6 +24,9 @@ type Row = {
   rate: string;
   usageLimit: string;
   active: boolean;
+  /** true: every ticket type. false: only `ticketTypeIds`. */
+  appliesToAllTiers: boolean;
+  ticketTypeIds: string[];
   // Read-only, from the server.
   orders?: number;
   tickets?: number;
@@ -49,8 +52,12 @@ function blank(kind: PromoKind): Row {
     rate: kind === "discount" ? "10" : "5",
     usageLimit: "",
     active: true,
+    appliesToAllTiers: true,
+    ticketTypeIds: [],
   };
 }
+
+type Tier = { id: string; name: string };
 
 type ServerCode = {
   id: string;
@@ -62,6 +69,8 @@ type ServerCode = {
   usageLimit: number | null;
   usedCount: number;
   active: boolean;
+  appliesToAllTiers?: boolean;
+  ticketTypeIds?: string[];
   orders: number;
   tickets: number;
   revenue: number;
@@ -80,6 +89,8 @@ function toRow(c: ServerCode): Row {
     rate: String(c.rate),
     usageLimit: c.usageLimit === null ? "" : String(c.usageLimit),
     active: c.active,
+    appliesToAllTiers: c.appliesToAllTiers ?? true,
+    ticketTypeIds: c.ticketTypeIds ?? [],
     orders: c.orders,
     tickets: c.tickets,
     revenue: c.revenue,
@@ -104,6 +115,25 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
    * and says so.
    */
   const [canSeeMoney, setCanSeeMoney] = useState(true);
+  /** This event's ticket types, for "Only some ticket types". */
+  const [tiers, setTiers] = useState<Tier[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/events/${eventId}/ticket-types`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        const list: Tier[] = (Array.isArray(data) ? data : data.ticketTypes ?? []).map(
+          (t: Tier) => ({ id: t.id, name: t.name })
+        );
+        setTiers(list);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +179,12 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
           rate: Number(r.rate) || 0,
           usageLimit: r.usageLimit.trim() ? Number(r.usageLimit) : null,
           active: r.active,
+          appliesToAllTiers: r.appliesToAllTiers,
+          // Only tiers that still exist: one deleted since loading would be
+          // refused by the server as "not on this event".
+          ticketTypeIds: r.appliesToAllTiers
+            ? []
+            : r.ticketTypeIds.filter((id) => tiers.some((t) => t.id === id)),
         })),
       }),
     });
@@ -257,7 +293,7 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
                   setSaved(false);
                   setRows((rs) => rs.filter((r) => r.key !== row.key));
                 }}
-                className="self-end rounded-lg border border-line-dark p-2 text-on-dark-3 transition-colors hover:text-coral"
+                className="flex min-h-11 min-w-11 items-center justify-center self-end justify-self-end rounded-lg border border-line-dark text-on-dark-3 transition-colors hover:text-coral"
                 aria-label={`Remove ${row.code || "this code"}`}
               >
                 <Trash2 className="h-4 w-4" />
@@ -300,6 +336,12 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
               </label>
             </div>
 
+            <TierScope
+              row={row}
+              tiers={tiers}
+              onChange={(next) => patch(row.key, next)}
+            />
+
             {/* Only once it has done something. A row of zeroes on a code
                 nobody has used yet is noise. */}
             {used > 0 && (
@@ -337,7 +379,7 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
             setSaved(false);
             setRows((rs) => [...rs, blank("discount")]);
           }}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line-dark px-4 py-2 text-sm font-semibold text-on-dark-2 transition-colors hover:text-on-dark"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-line-dark px-4 text-sm font-semibold text-on-dark-2 transition-colors hover:text-on-dark"
         >
           <Plus className="h-4 w-4" />
           Discount code
@@ -348,7 +390,7 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
             setSaved(false);
             setRows((rs) => [...rs, blank("refer_to_earn")]);
           }}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-line-dark px-4 py-2 text-sm font-semibold text-on-dark-2 transition-colors hover:text-on-dark"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-line-dark px-4 text-sm font-semibold text-on-dark-2 transition-colors hover:text-on-dark"
         >
           <Plus className="h-4 w-4" />
           Refer-to-earn code
@@ -357,12 +399,20 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
           type="button"
           disabled={saving}
           onClick={save}
-          className="rounded-lg bg-purple px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-purple-deep disabled:opacity-60"
+          className="min-h-11 rounded-lg bg-purple px-5 text-sm font-semibold text-white transition-colors hover:bg-purple-deep disabled:opacity-60"
         >
           {saving ? "Saving…" : "Save codes"}
         </button>
         {saved && <span className="text-sm text-purple-lift">Saved.</span>}
       </div>
+
+      {/* Repeated beside the button: on a phone the message at the top of
+          the editor is a long scroll away from where Save was tapped. */}
+      {error && (
+        <p role="alert" className="text-sm text-coral">
+          {error}
+        </p>
+      )}
 
       {owed > 0 && (
         // Said plainly, because the alternative is an organiser assuming we
@@ -383,5 +433,109 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
         used it, and what they were charged.
       </p>
     </div>
+  );
+}
+
+/**
+ * "Works on": every ticket type, or only the ones ticked.
+ *
+ * Phone-first: two full-width halves of one control, then ticket types as
+ * large tappable chips that wrap — no dropdowns, nothing smaller than a
+ * thumb (44px tall).
+ */
+function TierScope({
+  row,
+  tiers,
+  onChange,
+}: {
+  row: Row;
+  tiers: Tier[];
+  onChange: (next: Partial<Row>) => void;
+}) {
+  const limited = !row.appliesToAllTiers;
+  // Tiers deleted since this code was limited are not shown or sent.
+  const picked = row.ticketTypeIds.filter((id) => tiers.some((t) => t.id === id));
+  // Selected = the dashboard's accent colour (the `gold` token), so it reads
+  // at a glance on a phone in either theme. `bg-purple` sits too close to
+  // the dashboard background to tell on from off.
+  const segment = (on: boolean) =>
+    `min-h-11 rounded-lg border px-3 text-sm font-semibold transition-colors ${
+      on
+        ? "border-gold bg-gold/15 text-on-dark"
+        : "border-line-dark text-on-dark-2 hover:text-on-dark"
+    }`;
+
+  return (
+    <fieldset className="mt-4">
+      <legend className={caption}>Works on</legend>
+      <div className="grid grid-cols-2 gap-2 sm:max-w-sm">
+        <button
+          type="button"
+          aria-pressed={!limited}
+          onClick={() => onChange({ appliesToAllTiers: true })}
+          className={segment(!limited)}
+        >
+          All ticket types
+        </button>
+        <button
+          type="button"
+          aria-pressed={limited}
+          disabled={tiers.length === 0}
+          onClick={() => onChange({ appliesToAllTiers: false, ticketTypeIds: picked })}
+          className={`${segment(limited)} disabled:opacity-40`}
+        >
+          Only some
+        </button>
+      </div>
+
+      {tiers.length === 0 && (
+        <p className="mt-2 text-xs text-on-dark-3">
+          Add ticket types first to limit a code to some of them.
+        </p>
+      )}
+
+      {limited && tiers.length > 0 && (
+        <>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {tiers.map((t) => {
+              const on = picked.includes(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() =>
+                    onChange({
+                      ticketTypeIds: on
+                        ? picked.filter((id) => id !== t.id)
+                        : [...picked, t.id],
+                    })
+                  }
+                  className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-4 text-sm font-medium transition-colors ${
+                    on
+                      ? "border-gold bg-gold/15 font-semibold text-on-dark"
+                      : "border-line-dark text-on-dark-2 hover:text-on-dark"
+                  }`}
+                >
+                  {on && <Check className="h-4 w-4 text-gold" />}
+                  {t.name}
+                </button>
+              );
+            })}
+          </div>
+          <p
+            className={`mt-2 text-xs ${
+              picked.length === 0 ? "text-coral" : "text-on-dark-3"
+            }`}
+          >
+            {picked.length === 0
+              ? "Pick at least one ticket type."
+              : `Buyers can only use ${row.code || "this code"} on ${picked
+                  .map((id) => tiers.find((t) => t.id === id)?.name)
+                  .join(", ")}.`}
+          </p>
+        </>
+      )}
+    </fieldset>
   );
 }

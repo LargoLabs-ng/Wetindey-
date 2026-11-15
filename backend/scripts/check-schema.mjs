@@ -153,6 +153,15 @@ const EXPECT = [
     tables: [],
     types: ["event_visibility"],
   },
+  {
+    migration: "0021_promo_code_tiers.sql",
+    columns: [
+      ["promo_codes", "applies_to_all_tiers"],
+      ["promo_code_ticket_types", "ticket_type_id"],
+    ],
+    tables: ["promo_code_ticket_types"],
+    types: [],
+  },
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });

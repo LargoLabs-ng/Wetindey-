@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { promoCodes } from "@/db/schema";
 import {
   applyPromo,
   checkCode,
+  codeAppliesToTier,
+  tierScopeError,
   DELETED_CODE_LABEL,
   describeOrderCode,
   normalizeCode,
@@ -213,5 +218,113 @@ describe("promoKindLabel", () => {
   it("names the two kinds the way organisers see them", () => {
     expect(promoKindLabel("discount")).toBe("Discount");
     expect(promoKindLabel("refer_to_earn")).toBe("Referral");
+  });
+});
+
+describe("checkCode — ticket-type limits", () => {
+  const VIP = "11111111-1111-4111-8111-111111111111";
+  const REG = "22222222-2222-4222-8222-222222222222";
+
+  it("an existing code with no limit fields works on any tier", () => {
+    expect(checkCode(code(), { ticketTypeId: VIP }).ok).toBe(true);
+    expect(checkCode(code(), { ticketTypeId: REG }).ok).toBe(true);
+    expect(checkCode(code()).ok).toBe(true);
+  });
+
+  it("an explicit all-tiers code works on any tier", () => {
+    expect(checkCode(code({ appliesToAllTiers: true, ticketTypeIds: [] }), { ticketTypeId: REG }).ok).toBe(true);
+  });
+
+  it("a limited code works on a listed tier", () => {
+    const vipOnly = code({ appliesToAllTiers: false, ticketTypeIds: [VIP] });
+    expect(checkCode(vipOnly, { ticketTypeId: VIP }).ok).toBe(true);
+  });
+
+  it("a limited code is refused on another tier, in words a buyer understands", () => {
+    const vipOnly = code({ appliesToAllTiers: false, ticketTypeIds: [VIP] });
+    expect(checkCode(vipOnly, { ticketTypeId: REG })).toEqual({
+      ok: false,
+      reason: "That code doesn't apply to this ticket type.",
+    });
+  });
+
+  it("a limited code whose tiers were all deleted is refused, not widened", () => {
+    const orphaned = code({ appliesToAllTiers: false, ticketTypeIds: [] });
+    expect(checkCode(orphaned, { ticketTypeId: VIP }).ok).toBe(false);
+    expect(checkCode(orphaned, { ticketTypeId: REG }).ok).toBe(false);
+  });
+
+  it("a limited code with no tier given is refused", () => {
+    const vipOnly = code({ appliesToAllTiers: false, ticketTypeIds: [VIP] });
+    expect(codeAppliesToTier(vipOnly, null)).toBe(false);
+    expect(checkCode(vipOnly).ok).toBe(false);
+  });
+
+  it("inactive and used-up still win, with their own reasons", () => {
+    const vipOnly = { appliesToAllTiers: false, ticketTypeIds: [VIP] };
+    expect(checkCode(code({ ...vipOnly, active: false }), { ticketTypeId: VIP })).toEqual({
+      ok: false,
+      reason: "That code isn't active.",
+    });
+    expect(
+      checkCode(code({ ...vipOnly, usageLimit: 1, usedCount: 1 }), { ticketTypeId: VIP })
+    ).toEqual({ ok: false, reason: "That code has been used up." });
+  });
+
+  it("works for referral codes the same way", () => {
+    const ref = code({ kind: "refer_to_earn", appliesToAllTiers: false, ticketTypeIds: [VIP] });
+    expect(checkCode(ref, { ticketTypeId: VIP }).ok).toBe(true);
+    expect(checkCode(ref, { ticketTypeId: REG }).ok).toBe(false);
+  });
+
+  it("the discount maths is untouched by a limit", () => {
+    const vipOnly = code({ appliesToAllTiers: false, ticketTypeIds: [VIP] });
+    expect(applyPromo(10000, vipOnly)).toEqual(applyPromo(10000, code()));
+  });
+});
+
+describe("tierScopeError — saving limits", () => {
+  const tiers = ["t-vip", "t-reg"];
+
+  it("all-tiers codes and codes without limit fields are fine", () => {
+    expect(tierScopeError([{ code: "A" }, { code: "B", appliesToAllTiers: true }], tiers)).toBeNull();
+  });
+
+  it("a limited code on this event's tiers is fine", () => {
+    expect(
+      tierScopeError([{ code: "VIP10", appliesToAllTiers: false, ticketTypeIds: ["t-vip"] }], tiers)
+    ).toBeNull();
+  });
+
+  it("a limited code with no tiers is refused with a sentence", () => {
+    expect(tierScopeError([{ code: "VIP10", appliesToAllTiers: false, ticketTypeIds: [] }], tiers)).toBe(
+      'Pick at least one ticket type for "VIP10", or choose All ticket types.'
+    );
+  });
+
+  it("a tier from another event is refused", () => {
+    expect(
+      tierScopeError([{ code: "VIP10", appliesToAllTiers: false, ticketTypeIds: ["someone-elses"] }], tiers)
+    ).toMatch(/isn't on this event/);
+  });
+});
+
+describe("migration 0021 — existing codes keep working on every tier", () => {
+  it("the schema defaults to all tiers and the column is required", () => {
+    expect(promoCodes.appliesToAllTiers.default).toBe(true);
+    expect(promoCodes.appliesToAllTiers.notNull).toBe(true);
+  });
+
+  it("is additive, defaults to all tiers, and is safe to run twice", () => {
+    const sqlText = readFileSync(
+      path.resolve(__dirname, "../migrations/0021_promo_code_tiers.sql"),
+      "utf8"
+    );
+    expect(sqlText).toContain(
+      `ADD COLUMN IF NOT EXISTS "applies_to_all_tiers" boolean NOT NULL DEFAULT true`
+    );
+    expect(sqlText).toContain(`CREATE TABLE IF NOT EXISTS "promo_code_ticket_types"`);
+    expect(sqlText).toContain(`CREATE INDEX IF NOT EXISTS "promo_code_ticket_types_tier_idx"`);
+    expect(sqlText).not.toMatch(/\bDROP\b|\bUPDATE\b|\bDELETE\b(?! CASCADE)/i);
   });
 });
