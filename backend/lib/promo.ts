@@ -31,6 +31,14 @@ export type PromoCode = {
   usageLimit: number | null;
   usedCount: number;
   active: boolean;
+  /**
+   * Ticket-type limit (migration 0021). Absent or true: any ticket type.
+   * false: only the types in `ticketTypeIds` — and none if that is empty,
+   * so a code whose allowed tier was deleted stops working rather than
+   * quietly applying to everything.
+   */
+  appliesToAllTiers?: boolean;
+  ticketTypeIds?: string[];
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -66,7 +74,10 @@ export type PromoCheck =
  * without implying the buyer did something wrong — "this code has been used
  * up" is a fact about the code, not an accusation.
  */
-export function checkCode(code: PromoCode | null | undefined): PromoCheck {
+export function checkCode(
+  code: PromoCode | null | undefined,
+  options: { ticketTypeId?: string | null } = {}
+): PromoCheck {
   if (!code) return { ok: false, reason: "We don't recognise that code." };
   if (!code.active) return { ok: false, reason: "That code isn't active." };
 
@@ -74,7 +85,52 @@ export function checkCode(code: PromoCode | null | undefined): PromoCheck {
     return { ok: false, reason: "That code has been used up." };
   }
 
+  if (!codeAppliesToTier(code, options.ticketTypeId)) {
+    return { ok: false, reason: "That code doesn't apply to this ticket type." };
+  }
+
   return { ok: true, code };
+}
+
+/**
+ * Whether a code may be used on this ticket type.
+ *
+ * A limited code with no ticket type to check against is refused: the
+ * caller didn't say which tier, so we can't say yes. Every current caller
+ * passes one.
+ */
+export function codeAppliesToTier(
+  code: Pick<PromoCode, "appliesToAllTiers" | "ticketTypeIds">,
+  ticketTypeId: string | null | undefined
+): boolean {
+  if (code.appliesToAllTiers !== false) return true;
+  if (!ticketTypeId) return false;
+  return (code.ticketTypeIds ?? []).includes(ticketTypeId);
+}
+
+/**
+ * Validate the ticket-type limits an organiser is saving.
+ *
+ * Returns a sentence for the organiser, or null when everything is fine.
+ * `eventTierIds` are the event's own ticket types: a limit naming another
+ * event's tier is refused rather than silently dropped.
+ */
+export function tierScopeError(
+  codes: { code: string; appliesToAllTiers?: boolean; ticketTypeIds?: string[] }[],
+  eventTierIds: string[]
+): string | null {
+  const mine = new Set(eventTierIds);
+  for (const c of codes) {
+    if (c.appliesToAllTiers !== false) continue;
+    const ids = c.ticketTypeIds ?? [];
+    if (ids.length === 0) {
+      return `Pick at least one ticket type for "${c.code}", or choose All ticket types.`;
+    }
+    if (ids.some((id) => !mine.has(id))) {
+      return `"${c.code}" names a ticket type that isn't on this event. Refresh and try again.`;
+    }
+  }
+  return null;
 }
 
 export type PromoEffect = {

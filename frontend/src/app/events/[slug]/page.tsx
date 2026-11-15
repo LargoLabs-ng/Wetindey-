@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { quoteOrder, naira } from '@/lib/fees';
 import {
   ArrowLeft,
@@ -127,6 +127,7 @@ export default function EventDetailPage() {
     { code: string; discount: number; message: string } | null
   >(null);
   const [promoError, setPromoError] = useState<string | null>(null);
+  const promoRequest = useRef(0);
 
   /**
    * Remember who sent them.
@@ -281,10 +282,23 @@ export default function EventDetailPage() {
     Math.max(0, faceValue - (promoEffect?.discount ?? 0))
   );
 
+  /** After the tier or quantity changes, re-check an applied code against them. */
+  const refreshPromo = (tier: typeof selectedTicketType, qty: number) => {
+    if (!promoEffect) return;
+    const code = promoEffect.code;
+    setPromoEffect(null);
+    void applyPromo(tier, qty, code);
+  };
+
+  const changeQuantity = (next: number) => {
+    setQuantity(next);
+    refreshPromo(selectedTicketType, next);
+  };
+
   const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value);
     if (value > 0 && value <= Math.min(available, selectedTicketType?.maxPerOrder || 10)) {
-      setQuantity(value);
+      changeQuantity(value);
     }
   };
 
@@ -294,10 +308,26 @@ export default function EventDetailPage() {
     setAttendees(newAttendees);
   };
 
-  async function applyPromo() {
-    const typed = promoInput.trim();
-    if (!typed || !event || !selectedTicketType) return;
+  /**
+   * Preview a code against a ticket type and quantity — the selected ones
+   * unless the caller is about to change them.
+   *
+   * The preview's discount is a naira figure for ONE tier and quantity, so
+   * it is re-checked whenever either changes (see refreshPromo). Otherwise
+   * the page would keep quoting the old discount while the server charges
+   * the right amount, and a code limited to VIP would look applied on a
+   * Regular ticket it doesn't work on.
+   */
+  async function applyPromo(
+    tier: typeof selectedTicketType = selectedTicketType,
+    qty: number = quantity,
+    typedCode: string = promoInput
+  ) {
+    const typed = typedCode.trim();
+    if (!typed || !event || !tier) return;
 
+    // Quick taps on + / − fire several checks; only the newest may answer.
+    const mine = ++promoRequest.current;
     setPromoBusy(true);
     setPromoError(null);
     try {
@@ -306,10 +336,12 @@ export default function EventDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: typed,
-          faceValue: selectedPrice * quantity,
+          ticketTypeId: tier.id,
+          faceValue: activeTicketPrice(tier, priceClock).price * qty,
         }),
       });
       const data = await res.json();
+      if (mine !== promoRequest.current) return;
       if (!data.ok) {
         setPromoEffect(null);
         setPromoError(data.reason ?? "That code didn't work.");
@@ -321,9 +353,11 @@ export default function EventDetailPage() {
         message: data.message ?? 'Code applied.',
       });
     } catch {
-      setPromoError('Could not check that code — try again.');
+      if (mine === promoRequest.current) {
+        setPromoError('Could not check that code — try again.');
+      }
     } finally {
-      setPromoBusy(false);
+      if (mine === promoRequest.current) setPromoBusy(false);
     }
   }
 
@@ -391,7 +425,9 @@ export default function EventDetailPage() {
       }
 
       const { paymentUrl } = await response.json();
-      window.location.href = paymentUrl;
+      // assign() rather than `href =`: same navigation, and the React
+      // compiler's lint accepts a call where it rejects the assignment.
+      window.location.assign(paymentUrl);
     } catch (err) {
       setFormError(
         err instanceof Error ? err.message : 'Failed to process checkout'
@@ -825,6 +861,7 @@ export default function EventDetailPage() {
                           onClick={() => {
                             setSelectedTicket(t.id);
                             setQuantity(1);
+                            if (t.id !== selectedTicket) refreshPromo(t, 1);
                           }}
                           className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${
                             selected ? 'border-purple bg-purple-soft' : 'border-line hover:border-ink-3'
@@ -890,9 +927,9 @@ export default function EventDetailPage() {
                           <button
                             type="button"
                             aria-label="One fewer"
-                            onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                            onClick={() => changeQuantity(Math.max(1, quantity - 1))}
                             disabled={quantity <= 1}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-ink disabled:opacity-40"
+                            className="flex h-11 w-11 items-center justify-center rounded-lg border border-line text-ink disabled:opacity-40"
                           >
                             <Minus className="h-4 w-4" />
                           </button>
@@ -903,12 +940,12 @@ export default function EventDetailPage() {
                             type="button"
                             aria-label="One more"
                             onClick={() =>
-                              setQuantity((q) =>
-                                Math.min(Math.min(available, selectedTicketType.maxPerOrder), q + 1)
+                              changeQuantity(
+                                Math.min(Math.min(available, selectedTicketType.maxPerOrder), quantity + 1)
                               )
                             }
                             disabled={quantity >= Math.min(available, selectedTicketType.maxPerOrder)}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-ink disabled:opacity-40"
+                            className="flex h-11 w-11 items-center justify-center rounded-lg border border-line text-ink disabled:opacity-40"
                           >
                             <Plus className="h-4 w-4" />
                           </button>

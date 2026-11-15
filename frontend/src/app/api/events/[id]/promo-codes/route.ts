@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { orders, promoCodes, tickets } from "@/db/schema";
+import { orders, promoCodes, promoCodeTicketTypes, tickets, ticketTypes } from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
-import type { CodePerformance, PromoKind } from "@/lib/promo";
+import { tierScopeError, type CodePerformance, type PromoKind } from "@/lib/promo";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -27,6 +27,12 @@ const codeSchema = z.object({
   rate: z.coerce.number().min(0).max(100),
   usageLimit: z.coerce.number().int().min(1).nullish(),
   active: z.boolean().optional(),
+  // Ticket-type limit (migration 0021). Both optional: a save that leaves
+  // them out keeps whatever an existing code already had, so an older open
+  // editor can never widen a limited code by accident. New codes default to
+  // all ticket types.
+  appliesToAllTiers: z.boolean().optional(),
+  ticketTypeIds: z.array(z.string().uuid()).max(50).optional(),
 });
 
 const bodySchema = z.object({ codes: z.array(codeSchema).max(40) });
@@ -74,6 +80,18 @@ async function loadCodes(eventId: string) {
 
   const ticketsByOrder = new Map(ticketCounts.map((r) => [r.orderId, r.n]));
 
+  const tierRows = await db
+    .select({
+      promoCodeId: promoCodeTicketTypes.promoCodeId,
+      ticketTypeId: promoCodeTicketTypes.ticketTypeId,
+    })
+    .from(promoCodeTicketTypes)
+    .where(inArray(promoCodeTicketTypes.promoCodeId, codes.map((c) => c.id)));
+  const tiersByCode = new Map<string, string[]>();
+  for (const r of tierRows) {
+    tiersByCode.set(r.promoCodeId, [...(tiersByCode.get(r.promoCodeId) ?? []), r.ticketTypeId]);
+  }
+
   const perf = new Map<string, CodePerformance>();
   for (const c of codes) {
     perf.set(c.id, {
@@ -109,6 +127,8 @@ async function loadCodes(eventId: string) {
     return {
       id: c.id,
       ...p,
+      appliesToAllTiers: c.appliesToAllTiers,
+      ticketTypeIds: c.appliesToAllTiers ? [] : tiersByCode.get(c.id) ?? [],
       revenue: round2(p.revenue),
       discountGiven: round2(p.discountGiven),
       commissionOwed: round2(p.commissionOwed),
@@ -186,6 +206,20 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
   }
 
+  // Ticket-type limits must name this event's own tiers, and a limited code
+  // must name at least one.
+  const eventTiers = await db
+    .select({ id: ticketTypes.id })
+    .from(ticketTypes)
+    .where(eq(ticketTypes.eventId, id));
+  const scopeError = tierScopeError(
+    parsed.data.codes,
+    eventTiers.map((t) => t.id)
+  );
+  if (scopeError) {
+    return NextResponse.json({ error: scopeError }, { status: 400 });
+  }
+
   const existing = await db
     .select({ id: promoCodes.id })
     .from(promoCodes)
@@ -222,15 +256,41 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           rate: String(c.rate),
           usageLimit: c.usageLimit ?? null,
           active: c.active ?? true,
+          // Only written when sent (see codeSchema): an existing code keeps
+          // its limit unless this save says otherwise.
+          ...(c.appliesToAllTiers !== undefined
+            ? { appliesToAllTiers: c.appliesToAllTiers }
+            : {}),
         };
 
+        let codeId: string;
         if (c.id && existingIds.has(c.id)) {
           // usedCount is deliberately absent from `values`: it records what
           // has happened, not what was configured, and a save must never
           // reset it.
           await tx.update(promoCodes).set(values).where(eq(promoCodes.id, c.id));
+          codeId = c.id;
         } else {
-          await tx.insert(promoCodes).values(values);
+          const [created] = await tx
+            .insert(promoCodes)
+            .values(values)
+            .returning({ id: promoCodes.id });
+          codeId = created.id;
+        }
+
+        // The allowed tiers, rewritten whole whenever the limit is sent.
+        // "All ticket types" clears the list; the switch, not the empty
+        // list, is what makes a code work everywhere.
+        if (c.appliesToAllTiers !== undefined) {
+          await tx
+            .delete(promoCodeTicketTypes)
+            .where(eq(promoCodeTicketTypes.promoCodeId, codeId));
+          const tierIds = c.appliesToAllTiers ? [] : [...new Set(c.ticketTypeIds ?? [])];
+          if (tierIds.length) {
+            await tx
+              .insert(promoCodeTicketTypes)
+              .values(tierIds.map((ticketTypeId) => ({ promoCodeId: codeId, ticketTypeId })));
+          }
         }
       }
     });

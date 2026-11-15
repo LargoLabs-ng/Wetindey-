@@ -6,14 +6,13 @@ import {
   events,
   eventStaff,
   orders,
-  promoCodes,
   registrationAnswers,
   registrationFields,
   tickets,
   payments,
   ticketTypes,
 } from '@/db/schema';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { randomUUID } from "node:crypto";
 import { getSessionUserId } from '@/lib/authz';
 import { validateAnswers, type RegistrationField } from '@/lib/registration';
@@ -23,6 +22,7 @@ import {
   normalizeCode,
   type PromoCode,
 } from '@/lib/promo';
+import { loadPromoCode } from '@/lib/promo-lookup';
 import {
   availableQuantity,
   releaseExpiredReservations,
@@ -223,30 +223,11 @@ export async function POST(request: NextRequest) {
     const typedCode = normalizeCode(typedPromoCode);
     let promo: PromoCode | null = null;
     if (typedCode) {
-      const [row] = await db
-        .select()
-        .from(promoCodes)
-        .where(
-          and(
-            eq(promoCodes.eventId, eventId),
-            sql`upper(${promoCodes.code}) = ${typedCode}`
-          )
-        )
-        .limit(1);
-
-      if (row) {
-        const candidate: PromoCode = {
-          id: row.id,
-          kind: row.kind,
-          code: row.code,
-          label: row.label,
-          promoterName: row.promoterName,
-          rate: Number(row.rate),
-          usageLimit: row.usageLimit,
-          usedCount: row.usedCount,
-          active: row.active,
-        };
-        const check = checkCode(candidate);
+      const candidate = await loadPromoCode(eventId, typedCode);
+      if (candidate) {
+        // Including the ticket-type limit: a VIP-only code on a Regular
+        // ticket is ignored here exactly like an expired one.
+        const check = checkCode(candidate, { ticketTypeId });
         if (check.ok) promo = check.code;
       }
     }

@@ -11,6 +11,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -542,6 +543,13 @@ export const promoCodes = pgTable(
     usageLimit: integer("usage_limit"),
     usedCount: integer("used_count").default(0).notNull(),
     active: boolean("active").default(true).notNull(),
+    /**
+     * true: works on every ticket type (the default, and every code made
+     * before migration 0021). false: works only on the ticket types listed
+     * in promo_code_ticket_types — and on none if that list is empty, so
+     * deleting the last allowed tier never widens a code.
+     */
+    appliesToAllTiers: boolean("applies_to_all_tiers").default(true).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({
@@ -553,6 +561,23 @@ export const promoCodes = pgTable(
       t.eventId,
       t.code
     ),
+  })
+);
+
+/** Which ticket types a tier-limited promo code works on. See migration 0021. */
+export const promoCodeTicketTypes = pgTable(
+  "promo_code_ticket_types",
+  {
+    promoCodeId: uuid("promo_code_id")
+      .references(() => promoCodes.id, { onDelete: "cascade" })
+      .notNull(),
+    ticketTypeId: uuid("ticket_type_id")
+      .references(() => ticketTypes.id, { onDelete: "cascade" })
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.promoCodeId, t.ticketTypeId] }),
+    byTier: index("promo_code_ticket_types_tier_idx").on(t.ticketTypeId),
   })
 );
 

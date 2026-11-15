@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, sql } from "drizzle-orm";
-import { db } from "@/db";
-import { promoCodes } from "@/db/schema";
 import { isUuid } from "@/lib/authz";
-import { applyPromo, checkCode, normalizeCode, type PromoCode } from "@/lib/promo";
+import { applyPromo, checkCode, normalizeCode } from "@/lib/promo";
+import { loadPromoCode } from "@/lib/promo-lookup";
 
 /**
  * POST /api/events/:id/promo-codes/check
@@ -44,34 +42,14 @@ export async function POST(
   const rawFace = Number((body as { faceValue?: unknown })?.faceValue);
   const faceValue = Number.isFinite(rawFace) && rawFace > 0 ? rawFace : 0;
 
-  const [row] = await db
-    .select()
-    .from(promoCodes)
-    .where(
-      and(
-        eq(promoCodes.eventId, id),
-        // Case-insensitive, matching the unique index in 0011 and the
-        // normalisation the order route does.
-        sql`upper(${promoCodes.code}) = ${code}`
-      )
-    )
-    .limit(1);
+  // Which ticket type the buyer has picked, so a tier-limited code is
+  // refused here — before they pay — rather than silently ignored at checkout.
+  const rawTier = (body as { ticketTypeId?: unknown })?.ticketTypeId;
+  const ticketTypeId = typeof rawTier === "string" && isUuid(rawTier) ? rawTier : null;
 
-  const promo: PromoCode | null = row
-    ? {
-        id: row.id,
-        kind: row.kind,
-        code: row.code,
-        label: row.label,
-        promoterName: row.promoterName,
-        rate: Number(row.rate),
-        usageLimit: row.usageLimit,
-        usedCount: row.usedCount,
-        active: row.active,
-      }
-    : null;
+  const promo = await loadPromoCode(id, code);
 
-  const check = checkCode(promo);
+  const check = checkCode(promo, { ticketTypeId });
   if (!check.ok) {
     return NextResponse.json({ ok: false, reason: check.reason });
   }
