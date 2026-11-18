@@ -6,6 +6,7 @@ import { publicGoingFloor } from '@/lib/going-badge';
 import { toPublicTier } from '@/lib/public-tiers';
 import { requireEventAccess } from '@/lib/authz';
 import { can } from '@/lib/permissions';
+import { releaseExpiredReservations } from '@/lib/inventory';
 
 type RouteContext = { params: Promise<{ slug: string }> };
 
@@ -15,6 +16,16 @@ export async function GET(
 ) {
   try {
     const { slug } = await context.params;
+
+    // Holds from abandoned checkouts are otherwise only swept when someone
+    // places an order, so a tier could read "sold out" here while its holds
+    // had already lapsed. Sweep first so the page shows what can be bought.
+    // Best effort: a failed sweep must not take the event page down.
+    try {
+      await releaseExpiredReservations();
+    } catch (sweepError) {
+      console.error('Could not release expired holds:', sweepError);
+    }
 
     const event = await db.query.events.findFirst({
       where: eq(events.slug, slug),
