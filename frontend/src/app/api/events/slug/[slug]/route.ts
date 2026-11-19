@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { events } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { events, tickets, ticketTypes } from '@/db/schema';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { publicGoingFloor } from '@/lib/going-badge';
 import { requireEventAccess } from '@/lib/authz';
 import { can } from '@/lib/permissions';
 
@@ -54,9 +55,27 @@ export async function GET(
     void afterPurchaseNote;
     void afterPurchaseUrl;
 
+    // The public badge's floor, from confirmed tickets only (paid or checked
+    // in; never pending, cancelled or refunded), counting people rather
+    // than tickets — the same rule as /api/discover. Only the floor is
+    // sent; the exact count stays on the server.
+    const [attending] = await db
+      .select({
+        going: sql<number>`coalesce(sum(coalesce(${ticketTypes.admits}, 1)), 0)::int`,
+      })
+      .from(tickets)
+      .leftJoin(ticketTypes, eq(tickets.ticketTypeId, ticketTypes.id))
+      .where(
+        and(
+          eq(tickets.eventId, event.id),
+          inArray(tickets.status, ['valid', 'checked_in'])
+        )
+      );
+
     const now = new Date();
     return NextResponse.json({
       ...publicEvent,
+      goingFloor: publicGoingFloor(event.id, attending?.going ?? 0),
       // Keep `price` as the stored Regular price. The public page uses the
       // Early Bird fields and serverTime to calculate the active price and
       // switch it on an already-open page when the deadline arrives.

@@ -27,6 +27,7 @@ import {
   type PublicField,
 } from '@/components/registration-answers-form';
 import { activeTicketPrice, formatDeadline } from "@/lib/early-bird";
+import { goingLabel } from "@/lib/going-badge";
 
 interface TicketType {
   id: string;
@@ -63,6 +64,8 @@ interface Event {
   endDatetime: string;
   timeZone: string;
   ticketTypes: TicketType[];
+  /** Public "N+ going" floor from the server, or null for no badge. */
+  goingFloor?: number | null;
   organization?: { name: string } | null;
   /** The organiser's mark, as opposed to this event's flyer. */
   logoUrl?: string | null;
@@ -504,15 +507,10 @@ export default function EventDetailPage() {
     event.ticketTypes.length > 0 &&
     event.ticketTypes.every((t) => t.quantityTotal - t.quantitySold - t.quantityReserved <= 0);
 
-  // Real attendance, straight off the tiers — no estimate, no padding. Shown
-  // only once it is a number worth saying out loud; "1 going" makes an event
-  // look abandoned, which is worse than saying nothing at all.
-  // People, not tickets. Twenty tables of six is a hundred and twenty people
-  // in the room, and "20 going" would make a packed event look empty.
-  const going = event.ticketTypes.reduce(
-    (n, t) => n + t.quantitySold * (t.admits ?? 1),
-    0
-  );
+  // "9+ going", "20+ going" … worked out on the server from confirmed
+  // tickets; this page never sees the exact count. No floor (fewer than
+  // nine people) means no badge. See lib/going-badge.ts.
+  const going = goingLabel(event.goingFloor);
   const organiser = event.organization?.name?.trim() || null;
 
   const countdown = dateTbd
@@ -598,7 +596,7 @@ export default function EventDetailPage() {
               {/* An organiser is a person students are deciding whether to
                   trust, so they get a face and a line of their own instead of
                   a grey byline underneath the title. */}
-              {(organiser || going >= 5) && (
+              {(organiser || going) && (
                 <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
                   {organiser && (
                     <div className="flex items-center gap-2.5">
@@ -633,9 +631,9 @@ export default function EventDetailPage() {
                       </span>
                     </div>
                   )}
-                  {going >= 5 && (
+                  {going && (
                     <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white backdrop-blur">
-                      {going} going
+                      {going}
                     </span>
                   )}
                 </div>
