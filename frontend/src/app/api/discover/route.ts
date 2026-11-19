@@ -5,6 +5,7 @@ import { events, ticketTypes, tickets, universities, users } from "@/db/schema";
 import { availableQuantity } from "@/lib/inventory";
 import { publicListingWhere } from "@/lib/event-visibility";
 import { getSessionUserId } from "@/lib/authz";
+import { publicGoingFloor } from "@/lib/going-badge";
 
 /**
  * GET /api/discover — everything the home and discover surfaces need.
@@ -33,18 +34,19 @@ export type DiscoverCard = {
   venueTbd: boolean;
   minPrice: number | null;
   isFree: boolean;
+  /** Nothing left in any tier on sale. How many are left is never sent. */
   soldOut: boolean;
-  ticketsLeft: number;
   createdAt: string;
   /** Campus this belongs to. Null means public — everyone's, not nobody's. */
   universityId: string | null;
   campusId: string | null;
   /**
-   * How many people actually hold a ticket. Counted from issued tickets, so
-   * it is a fact rather than a vanity number — cards decide for themselves
-   * whether a given count is worth showing.
+   * The public "N+ going" floor (9, 20, 50, 100 …), or null for no badge.
+   * Worked out here from the real count of confirmed tickets, and only the
+   * floor leaves the server: the exact number is never sent to the browser.
+   * See lib/going-badge.ts.
    */
-  going: number;
+  goingFloor: number | null;
 };
 
 export async function GET() {
@@ -111,9 +113,8 @@ export async function GET() {
         // and publishing now requires a tier, so this only affects events
         // published before that rule existed.
         soldOut: mine.length > 0 && left === 0,
-        ticketsLeft: left,
         createdAt: new Date(e.createdAt).toISOString(),
-        going: goingByEvent.get(e.id) ?? 0,
+        goingFloor: publicGoingFloor(e.id, goingByEvent.get(e.id) ?? 0),
         universityId: e.universityId,
         campusId: e.campusId,
       };
