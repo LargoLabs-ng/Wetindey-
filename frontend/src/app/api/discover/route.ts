@@ -34,8 +34,8 @@ export type DiscoverCard = {
   venueTbd: boolean;
   minPrice: number | null;
   isFree: boolean;
+  /** Nothing left in any tier on sale. How many are left is never sent. */
   soldOut: boolean;
-  ticketsLeft: number;
   createdAt: string;
   /** Campus this belongs to. Null means public — everyone's, not nobody's. */
   universityId: string | null;
@@ -113,7 +113,6 @@ export async function GET() {
         // and publishing now requires a tier, so this only affects events
         // published before that rule existed.
         soldOut: mine.length > 0 && left === 0,
-        ticketsLeft: left,
         createdAt: new Date(e.createdAt).toISOString(),
         goingFloor: publicGoingFloor(e.id, goingByEvent.get(e.id) ?? 0),
         universityId: e.universityId,

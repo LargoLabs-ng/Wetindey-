@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { events, tickets, ticketTypes } from '@/db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { publicGoingFloor } from '@/lib/going-badge';
+import { toPublicTier } from '@/lib/public-tiers';
 import { requireEventAccess } from '@/lib/authz';
 import { can } from '@/lib/permissions';
 
@@ -79,7 +80,10 @@ export async function GET(
       // Keep `price` as the stored Regular price. The public page uses the
       // Early Bird fields and serverTime to calculate the active price and
       // switch it on an already-open page when the deadline arrives.
-      ticketTypes: event.ticketTypes,
+      // Tiers go out without stock numbers: a visitor learns "can I buy
+      // this" and "sold out", never how many are left. See
+      // lib/public-tiers.ts.
+      ticketTypes: event.ticketTypes.map(toPublicTier),
       serverTime: now.toISOString(),
     });
   } catch (error) {

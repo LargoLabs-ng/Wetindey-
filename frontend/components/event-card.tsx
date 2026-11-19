@@ -23,7 +23,6 @@ export type CardEvent = {
   minPrice: number | null;
   isFree: boolean;
   soldOut: boolean;
-  ticketsLeft: number;
   createdAt?: string;
   /**
    * The public "N+ going" floor from /api/discover (9, 20, 50 …), or null
@@ -186,10 +185,6 @@ function signalFor(e: CardEvent): { text: string; tone: "purple" | "coral" | "gl
   // makes an event look dead. See lib/going-badge.ts.
   const going = goingLabel(e.goingFloor);
   if (going) return { text: going, tone: "purple" };
-
-  if (e.ticketsLeft > 0 && e.ticketsLeft <= 10) {
-    return { text: `${e.ticketsLeft} left`, tone: "coral" };
-  }
 
   if (e.createdAt) {
     const age = Date.now() - new Date(e.createdAt).getTime();

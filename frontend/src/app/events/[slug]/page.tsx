@@ -34,9 +34,11 @@ interface TicketType {
   name: string;
   description: string | null;
   price: string;
-  quantityTotal: number;
-  quantitySold: number;
-  quantityReserved: number;
+  /**
+   * Nothing left to buy. The API never sends stock numbers (see
+   * lib/public-tiers.ts): visitors see "Sold out", never how many are left.
+   */
+  soldOut: boolean;
   maxPerOrder: number;
   status: string;
   /** People one ticket lets in. 1 is an ordinary ticket. */
@@ -216,9 +218,15 @@ export default function EventDetailPage() {
   };
 
   const selectedTicketType = event?.ticketTypes.find((t) => t.id === selectedTicket);
-  const available = selectedTicketType
-    ? Math.max(0, selectedTicketType.quantityTotal - selectedTicketType.quantitySold - selectedTicketType.quantityReserved)
-    : 0;
+  // Whether the picked tier can be bought, and the most one order may take.
+  // The stepper stops at the organiser's per-order limit, not at what's
+  // left; asking for more than remains is refused at checkout with a plain
+  // message, so the count is never revealed.
+  const canBuySelected =
+    !!selectedTicketType &&
+    !selectedTicketType.soldOut &&
+    selectedTicketType.status !== 'paused';
+  const maxQuantity = selectedTicketType?.maxPerOrder || 10;
 
   useEffect(() => {
     if (!event?.id) return;
@@ -305,7 +313,7 @@ export default function EventDetailPage() {
 
   const handleQuantityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseInt(e.target.value);
-    if (value > 0 && value <= Math.min(available, selectedTicketType?.maxPerOrder || 10)) {
+    if (value > 0 && value <= maxQuantity) {
       changeQuantity(value);
     }
   };
@@ -504,8 +512,7 @@ export default function EventDetailPage() {
     ? ''
     : [event.venueName, event.city].filter(Boolean).join(', ');
   const soldOut =
-    event.ticketTypes.length > 0 &&
-    event.ticketTypes.every((t) => t.quantityTotal - t.quantitySold - t.quantityReserved <= 0);
+    event.ticketTypes.length > 0 && event.ticketTypes.every((t) => t.soldOut);
 
   // "9+ going", "20+ going" … worked out on the server from confirmed
   // tickets; this page never sees the exact count. No floor (fewer than
@@ -850,8 +857,7 @@ export default function EventDetailPage() {
 
                   <div className="mt-3 space-y-2">
                     {event.ticketTypes.map((t) => {
-                      const left = t.quantityTotal - t.quantitySold - t.quantityReserved;
-                      const gone = left <= 0 || t.status === 'sold_out';
+                      const gone = t.soldOut;
                       const paused = t.status === 'paused';
                       const disabled = gone || paused;
                       const selected = selectedTicket === t.id;
@@ -903,20 +909,13 @@ export default function EventDetailPage() {
                               Admits {t.admits} people
                             </span>
                           )}
-                          <span className="mt-1 block text-xs text-ink-3">
-                            {paused
-                              ? 'Not on sale'
-                              : gone
-                                ? 'Sold out'
-                                : left <= 10
-                                  ? `Only ${left} left`
-                                  : `${left} available`}
-                            {(t.admits ?? 1) > 1 && !gone && !paused
-                              ? left === 1
-                                ? ' · 1 table'
-                                : ` · ${left} tables`
-                              : ''}
-                          </span>
+                          {/* Only the states a buyer acts on. How many are
+                              left is the organiser's to know, not the page's. */}
+                          {(paused || gone) && (
+                            <span className="mt-1 block text-xs font-semibold text-ink-3">
+                              {paused ? 'Not on sale' : 'Sold out'}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
@@ -944,10 +943,10 @@ export default function EventDetailPage() {
                             aria-label="One more"
                             onClick={() =>
                               changeQuantity(
-                                Math.min(Math.min(available, selectedTicketType.maxPerOrder), quantity + 1)
+                                Math.min(maxQuantity, quantity + 1)
                               )
                             }
-                            disabled={quantity >= Math.min(available, selectedTicketType.maxPerOrder)}
+                            disabled={quantity >= maxQuantity}
                             className="flex h-11 w-11 items-center justify-center rounded-lg border border-line text-ink disabled:opacity-40"
                           >
                             <Plus className="h-4 w-4" />
@@ -981,7 +980,7 @@ export default function EventDetailPage() {
                         <button
                           type="button"
                           onClick={() => setJoining(true)}
-                          disabled={available === 0}
+                          disabled={!canBuySelected}
                           className="mt-4 w-full rounded-xl bg-purple py-3.5 text-base font-bold text-white transition-colors hover:bg-purple-deep disabled:opacity-50"
                         >
                           {selectedPrice === 0 ? "I'm in" : `I'm in · ${naira(quote.paystackAmount)}`}
@@ -1094,7 +1093,7 @@ export default function EventDetailPage() {
 
                           <button
                             onClick={handleCheckout}
-                            disabled={processing || available === 0}
+                            disabled={processing || !canBuySelected}
                             className="w-full rounded-xl bg-purple py-3.5 text-base font-bold text-white transition-colors hover:bg-purple-deep disabled:opacity-50"
                           >
                             {processing
