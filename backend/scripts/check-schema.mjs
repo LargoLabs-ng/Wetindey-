@@ -162,6 +162,15 @@ const EXPECT = [
     tables: ["promo_code_ticket_types"],
     types: [],
   },
+  {
+    migration: "0022_payment_settlement.sql",
+    columns: [
+      ["payments", "settled_at"],
+      ["payments", "settlement_reference"],
+    ],
+    tables: [],
+    types: [],
+  },
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });

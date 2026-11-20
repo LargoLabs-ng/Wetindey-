@@ -115,6 +115,35 @@ account-transfer transactions only; they remain pending until Monnify confirms
 success. Keep the old Monnify credentials configured only if historical
 transactions still need to be verified or refunded.
 
+### Paystack settlements (what organisers can withdraw)
+
+A `charge.success` webhook means the buyer paid Paystack. It does **not** mean
+Paystack has paid Wetin Dey. Paystack pays out in batches ("settlements") and
+sends no webhook when it does, so `payments.settled_at` (migration 0022) is
+filled by asking the Settlements API which transactions each successful
+settlement contained (`backend/lib/paystack-settlements.ts`). Only settled
+money will count towards an organiser's withdrawable balance.
+
+Order of operations, and it matters:
+
+1. `npm run settlements:dry-run` — read-only. Uses a READ ONLY database
+   transaction and only GET requests to Paystack, and prints what would be
+   marked settled and anything that does not match. Add
+   `-- --json report.json` for the full list. Works before migration 0022.
+2. Apply `backend/migrations/0022_payment_settlement.sql`.
+3. Only after the dry run has been reviewed, set `SETTLEMENT_SYNC_ENABLED=true`.
+   Until then every sync, scheduled or manual, refuses to write.
+
+A payment is marked settled only if it is a Paystack payment recorded here as
+successful, its reference is in exactly one successful settlement, the
+amounts agree, and it has no settled date yet. Running the sync again is
+harmless. Legacy Monnify payments are never marked: the dry run reports
+their count and value separately.
+
+`GET /api/cron/settlements` is the scheduled entry point (needs `CRON_SECRET`);
+`POST /api/admin/payouts/sync-settlements` is the manual one (super admin,
+dry run unless `{"mode":"write"}`).
+
 ---
 
 ## Migrations — read this before touching the database

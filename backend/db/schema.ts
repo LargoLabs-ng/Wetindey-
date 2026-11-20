@@ -754,6 +754,17 @@ export const payments = pgTable("payments", {
   manualReviewResolvedBy: uuid("manual_review_resolved_by").references(
     () => users.id
   ),
+  /**
+   * When the provider paid this money out to Wetin Dey (migration 0022).
+   *
+   * NOT the same as `paidAt`. `paidAt` is when the buyer paid the provider;
+   * this is when the provider paid us. Only money with a settled date can be
+   * withdrawn by an organiser. Written only by the settlement sync in
+   * lib/paystack-settlements.ts, never from a charge webhook.
+   */
+  settledAt: timestamp("settled_at"),
+  /** The provider's settlement id the payment arrived in. */
+  settlementReference: varchar("settlement_reference", { length: 64 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
