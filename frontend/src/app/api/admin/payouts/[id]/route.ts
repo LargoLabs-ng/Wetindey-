@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isUuid } from "@/lib/authz";
 import { requirePayoutPermission } from "@/lib/payout-auth";
+import { notifyOrganiserOfPayoutStatus } from "@/lib/payout-emails";
 import { PAYOUT_ACTIONS } from "@/lib/payout-lifecycle";
 import {
   applyPayoutAction,
@@ -62,6 +63,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       actorId: auth.userId,
       action: parsed.data,
     });
+    // Approved, paid, rejected and failed are worth an email; "being sent"
+    // is a step for us, not news for them.
+    if (result.to !== "processing") after(() => notifyOrganiserOfPayoutStatus(result.id));
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     if (error instanceof PayoutRequestError) {

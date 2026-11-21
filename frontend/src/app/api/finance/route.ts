@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -10,6 +10,7 @@ import {
 } from "@/lib/authz";
 import { earningsForOrganization } from "@/lib/earnings";
 import { createWithdrawalRequest, PayoutRequestError } from "@/lib/payout-requests";
+import { notifyAdminsOfPayoutRequest, notifyBankDetailsChanged } from "@/lib/payout-emails";
 
 /**
  * The organisation's money.
@@ -143,6 +144,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (parsed.data.action === "bank") {
+    const bank = parsed.data;
+    const [before] = await db
+      .select({ bankName: organizations.bankName, accountNumber: organizations.bankAccountNumber, accountName: organizations.bankAccountName })
+      .from(organizations)
+      .where(eq(organizations.id, auth.organizationId))
+      .limit(1);
+
     await db
       .update(organizations)
       .set({
@@ -151,6 +159,28 @@ export async function POST(request: NextRequest) {
         bankAccountNumber: parsed.data.accountNumber,
       })
       .where(eq(organizations.id, auth.organizationId));
+
+    // Tell the owner whenever the payout account changes — the one change a
+    // stolen login would make first. Sent after the response; a failed email
+    // never undoes the save.
+    const changed =
+      !before ||
+      before.bankName !== bank.bankName ||
+      before.accountName !== bank.accountName ||
+      before.accountNumber !== bank.accountNumber;
+    if (changed) {
+      after(() =>
+        notifyBankDetailsChanged({
+          organizationId: auth.organizationId,
+          before: before?.accountNumber ? { bankName: before.bankName, accountNumber: before.accountNumber } : null,
+          after: {
+            bankName: bank.bankName,
+            accountName: bank.accountName,
+            accountNumber: bank.accountNumber,
+          },
+        })
+      );
+    }
 
     return NextResponse.json({ ok: true });
   }
@@ -166,6 +196,7 @@ export async function POST(request: NextRequest) {
       userId: auth.userId,
       amount: parsed.data.amount,
     });
+    after(() => notifyAdminsOfPayoutRequest(created.id));
     return NextResponse.json({ ok: true, id: created.id });
   } catch (error) {
     if (error instanceof PayoutRequestError) {

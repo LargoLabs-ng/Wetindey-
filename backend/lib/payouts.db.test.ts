@@ -27,6 +27,18 @@ vi.mock("@/db", async () => {
   return { db: drizzle(client, { schema }), __client: client };
 });
 
+const sent: { to: string; subject: string; html: string }[] = [];
+vi.mock("@/lib/email-service", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./email-service")>();
+  return {
+    ...real,
+    sendEmailWithResult: async (o: { to: string; subject: string; html: string }) => {
+      sent.push(o);
+      return { ok: true };
+    },
+  };
+});
+
 describe.skipIf(!URL)("payouts on a real database", () => {
   let sql: import("postgres").Sql;
   let ids: { user: string; org: string; event: string; tier: string };
@@ -191,11 +203,43 @@ describe.skipIf(!URL)("payouts on a real database", () => {
     expect(p.note).toBe("Account name does not match the organiser.");
   });
 
+  it("emails admins on a new request and the owner on each status", async () => {
+    const { createWithdrawalRequest, applyPayoutAction } = await import("./payout-requests");
+    const { notifyAdminsOfPayoutRequest, notifyOrganiserOfPayoutStatus, notifyBankDetailsChanged } = await import("./payout-emails");
+    process.env.ADMIN_EMAILS = "boss@example.test, Finance@Example.test,boss@example.test";
+    sent.length = 0;
+
+    const { id } = await createWithdrawalRequest({ organizationId: ids.org, userId: ids.user, amount: 50 });
+    await notifyAdminsOfPayoutRequest(id);
+    expect(sent.map((m) => m.to).sort()).toEqual(["boss@example.test", "finance@example.test"]);
+    expect(sent[0].subject).toBe("Payout request: ₦50.00 from Payout Test Org");
+
+    sent.length = 0;
+    await applyPayoutAction({ payoutId: id, actorId: ids.user, action: { action: "approve" } });
+    await notifyOrganiserOfPayoutStatus(id);
+    expect(sent).toHaveLength(1); // owner and requester are the same person here
+    expect(sent[0].to).toMatch(/^owner-.*@example\.test$/);
+    expect(sent[0].subject).toContain("approved");
+
+    sent.length = 0;
+    await notifyBankDetailsChanged({
+      organizationId: ids.org,
+      before: { bankName: "Test Bank", accountNumber: "0123456789" },
+      after: { bankName: "New Bank", accountName: "Test Owner", accountNumber: "9999999999" },
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0].html).toContain("····\u00a09999");
+    expect(sent[0].html).not.toContain("9999999999");
+
+    // Tidy: reject so later balances are unaffected.
+    await applyPayoutAction({ payoutId: id, actorId: ids.user, action: { action: "reject", reason: "Test request, not real." } });
+  });
+
   it("the admin queue shows full bank details and flags shortfalls", async () => {
     const { listPayoutRequests, getPayoutRequest } = await import("./payout-requests");
     const { requests, counts } = await listPayoutRequests("all");
     const mine = requests.filter((r) => r.organization.id === ids.org);
-    expect(mine).toHaveLength(3); // paid 1,200 · processing 100 · rejected 500
+    expect(mine).toHaveLength(4); // paid 1,200 · processing 100 · rejected 500 · rejected 50 (email test)
     expect(mine[0].bank.accountNumber).toBe("0123456789");
     expect(counts.paid).toBeGreaterThanOrEqual(1);
     expect(mine.some((r) => r.needsReview)).toBe(false);
