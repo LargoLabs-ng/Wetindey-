@@ -11,6 +11,8 @@ type Earnings = {
   buyerProcessingFee: number;
   refunded: number;
   netEarned: number;
+  settledNet: number;
+  unsettledNet: number;
   paidOut: number;
   pending: number;
   available: number;
@@ -140,9 +142,38 @@ export default function FinancePage() {
         <p className="mt-2 text-4xl font-extrabold tracking-[-0.03em] text-on-dark">
           {naira(e.available)}
         </p>
-        <p className="mt-2 text-sm text-on-dark-3">
-          Net earned {naira(e.netEarned)} · paid out {naira(e.paidOut)} ·
-          pending {naira(e.pending)}
+
+        {/* Settled vs waiting: only money Paystack has actually paid to Wetin
+            Dey can be withdrawn. Stacked rows so it reads on a phone. */}
+        <dl className="mt-4 space-y-2 text-sm">
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="flex items-center gap-2 text-on-dark-2">
+              <Check className="h-4 w-4 text-gold" />
+              Settled by Paystack
+            </dt>
+            <dd className="font-semibold text-on-dark">{naira(e.settledNet)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="flex items-center gap-2 text-on-dark-2">
+              <Clock className="h-4 w-4 text-on-dark-3" />
+              Waiting for Paystack
+            </dt>
+            <dd className="font-semibold text-on-dark">{naira(e.unsettledNet)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-on-dark-3">Paid out</dt>
+            <dd className="text-on-dark-2">− {naira(e.paidOut)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-on-dark-3">Requested, not yet paid</dt>
+            <dd className="text-on-dark-2">− {naira(e.pending)}</dd>
+          </div>
+        </dl>
+        <p className="mt-4 text-xs leading-relaxed text-on-dark-3">
+          Paystack sends ticket money to Wetin Dey in batches. A sale shows as
+          waiting until its batch arrives, then moves to settled and can be
+          withdrawn. Available = settled − paid out − requested. Total earned
+          so far: {naira(e.netEarned)}.
         </p>
       </div>
 
@@ -271,6 +302,8 @@ export default function FinancePage() {
         ) : e.available <= 0 ? (
           <p className="mt-2 text-sm text-on-dark-2">
             Nothing available to withdraw yet.
+            {e.unsettledNet > 0 &&
+              ` ${naira(e.unsettledNet)} is waiting for Paystack and becomes available once it is settled.`}
           </p>
         ) : (
           <form
