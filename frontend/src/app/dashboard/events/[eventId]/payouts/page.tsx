@@ -27,6 +27,8 @@ export default function PayoutsPage() {
   const [totalPaystackFee, setTotalPaystackFee] = useState(0);
   const [totalMonnifyFee, setTotalMonnifyFee] = useState(0);
   const [netRevenue, setNetRevenue] = useState(0);
+  const [settledNet, setSettledNet] = useState(0);
+  const [unsettledNet, setUnsettledNet] = useState(0);
   const [feePercentage, setFeePercentage] = useState(PLATFORM_FEE_RATE * 100);
   const [breakdown, setBreakdown] = useState<TicketTierBreakdown[]>([]);
 
@@ -45,6 +47,8 @@ export default function PayoutsPage() {
         setTotalPaystackFee(data.totalPaystackFee || 0);
         setTotalMonnifyFee(data.totalMonnifyFee || 0);
         setNetRevenue(data.netRevenue || 0);
+        setSettledNet(data.settledNet || 0);
+        setUnsettledNet(data.unsettledNet || 0);
         setFeePercentage(data.platformFeePercentage ?? PLATFORM_FEE_RATE * 100);
         setBreakdown(data.ticketTierBreakdown || []);
       } catch (error) {
@@ -171,6 +175,11 @@ export default function PayoutsPage() {
                 </p>
                 <p className="text-xs mt-2" style={{ color: 'var(--color-on-dark-2)' }}>
                   After fees you cover
+                </p>
+                {/* Settled = Paystack has paid it to Wetin Dey; only that part
+                    can be withdrawn, from the Finance page. */}
+                <p className="text-xs mt-1" style={{ color: 'var(--color-on-dark-3)' }}>
+                  Settled {formatCurrency(settledNet)} · waiting for Paystack {formatCurrency(unsettledNet)}
                 </p>
               </div>
             </div>

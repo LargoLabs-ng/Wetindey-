@@ -3,6 +3,8 @@ import { recordedOrderFeeBreakdown } from '@/lib/fees';
 import { auth } from '@/auth';
 import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
+import { orderOrganizerNet } from '@/lib/earnings-compute';
+import { loadEarningsOrders } from '@/lib/earnings';
 
 export async function GET(request: NextRequest) {
   try {
@@ -59,10 +61,12 @@ export async function GET(request: NextRequest) {
       (sum, breakdown) => sum + breakdown.platformFee,
       0
     );
-    const organizerPayouts = feeBreakdowns.reduce(
-      (sum, breakdown) => sum + breakdown.organizerPayout,
-      0
-    );
+    // Organiser earnings for orders placed in the period, after fees and
+    // refunds — the same per-order maths as the organiser Finance page.
+    const earningsOrders = await loadEarningsOrders(null);
+    const organizerPayouts = earningsOrders
+      .filter((o) => new Date(o.createdAt) >= startDate)
+      .reduce((sum, o) => sum + orderOrganizerNet(o).net, 0);
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
     const prevPeriodStart = new Date(Date.now() - days * 2 * 24 * 60 * 60 * 1000);

@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { inArray } from 'drizzle-orm';
 import { db } from '@/db';
-import { ticketTypes, orders } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { tickets } from '@/db/schema';
 import { requireEventCapability } from '@/lib/authz';
+import { PLATFORM_FEE_RATE } from '@/lib/fees';
+import { computeEarnings, orderOrganizerNet } from '@/lib/earnings-compute';
+import { loadEarningsOrders } from '@/lib/earnings';
 
-import { PLATFORM_FEE_RATE, quoteOrder } from '@/lib/fees';
-import { monnifyFeeFromStoredResponse } from "@/lib/monnify";
-import { paystackFeeFromStoredResponse } from "@/lib/paystack";
-
-const PLATFORM_FEE_PERCENTAGE = PLATFORM_FEE_RATE;
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * GET /api/dashboard/payouts?eventId=...
- * Get financial data for an event
+ *
+ * One event's revenue report. It used to do its own arithmetic and could
+ * disagree with the Finance page; it now reads the same order maths
+ * (lib/earnings-compute.ts), so the event totals always add up to what the
+ * Finance page shows for this event. Withdrawals stay on the Finance page:
+ * they are account-wide.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -24,25 +28,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: access.error }, { status: access.status });
     }
     const { event } = access;
-    const eventId = event.id;
 
-    // Fetch ticket types for event
-    const ticketTypesData = await db.query.ticketTypes.findMany({
-      where: eq(ticketTypes.eventId, eventId),
-    });
+    const orderInputs = await loadEarningsOrders([event.id]);
+    const totals = computeEarnings(orderInputs, []);
 
-    // Fetch paid orders for event
-    const paidOrders = await db.query.orders.findMany({
-      where: and(eq(orders.eventId, eventId), eq(orders.status, "paid")),
-      with: {
-        tickets: true,
-        payments: true,
-      },
-    });
+    // Per tier: each live ticket carries an equal share of its order — the
+    // same split the single-ticket refund uses — so the tiers add up to the
+    // totals above, discounts included.
+    const paidOrderIds = orderInputs.filter((o) => o.status === 'paid').map((o) => o.id);
+    const [tierRows, ticketRows] = await Promise.all([
+      db.query.ticketTypes.findMany({ where: (t, { eq }) => eq(t.eventId, event.id) }),
+      paidOrderIds.length
+        ? db
+            .select({
+              orderId: tickets.orderId,
+              ticketTypeId: tickets.ticketTypeId,
+              status: tickets.status,
+            })
+            .from(tickets)
+            .where(inArray(tickets.orderId, paidOrderIds))
+        : Promise.resolve([]),
+    ]);
+    const tierById = new Map(tierRows.map((t) => [t.id, t]));
+    const orderById = new Map(orderInputs.map((o) => [o.id, o]));
 
-    // Calculate financials
-    let totalRevenue = 0;
-    const ticketTierBreakdown: Record<string, {
+    const breakdown: Record<string, {
       tierName: string;
       price: number;
       sold: number;
@@ -52,91 +62,52 @@ export async function GET(request: NextRequest) {
       monnifyFee: number;
       netRevenue: number;
     }> = {};
-    let totalPaystackFee = 0;
-    let totalMonnifyFee = 0;
-    let totalPlatformFee = 0;
 
-    paidOrders.forEach((order) => {
-      const successfulPayment = order.payments?.find((p) => p.status === 'success');
-      if (successfulPayment) {
-        const faceValue =
-          typeof order.subtotal === 'string' ? parseFloat(order.subtotal) : order.subtotal;
-        totalRevenue += faceValue;
-        const paymentFee =
-          successfulPayment.provider === "monnify"
-            ? monnifyFeeFromStoredResponse(successfulPayment.rawProviderResponse) ?? 0
-            : successfulPayment.provider === "paystack"
-              ? paystackFeeFromStoredResponse(successfulPayment.rawProviderResponse) ?? 0
-              : 0;
-        const paystackFee =
-          successfulPayment.provider === "paystack" ? paymentFee : 0;
-        const monnifyFee =
-          successfulPayment.provider === "monnify" ? paymentFee : 0;
-        totalPaystackFee += paystackFee;
-        totalMonnifyFee += monnifyFee;
-        const quote = quoteOrder(faceValue, {
-          platformFeePaidBy: order.platformFeePaidBy,
-        });
-        if (quote.platformFeePaidBy === "organizer") {
-          totalPlatformFee += quote.platformFee;
-        }
-
-        // Group by ticket tier
-        order.tickets.forEach((ticket) => {
-          const ticketType = ticketTypesData.find((t) => t.id === ticket.ticketTypeId);
-          if (ticketType) {
-            const priceNum = typeof ticketType.price === 'string' ? parseFloat(ticketType.price) : ticketType.price;
-            if (!ticketTierBreakdown[ticketType.id]) {
-              ticketTierBreakdown[ticketType.id] = {
-                tierName: ticketType.name,
-                price: priceNum,
-                sold: 0,
-                revenue: 0,
-                platformFee: 0,
-                paystackFee: 0,
-                monnifyFee: 0,
-                netRevenue: 0,
-              };
-            }
-            ticketTierBreakdown[ticketType.id].sold += 1;
-            ticketTierBreakdown[ticketType.id].revenue += priceNum;
-            ticketTierBreakdown[ticketType.id].paystackFee +=
-              order.tickets.length > 0
-                ? paystackFee / order.tickets.length
-                : 0;
-            ticketTierBreakdown[ticketType.id].monnifyFee +=
-              order.tickets.length > 0
-                ? monnifyFee / order.tickets.length
-                : 0;
-            if (quote.platformFeePaidBy === "organizer") {
-              ticketTierBreakdown[ticketType.id].platformFee +=
-                order.tickets.length > 0
-                  ? quote.platformFee / order.tickets.length
-                  : 0;
-            }
-          }
-        });
-      }
-    });
-
-    const netRevenue = totalRevenue - totalPlatformFee - totalMonnifyFee;
-
-    // Calculate net per ticket tier. Paystack fees are paid by buyers; only
-    // legacy Monnify fees reduce organiser proceeds.
-    Object.keys(ticketTierBreakdown).forEach((key) => {
-      const tier = ticketTierBreakdown[key];
-      tier.netRevenue = tier.revenue - tier.platformFee - tier.monnifyFee;
-    });
+    for (const ticket of ticketRows) {
+      if (ticket.status !== 'valid' && ticket.status !== 'checked_in') continue;
+      const order = orderById.get(ticket.orderId);
+      const tier = tierById.get(ticket.ticketTypeId);
+      if (!order || !tier || order.keptTicketCount <= 0) continue;
+      const net = orderOrganizerNet(order);
+      const share = 1 / order.keptTicketCount;
+      const row = (breakdown[tier.id] ??= {
+        tierName: tier.name,
+        price: Number(tier.price),
+        sold: 0,
+        revenue: 0,
+        platformFee: 0,
+        paystackFee: 0,
+        monnifyFee: 0,
+        netRevenue: 0,
+      });
+      row.sold += 1;
+      row.revenue += net.keptFace * share;
+      row.platformFee += net.platformFee * share;
+      row.paystackFee += net.buyerProcessingFee * share;
+      row.monnifyFee += net.processingFee * share;
+      row.netRevenue += net.net * share;
+    }
 
     return NextResponse.json({
       eventTitle: event.title,
-      totalRevenue,
-      totalPlatformFee,
-      totalPaystackFee,
-      totalMonnifyFee,
-      netRevenue,
-      ticketTierBreakdown: Object.values(ticketTierBreakdown),
-      platformFeePercentage: PLATFORM_FEE_PERCENTAGE * 100,
+      totalRevenue: totals.grossSales,
+      totalPlatformFee: totals.platformFee,
+      totalPaystackFee: totals.buyerProcessingFee,
+      totalMonnifyFee: totals.processingFee,
+      netRevenue: totals.netEarned,
+      settledNet: totals.settledNet,
+      unsettledNet: totals.unsettledNet,
+      refunded: totals.refunded,
+      ticketsSold: totals.ticketsSold,
+      ticketTierBreakdown: Object.values(breakdown).map((row) => ({
+        ...row,
+        revenue: round2(row.revenue),
+        platformFee: round2(row.platformFee),
+        paystackFee: round2(row.paystackFee),
+        monnifyFee: round2(row.monnifyFee),
+        netRevenue: round2(row.netRevenue),
+      })),
+      platformFeePercentage: PLATFORM_FEE_RATE * 100,
     });
   } catch (error) {
     console.error('Error fetching payout data:', error);

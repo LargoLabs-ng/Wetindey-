@@ -1,199 +1,192 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { events, orders, payments, payouts, refunds } from "@/db/schema";
-import { quoteOrder } from "@/lib/fees";
+import { events, orders, payments, payouts, tickets } from "@/db/schema";
+import {
+  computeEarnings,
+  type Earnings,
+  type EarningsOrderInput,
+} from "@/lib/earnings-compute";
 import { monnifyFeeFromStoredResponse } from "@/lib/monnify";
 import { paystackFeeFromStoredResponse } from "@/lib/paystack";
 
 /**
  * What an organisation has earned, and what it can actually withdraw.
  *
- * One function, because this number gets shown in three places and an
+ * One function, because this number gets shown in several places and an
  * organiser comparing two of them and finding different figures will — quite
- * reasonably — stop trusting all of them.
+ * reasonably — stop trusting all of them. The rules themselves live in
+ * lib/earnings-compute.ts; this file only loads the rows they need.
  */
-export type Earnings = {
-  /** Face value of tickets sold. What the buyers' tickets cost. */
-  grossSales: number;
-  /** Our cut, only counting sales where the organiser carried it. */
-  platformFee: number;
-  /** Actual Monnify fees deducted from organiser earnings. */
-  processingFee: number;
-  /** Paystack fees collected from buyers rather than deducted from organisers. */
-  buyerProcessingFee: number;
-  /** Face value of sales that were refunded and no longer count. */
-  refunded: number;
-  /** Owed to the organiser: gross, less whichever fees they carried. */
-  netEarned: number;
-  /** Already sent. */
-  paidOut: number;
-  /** Requested and not yet sent. */
-  pending: number;
-  /** netEarned − paidOut − pending. What a withdrawal may draw on. */
-  available: number;
-  ticketsSold: number;
-};
+export type { Earnings } from "@/lib/earnings-compute";
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+export type LoadedOrder = EarningsOrderInput & { createdAt: Date };
 
-export async function earningsForOrganization(
-  organizationId: string
-): Promise<Earnings> {
-  const empty: Earnings = {
-    grossSales: 0,
-    platformFee: 0,
-    processingFee: 0,
-    buyerProcessingFee: 0,
-    refunded: 0,
-    netEarned: 0,
-    paidOut: 0,
-    pending: 0,
-    available: 0,
-    ticketsSold: 0,
-  };
+/**
+ * Where queries run: the shared connection, or an open transaction. The
+ * withdrawal path passes its transaction so the balance it checks is read
+ * under the same lock as the request it inserts — with one connection per
+ * function, querying `db` from inside a transaction would also simply wait
+ * forever for itself.
+ */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Executor = typeof db | Tx;
 
-  const orgEvents = await db
-    .select({
-      id: events.id,
-    })
-    .from(events)
-    .where(eq(events.organizationId, organizationId));
+/** Tickets that still count for the organiser. */
+const LIVE_TICKET_STATUSES = ["valid", "checked_in"] as const;
 
-  if (orgEvents.length === 0) return empty;
+function isMissingColumn(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "42703"
+  );
+}
 
-  const eventIds = orgEvents.map((e) => e.id);
+let warnedMissingSettlement = false;
 
-  const paid = await db
+async function loadSuccessfulPayments(orderIds: string[] | null, exec: Executor) {
+  const where = orderIds
+    ? and(inArray(payments.orderId, orderIds), eq(payments.status, "success"))
+    : eq(payments.status, "success");
+  try {
+    return await exec
+      .select({
+        orderId: payments.orderId,
+        provider: payments.provider,
+        rawProviderResponse: payments.rawProviderResponse,
+        settledAt: payments.settledAt,
+      })
+      .from(payments)
+      .where(where);
+  } catch (error) {
+    if (!isMissingColumn(error)) throw error;
+    // Migration 0022 not applied yet. Treat everything as unsettled: it can
+    // only make the withdrawable figure too LOW, never too high.
+    if (!warnedMissingSettlement) {
+      console.error(
+        "payments.settled_at is missing — apply migration 0022. Treating all revenue as unsettled."
+      );
+      warnedMissingSettlement = true;
+    }
+    const rows = await exec
+      .select({
+        orderId: payments.orderId,
+        provider: payments.provider,
+        rawProviderResponse: payments.rawProviderResponse,
+      })
+      .from(payments)
+      .where(where);
+    return rows.map((row) => ({ ...row, settledAt: null as Date | null }));
+  }
+}
+
+/**
+ * Paid and refunded orders for the given events (every event when `eventIds`
+ * is null), with their ticket counts and successful payment.
+ */
+export async function loadEarningsOrders(
+  eventIds: string[] | null,
+  exec: Executor = db
+): Promise<LoadedOrder[]> {
+  if (eventIds && eventIds.length === 0) return [];
+
+  const orderWhere = eventIds
+    ? and(inArray(orders.eventId, eventIds), inArray(orders.status, ["paid", "refunded"]))
+    : inArray(orders.status, ["paid", "refunded"]);
+
+  const orderRows = await exec
     .select({
       id: orders.id,
       eventId: orders.eventId,
+      status: orders.status,
       subtotal: orders.subtotal,
+      fees: orders.fees,
       platformFeePaidBy: orders.platformFeePaidBy,
+      createdAt: orders.createdAt,
     })
     .from(orders)
-    .where(and(inArray(orders.eventId, eventIds), eq(orders.status, "paid")));
+    .where(orderWhere);
+  if (orderRows.length === 0) return [];
 
-  // Orders that have been refunded stop counting. Their reversal is handled
-  // by exclusion rather than by subtracting the buyer's refund: the money
-  // returned to a buyer came out of the pool we were holding, not out of the
-  // organiser's balance, so subtracting it would charge them twice.
-  //
-  // KNOWN SIMPLIFICATION: on a buyer-requested refund we retain half our fee
-  // (REFUND_RETAINED_RATE) and that charge is not deducted here — about ₦125
-  // on a ₦5,000 ticket, always in the organiser's favour. Doing it properly
-  // needs a `kind` column on refunds to tell a buyer's change of mind apart
-  // from an event we cancelled, where nothing is retained at all. Matching on
-  // the reason string would work until somebody edits the wording.
-  const refundRows = await db
-    .select({ orderId: refunds.orderId, amount: refunds.amount })
-    .from(refunds)
-    .where(
-      and(
-        inArray(refunds.eventId, eventIds),
-        eq(refunds.status, "completed")
-      )
-    );
+  const orderIds = eventIds ? orderRows.map((o) => o.id) : null;
 
-  const refundedOrders = new Set(refundRows.map((r) => r.orderId));
-  const paidPayments = await db
+  const ticketWhere = orderIds ? inArray(tickets.orderId, orderIds) : undefined;
+  const ticketCounts = await exec
     .select({
-      orderId: payments.orderId,
-      provider: payments.provider,
-      rawProviderResponse: payments.rawProviderResponse,
+      orderId: tickets.orderId,
+      total: sql<number>`count(*)::int`,
+      kept: sql<number>`(count(*) filter (where ${inArray(tickets.status, [...LIVE_TICKET_STATUSES])}))::int`,
     })
-    .from(payments)
-    .where(
-      and(
-        inArray(
-          payments.orderId,
-          paid.map((order) => order.id)
-        ),
-        eq(payments.status, "success")
-      )
-    );
-  const organizerProcessingFeeByOrder = new Map<string, number>();
-  const buyerProcessingFeeByOrder = new Map<string, number>();
-  for (const payment of paidPayments) {
+    .from(tickets)
+    .where(ticketWhere)
+    .groupBy(tickets.orderId);
+  const countsByOrder = new Map(ticketCounts.map((c) => [c.orderId, c]));
+
+  const paymentRows = await loadSuccessfulPayments(orderIds, exec);
+  const paymentByOrder = new Map<string, EarningsOrderInput["payment"]>();
+  for (const payment of paymentRows) {
     const fee =
       payment.provider === "monnify"
         ? monnifyFeeFromStoredResponse(payment.rawProviderResponse)
         : payment.provider === "paystack"
           ? paystackFeeFromStoredResponse(payment.rawProviderResponse)
           : null;
-    if (fee === null) continue;
-    if (payment.provider === "monnify") {
-      organizerProcessingFeeByOrder.set(payment.orderId, fee);
-    } else if (payment.provider === "paystack") {
-      buyerProcessingFeeByOrder.set(payment.orderId, fee);
+    const candidate = {
+      provider: payment.provider,
+      settledAt: payment.settledAt ? new Date(payment.settledAt) : null,
+      organizerProcessingFee: payment.provider === "monnify" ? fee ?? 0 : 0,
+      buyerProcessingFee: payment.provider === "paystack" ? fee ?? 0 : 0,
+    };
+    const existing = paymentByOrder.get(payment.orderId);
+    // Two successful payments on one order should not happen; if it does,
+    // prefer the settled one rather than hiding money that arrived.
+    if (!existing || (!existing.settledAt && candidate.settledAt)) {
+      paymentByOrder.set(payment.orderId, candidate);
     }
   }
 
-  let grossSales = 0;
-  let platformFee = 0;
-  let processingFee = 0;
-  let buyerProcessingFee = 0;
-  let netEarned = 0;
-  let refunded = 0;
-  let ticketsSold = 0;
-
-  for (const order of paid) {
-    const face = Number(order.subtotal);
-    if (!Number.isFinite(face)) continue;
-
-    if (refundedOrders.has(order.id)) {
-      refunded += face;
-      continue;
-    }
-
-    // Same function the event page and the order API quote from, so a
-    // payout can never disagree with the price a buyer was shown.
-    const quote = quoteOrder(face, {
+  return orderRows.map((order) => {
+    const counts = countsByOrder.get(order.id);
+    return {
+      id: order.id,
+      eventId: order.eventId,
+      status: order.status,
+      subtotal: order.subtotal,
+      fees: order.fees,
       platformFeePaidBy: order.platformFeePaidBy,
-    });
-    const organizerProcessingFee =
-      organizerProcessingFeeByOrder.get(order.id) ?? 0;
-    const actualBuyerProcessingFee =
-      buyerProcessingFeeByOrder.get(order.id) ?? 0;
+      createdAt: order.createdAt,
+      ticketCount: Number(counts?.total ?? 0),
+      keptTicketCount: Number(counts?.kept ?? 0),
+      payment: paymentByOrder.get(order.id) ?? null,
+    };
+  });
+}
 
-    grossSales += face;
-    netEarned += quote.organizerNet - organizerProcessingFee;
-    ticketsSold += 1;
+export async function earningsForOrganization(
+  organizationId: string,
+  exec: Executor = db
+): Promise<Earnings> {
+  const orgEvents = await exec
+    .select({ id: events.id })
+    .from(events)
+    .where(eq(events.organizationId, organizationId));
 
-    if (quote.platformFeePaidBy === "organizer") platformFee += quote.platformFee;
-    processingFee += organizerProcessingFee;
-    buyerProcessingFee += actualBuyerProcessingFee;
-  }
-
-  const payoutRows = await db
+  // One after the other, not in parallel: inside a transaction there is a
+  // single connection, and queries on it run in turn anyway.
+  const orderInputs = await loadEarningsOrders(orgEvents.map((e) => e.id), exec);
+  const payoutRows = await exec
     .select({ netAmount: payouts.netAmount, status: payouts.status })
     .from(payouts)
     .where(eq(payouts.organizationId, organizationId));
 
-  let paidOut = 0;
-  let pending = 0;
-  for (const row of payoutRows) {
-    const amount = Number(row.netAmount);
-    if (!Number.isFinite(amount)) continue;
-    if (row.status === "paid") paidOut += amount;
-    // `processing` counts as pending: the money is committed and must not be
-    // offered for a second withdrawal while it is in flight.
-    else if (row.status === "pending" || row.status === "processing") {
-      pending += amount;
-    }
-  }
+  return computeEarnings(orderInputs, payoutRows);
+}
 
-  return {
-    grossSales: round2(grossSales),
-    platformFee: round2(platformFee),
-    processingFee: round2(processingFee),
-    buyerProcessingFee: round2(buyerProcessingFee),
-    refunded: round2(refunded),
-    netEarned: round2(netEarned),
-    paidOut: round2(paidOut),
-    pending: round2(pending),
-    // Never negative: an over-payout is a conversation, not a number to
-    // show an organiser as though they owed it back.
-    available: Math.max(0, round2(netEarned - paidOut - pending)),
-    ticketsSold,
-  };
+/**
+ * One event's figures. Payouts are account-wide, so they do not appear here:
+ * paidOut / committed / available are 0 and should not be shown per event.
+ */
+export async function earningsForEvent(eventId: string): Promise<Earnings> {
+  return computeEarnings(await loadEarningsOrders([eventId]), []);
 }

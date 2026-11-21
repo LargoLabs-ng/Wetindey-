@@ -19,6 +19,8 @@
     "db:admin-provision": "node backend/scripts/provision-admin.mjs",
     "db:check": "node backend/scripts/check-schema.mjs",
     "db:diagnose": "node backend/scripts/db-check.mjs",
+    "settlements:dry-run": "tsx backend/scripts/settlements-dry-run.ts",
+    "balance:preview": "tsx backend/scripts/balance-preview.ts",
     "db:studio": "drizzle-kit studio --config backend/drizzle.config.ts"
   },
   "dependencies": {
@@ -50,6 +52,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5",
     "vitest": "^5.0.1"
   }

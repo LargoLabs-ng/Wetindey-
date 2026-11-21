@@ -3,6 +3,8 @@ import { auth } from '@/auth';
 import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
 import { events, orders, tickets } from '@/db/schema';
+import { orderOrganizerNet } from '@/lib/earnings-compute';
+import { loadEarningsOrders } from '@/lib/earnings';
 
 
 export async function GET(request: NextRequest) {
@@ -40,7 +42,14 @@ export async function GET(request: NextRequest) {
     // Our cut was worked out per order at checkout and stored; summing the
     // stored figure is exact, and survives any future rate change.
     const platformEarnings = paidOrders.reduce((sum, o) => sum + num(o.fees), 0);
-    const organizerPayouts = ticketValue - platformEarnings;
+    // What organisers have earned after fees and refunds — the same per-order
+    // maths as their Finance page (lib/earnings-compute.ts), so the platform
+    // total is the sum of what each organiser sees.
+    const earningsOrders = await loadEarningsOrders(null);
+    const organizerPayouts =
+      Math.round(
+        earningsOrders.reduce((sum, o) => sum + orderOrganizerNet(o).net, 0) * 100
+      ) / 100;
 
     const allTickets = await db.query.tickets.findMany();
     const totalAttendees = allTickets.length;

@@ -24,6 +24,10 @@ export const ADMIN_ROLE_PERMISSIONS = {
     "roles.manage",
     "audit.view",
     "settings.manage",
+    // Organiser payout requests. Super Admin only in v1; viewing and acting
+    // are separate so a view-only role can be added later without code.
+    "payouts.view",
+    "payouts.manage",
   ],
   admin: [
     "users.view",
