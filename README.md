@@ -152,6 +152,13 @@ written to `payout_events` with who and when. Rules: `lib/payout-lifecycle.ts`;
 locking and writes: `lib/payout-requests.ts`. Requires migrations 0023 then
 0024. Nothing here moves money — transfers are made by hand.
 
+The schedule lives in `vercel.json` (one copy at the repo root and one in
+`frontend/`, identical — Vercel reads whichever folder is the project's Root
+Directory and ignores the other). It runs once a day at 10:00 UTC, the most
+Vercel's Hobby plan allows: anything more frequent fails the deployment, and
+Hobby may fire it any time within that hour. The admin "Refresh from
+Paystack" button covers the gaps.
+
 `GET /api/cron/settlements` is the scheduled entry point (needs `CRON_SECRET`);
 `POST /api/admin/payouts/sync-settlements` is the manual one (super admin,
 dry run unless `{"mode":"write"}`).

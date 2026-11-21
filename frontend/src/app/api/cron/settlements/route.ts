@@ -20,10 +20,9 @@ function authorised(request: NextRequest): boolean {
 /**
  * GET /api/cron/settlements
  *
- * The scheduled settlement sync. Not scheduled yet: the vercel.json entry is
- * added at release (Stage 6), after a dry run has been reviewed. Until
- * SETTLEMENT_SYNC_ENABLED=true it only ever dry-runs, so turning the schedule
- * on early cannot write anything.
+ * The scheduled settlement sync, once a day (vercel.json). Until
+ * SETTLEMENT_SYNC_ENABLED=true it only ever dry-runs, so the schedule cannot
+ * write anything before someone switches writes on.
  */
 export async function GET(request: NextRequest) {
   if (!process.env.CRON_SECRET) {
