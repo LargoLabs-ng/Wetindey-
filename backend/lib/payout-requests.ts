@@ -278,19 +278,24 @@ async function queryRequests(
   });
 }
 
-export async function listPayoutRequests(status: PayoutStatus | "all") {
-  const requests = await queryRequests(
-    status === "all" ? undefined : eq(payouts.status, status),
-    // Queues read oldest first (first come, first served); history newest first.
-    status === "pending" || status === "approved" || status === "processing" ? "oldest" : "newest"
-  );
+/** How many requests sit in each status. Cheap: for the admin nav badge. */
+export async function payoutCounts(): Promise<Record<string, number>> {
   const countRows = await db
     .select({ status: payouts.status, count: sql<number>`count(*)::int` })
     .from(payouts)
     .groupBy(payouts.status);
   const counts: Record<string, number> = {};
   for (const c of countRows) counts[c.status] = Number(c.count);
-  return { counts, requests };
+  return counts;
+}
+
+export async function listPayoutRequests(status: PayoutStatus | "all") {
+  const requests = await queryRequests(
+    status === "all" ? undefined : eq(payouts.status, status),
+    // Queues read oldest first (first come, first served); history newest first.
+    status === "pending" || status === "approved" || status === "processing" ? "oldest" : "newest"
+  );
+  return { counts: await payoutCounts(), requests };
 }
 
 export async function getPayoutRequest(id: string) {
