@@ -41,7 +41,12 @@ CREATE INDEX IF NOT EXISTS "payout_events_payout_idx"
 -- ── Who may see and act ─────────────────────────────────────────────────
 -- Super Admin only in v1. Finance Admin gets nothing yet: viewing can be
 -- granted later with one row, approving deliberately needs its own decision.
--- (Only present if 0018 created the RBAC tables.)
+--
+-- Granted only to a super_admin role that actually exists. Some databases
+-- have the RBAC tables with no roles in them (admin access there comes from
+-- ADMIN_EMAILS, which needs no rows). Inventing role rows here would be a
+-- decision for 0018, not this migration — and if 0018's seed runs later it
+-- grants super_admin every permission in the table, these two included.
 DO $$
 BEGIN
   IF to_regclass('public.platform_admin_permissions') IS NOT NULL THEN
@@ -49,9 +54,15 @@ BEGIN
       ('payouts.view', 'View organiser payout requests and their bank details.'),
       ('payouts.manage', 'Approve, process, reject and confirm organiser payouts.')
     ON CONFLICT ("id") DO NOTHING;
-    INSERT INTO "platform_admin_role_permissions" ("role_id", "permission_id") VALUES
-      ('super_admin', 'payouts.view'),
-      ('super_admin', 'payouts.manage')
+  END IF;
+  IF to_regclass('public.platform_admin_role_permissions') IS NOT NULL
+     AND to_regclass('public.platform_admin_roles') IS NOT NULL THEN
+    INSERT INTO "platform_admin_role_permissions" ("role_id", "permission_id")
+    SELECT r."id", p."id"
+    FROM "platform_admin_roles" r
+    CROSS JOIN "platform_admin_permissions" p
+    WHERE r."id" = 'super_admin'
+      AND p."id" IN ('payouts.view', 'payouts.manage')
     ON CONFLICT ("role_id", "permission_id") DO NOTHING;
   END IF;
 END $$;
