@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { EventImage } from "@/components/event-image";
 import { naira } from "@/lib/fees";
+import { goingLabel } from "@/lib/going-badge";
 
 export type CardEvent = {
   id: string;
@@ -22,10 +23,12 @@ export type CardEvent = {
   minPrice: number | null;
   isFree: boolean;
   soldOut: boolean;
-  ticketsLeft: number;
   createdAt?: string;
-  /** Real tickets issued for this event. Never estimated, never padded. */
-  going?: number;
+  /**
+   * The public "N+ going" floor from /api/discover (9, 20, 50 …), or null
+   * when the badge stays hidden. Cards never receive the exact count.
+   */
+  goingFloor?: number | null;
   /**
    * Campus this belongs to, when it has one. Cards don't display it — they
    * carry it so the pages doing the arranging can group by campus. Null
@@ -167,23 +170,21 @@ function Pill({
 }
 
 /**
- * At most one honest signal per card.
+ * At most one signal per card.
  *
- * Every branch below is a fact we can prove from the database. There is no
- * "trending" badge and no invented attendance — an empty product that fakes
- * a crowd gets found out on the first event, and §20 of the brief rules it
- * out explicitly. Until the numbers are real the card simply says less.
+ * Each branch below comes from the database. The "going" badge shows a
+ * rounded-down floor (9+, 20+, 50+ …) rather than the exact count, and can
+ * carry a per-event display floor set by the owner — both live in
+ * lib/going-badge.ts, the one place to look before changing what it says.
  */
 function signalFor(e: CardEvent): { text: string; tone: "purple" | "coral" | "glass" } | null {
   if (e.soldOut) return { text: "Sold out", tone: "glass" };
 
-  // Five is where a number starts sounding like a room rather than a rounding
-  // error. Below it, saying "2 going" actively makes an event look dead.
-  if ((e.going ?? 0) >= 5) return { text: `${e.going} going`, tone: "purple" };
-
-  if (e.ticketsLeft > 0 && e.ticketsLeft <= 10) {
-    return { text: `${e.ticketsLeft} left`, tone: "coral" };
-  }
+  // A floor, never the exact number: "9+ going", "20+ going" … Below nine
+  // the server sends no floor and the badge stays hidden, because "2 going"
+  // makes an event look dead. See lib/going-badge.ts.
+  const going = goingLabel(e.goingFloor);
+  if (going) return { text: going, tone: "purple" };
 
   if (e.createdAt) {
     const age = Date.now() - new Date(e.createdAt).getTime();

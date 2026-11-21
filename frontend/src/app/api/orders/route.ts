@@ -201,7 +201,11 @@ export async function POST(request: NextRequest) {
     const available = availableQuantity(ticketType);
     if (available < quantity) {
       return NextResponse.json(
-        { error: `Only ${available} tickets available` },
+        // No number in the message: how many are left is organiser-only.
+        {
+          error:
+            "There aren't enough tickets left for that many. Please choose fewer, or another ticket.",
+        },
         { status: 400 }
       );
     }
