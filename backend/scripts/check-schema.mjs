@@ -171,6 +171,18 @@ const EXPECT = [
     tables: [],
     types: [],
   },
+  {
+    // 0023 adds enum values only; 0024 cannot run without it, so 0024's
+    // markers stand for both.
+    migration: "0023_payout_statuses.sql + 0024_payout_management.sql",
+    columns: [
+      ["payouts", "payment_reference"],
+      ["payouts", "available_at_request"],
+      ["payout_events", "to_status"],
+    ],
+    tables: ["payout_events"],
+    types: [],
+  },
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });

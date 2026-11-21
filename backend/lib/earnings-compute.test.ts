@@ -92,6 +92,8 @@ describe("computeEarnings", () => {
     );
     expect(e.settledNet).toBe(4750);
     expect(e.unsettledNet).toBe(2850);
+    expect(e.settledGross).toBe(5000);
+    expect(e.settledPlatformFee).toBe(250);
     expect(e.netEarned).toBe(7600);
     expect(e.available).toBe(4750);
   });

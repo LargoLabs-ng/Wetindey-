@@ -77,6 +77,9 @@ export type Earnings = {
   /** Face value / organiser net the provider has already paid to Wetin Dey. */
   settledGross: number;
   settledNet: number;
+  /** Fees on the settled part (recorded on each payout request as a snapshot). */
+  settledPlatformFee: number;
+  settledProcessingFee: number;
   /** Face value / organiser net still waiting on the provider. */
   unsettledGross: number;
   unsettledNet: number;
@@ -161,6 +164,8 @@ export function computeEarnings(
   let refunded = 0;
   let settledGross = 0;
   let settledNet = 0;
+  let settledPlatformFee = 0;
+  let settledProcessingFee = 0;
   let unsettledGross = 0;
   let unsettledNet = 0;
   let ticketsSold = 0;
@@ -179,6 +184,8 @@ export function computeEarnings(
     if (result.settled) {
       settledGross += result.keptFace;
       settledNet += result.net;
+      settledPlatformFee += result.platformFee;
+      settledProcessingFee += result.processingFee;
     } else {
       unsettledGross += result.keptFace;
       unsettledNet += result.net;
@@ -206,6 +213,8 @@ export function computeEarnings(
     netEarned: round2(settledNet + unsettledNet),
     settledGross: round2(settledGross),
     settledNet: round2(settledNet),
+    settledPlatformFee: round2(settledPlatformFee),
+    settledProcessingFee: round2(settledProcessingFee),
     unsettledGross: round2(unsettledGross),
     unsettledNet: round2(unsettledNet),
     paidOut: round2(paidOut),

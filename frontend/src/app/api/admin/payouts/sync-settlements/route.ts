@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isPlatformAdmin } from "@/lib/authz";
+import { requirePayoutPermission } from "@/lib/payout-auth";
 import {
   runPaystackSettlementSync,
   settlementWritesEnabled,
@@ -24,13 +24,12 @@ const bodySchema = z.object({
 /**
  * POST /api/admin/payouts/sync-settlements
  *
- * Super admins only in v1 (isPlatformAdmin). Behind the "Refresh from
+ * Needs payouts.manage (Super Admin in v1). Behind the "Refresh from
  * Paystack" button on the admin Payouts page, which arrives in Stage 4.
  */
 export async function POST(request: Request) {
-  if (!(await isPlatformAdmin())) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  const auth = await requirePayoutPermission("payouts.manage");
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const body = await request.json().catch(() => ({}));
   const parsed = bodySchema.safeParse(body ?? {});
   if (!parsed.success) {

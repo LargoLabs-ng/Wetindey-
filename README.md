@@ -140,6 +140,18 @@ amounts agree, and it has no settled date yet. Running the sync again is
 harmless. Legacy Monnify payments are never marked: the dry run reports
 their count and value separately.
 
+### Payout requests
+
+An organiser asks for money on `/dashboard/finance`; admins act on it via
+`/api/admin/payouts` (`payouts.view` to see, `payouts.manage` to act —
+Super Admin only for now). Statuses: pending → approved → processing → paid,
+plus failed (money stays held; retry or reject) and rejected (reason
+required, shown to the organiser). Approving never marks anything paid:
+paid needs the bank transfer reference, unique across payouts. Every step is
+written to `payout_events` with who and when. Rules: `lib/payout-lifecycle.ts`;
+locking and writes: `lib/payout-requests.ts`. Requires migrations 0023 then
+0024. Nothing here moves money — transfers are made by hand.
+
 `GET /api/cron/settlements` is the scheduled entry point (needs `CRON_SECRET`);
 `POST /api/admin/payouts/sync-settlements` is the manual one (super admin,
 dry run unless `{"mode":"write"}`).
@@ -224,6 +236,13 @@ npm run db:check
 
 `next dev` transpiles without type-checking, so **a page rendering cleanly
 proves syntax and nothing else.** Run `typecheck` before you believe anything.
+
+The payout tests in `backend/lib/*.db.test.ts` need a real Postgres and are
+skipped unless `PAYOUT_DB_TEST_URL` is set. Point it only at a throwaway
+database with the schema and migrations 0022–0024 applied — never production
+or shared staging: the tests create and delete their own rows. They prove the
+row locks (two simultaneous withdrawals, two admins acting at once), the
+unique transfer reference and the settlement sync's writes.
 
 ---
 

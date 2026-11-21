@@ -95,6 +95,9 @@ export const payoutStatusEnum = pgEnum("payout_status", [
   "processing",
   "paid",
   "failed",
+  // Migration 0023. Order matters to Postgres only for sorting.
+  "approved",
+  "rejected",
 ]);
 
 export const checkInMethodEnum = pgEnum("check_in_method", [
@@ -814,6 +817,29 @@ export const payouts = pgTable("payouts", {
   /** Set when a request is refused, so the organiser is told why. */
   note: text("note"),
   paidAt: timestamp("paid_at"),
+  /** The bank transfer reference, recorded when marked paid (unique). */
+  paymentReference: varchar("payment_reference", { length: 120 }),
+  /** The organiser's settled balance when they asked (null before 0024). */
+  availableAtRequest: numeric("available_at_request", { precision: 12, scale: 2 }),
+  statusChangedAt: timestamp("status_changed_at"),
+});
+
+/**
+ * Everything that happened to a payout request, in order (migration 0024).
+ * Only ever inserted. Statuses are stored as text so the history can hold a
+ * status the enum later loses without the record breaking.
+ */
+export const payoutEvents = pgTable("payout_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  payoutId: uuid("payout_id")
+    .references(() => payouts.id, { onDelete: "cascade" })
+    .notNull(),
+  fromStatus: varchar("from_status", { length: 20 }),
+  toStatus: varchar("to_status", { length: 20 }).notNull(),
+  actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+  note: text("note"),
+  paymentReference: varchar("payment_reference", { length: 120 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // ─── Relations (for Drizzle's relational query API) ─────────────────────

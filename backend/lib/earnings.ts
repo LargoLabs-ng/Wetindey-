@@ -21,6 +21,16 @@ export type { Earnings } from "@/lib/earnings-compute";
 
 export type LoadedOrder = EarningsOrderInput & { createdAt: Date };
 
+/**
+ * Where queries run: the shared connection, or an open transaction. The
+ * withdrawal path passes its transaction so the balance it checks is read
+ * under the same lock as the request it inserts — with one connection per
+ * function, querying `db` from inside a transaction would also simply wait
+ * forever for itself.
+ */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type Executor = typeof db | Tx;
+
 /** Tickets that still count for the organiser. */
 const LIVE_TICKET_STATUSES = ["valid", "checked_in"] as const;
 
@@ -35,12 +45,12 @@ function isMissingColumn(error: unknown): boolean {
 
 let warnedMissingSettlement = false;
 
-async function loadSuccessfulPayments(orderIds: string[] | null) {
+async function loadSuccessfulPayments(orderIds: string[] | null, exec: Executor) {
   const where = orderIds
     ? and(inArray(payments.orderId, orderIds), eq(payments.status, "success"))
     : eq(payments.status, "success");
   try {
-    return await db
+    return await exec
       .select({
         orderId: payments.orderId,
         provider: payments.provider,
@@ -59,7 +69,7 @@ async function loadSuccessfulPayments(orderIds: string[] | null) {
       );
       warnedMissingSettlement = true;
     }
-    const rows = await db
+    const rows = await exec
       .select({
         orderId: payments.orderId,
         provider: payments.provider,
@@ -75,14 +85,17 @@ async function loadSuccessfulPayments(orderIds: string[] | null) {
  * Paid and refunded orders for the given events (every event when `eventIds`
  * is null), with their ticket counts and successful payment.
  */
-export async function loadEarningsOrders(eventIds: string[] | null): Promise<LoadedOrder[]> {
+export async function loadEarningsOrders(
+  eventIds: string[] | null,
+  exec: Executor = db
+): Promise<LoadedOrder[]> {
   if (eventIds && eventIds.length === 0) return [];
 
   const orderWhere = eventIds
     ? and(inArray(orders.eventId, eventIds), inArray(orders.status, ["paid", "refunded"]))
     : inArray(orders.status, ["paid", "refunded"]);
 
-  const orderRows = await db
+  const orderRows = await exec
     .select({
       id: orders.id,
       eventId: orders.eventId,
@@ -99,7 +112,7 @@ export async function loadEarningsOrders(eventIds: string[] | null): Promise<Loa
   const orderIds = eventIds ? orderRows.map((o) => o.id) : null;
 
   const ticketWhere = orderIds ? inArray(tickets.orderId, orderIds) : undefined;
-  const ticketCounts = await db
+  const ticketCounts = await exec
     .select({
       orderId: tickets.orderId,
       total: sql<number>`count(*)::int`,
@@ -110,7 +123,7 @@ export async function loadEarningsOrders(eventIds: string[] | null): Promise<Loa
     .groupBy(tickets.orderId);
   const countsByOrder = new Map(ticketCounts.map((c) => [c.orderId, c]));
 
-  const paymentRows = await loadSuccessfulPayments(orderIds);
+  const paymentRows = await loadSuccessfulPayments(orderIds, exec);
   const paymentByOrder = new Map<string, EarningsOrderInput["payment"]>();
   for (const payment of paymentRows) {
     const fee =
@@ -150,19 +163,22 @@ export async function loadEarningsOrders(eventIds: string[] | null): Promise<Loa
   });
 }
 
-export async function earningsForOrganization(organizationId: string): Promise<Earnings> {
-  const orgEvents = await db
+export async function earningsForOrganization(
+  organizationId: string,
+  exec: Executor = db
+): Promise<Earnings> {
+  const orgEvents = await exec
     .select({ id: events.id })
     .from(events)
     .where(eq(events.organizationId, organizationId));
 
-  const [orderInputs, payoutRows] = await Promise.all([
-    loadEarningsOrders(orgEvents.map((e) => e.id)),
-    db
-      .select({ netAmount: payouts.netAmount, status: payouts.status })
-      .from(payouts)
-      .where(eq(payouts.organizationId, organizationId)),
-  ]);
+  // One after the other, not in parallel: inside a transaction there is a
+  // single connection, and queries on it run in turn anyway.
+  const orderInputs = await loadEarningsOrders(orgEvents.map((e) => e.id), exec);
+  const payoutRows = await exec
+    .select({ netAmount: payouts.netAmount, status: payouts.status })
+    .from(payouts)
+    .where(eq(payouts.organizationId, organizationId));
 
   return computeEarnings(orderInputs, payoutRows);
 }
