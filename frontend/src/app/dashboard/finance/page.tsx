@@ -11,6 +11,8 @@ type Earnings = {
   buyerProcessingFee: number;
   refunded: number;
   netEarned: number;
+  settledNet: number;
+  unsettledNet: number;
   paidOut: number;
   pending: number;
   available: number;
@@ -24,6 +26,7 @@ type Payout = {
   requestedAt: string;
   paidAt: string | null;
   note: string | null;
+  paymentReference: string | null;
   bankName: string | null;
   accountNumberLast4: string;
 };
@@ -37,6 +40,16 @@ type Finance = {
     set: boolean;
   };
   history: Payout[];
+};
+
+/** What each payout status means to an organiser, in their words. */
+const STATUS_LABEL: Record<string, { label: string; tone: "good" | "wait" | "bad" }> = {
+  pending: { label: "Requested", tone: "wait" },
+  approved: { label: "Approved", tone: "wait" },
+  processing: { label: "Being sent", tone: "wait" },
+  paid: { label: "Paid", tone: "good" },
+  failed: { label: "Transfer failed — being retried", tone: "bad" },
+  rejected: { label: "Rejected", tone: "bad" },
 };
 
 /**
@@ -140,9 +153,38 @@ export default function FinancePage() {
         <p className="mt-2 text-4xl font-extrabold tracking-[-0.03em] text-on-dark">
           {naira(e.available)}
         </p>
-        <p className="mt-2 text-sm text-on-dark-3">
-          Net earned {naira(e.netEarned)} · paid out {naira(e.paidOut)} ·
-          pending {naira(e.pending)}
+
+        {/* Settled vs waiting: only money Paystack has actually paid to Wetin
+            Dey can be withdrawn. Stacked rows so it reads on a phone. */}
+        <dl className="mt-4 space-y-2 text-sm">
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="flex items-center gap-2 text-on-dark-2">
+              <Check className="h-4 w-4 text-gold" />
+              Settled by Paystack
+            </dt>
+            <dd className="font-semibold text-on-dark">{naira(e.settledNet)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="flex items-center gap-2 text-on-dark-2">
+              <Clock className="h-4 w-4 text-on-dark-3" />
+              Waiting for Paystack
+            </dt>
+            <dd className="font-semibold text-on-dark">{naira(e.unsettledNet)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-on-dark-3">Paid out</dt>
+            <dd className="text-on-dark-2">− {naira(e.paidOut)}</dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <dt className="text-on-dark-3">Requested, not yet paid</dt>
+            <dd className="text-on-dark-2">− {naira(e.pending)}</dd>
+          </div>
+        </dl>
+        <p className="mt-4 text-xs leading-relaxed text-on-dark-3">
+          Paystack sends ticket money to Wetin Dey in batches. A sale shows as
+          waiting until its batch arrives, then moves to settled and can be
+          withdrawn. Available = settled − paid out − requested. Total earned
+          so far: {naira(e.netEarned)}.
         </p>
       </div>
 
@@ -271,6 +313,8 @@ export default function FinancePage() {
         ) : e.available <= 0 ? (
           <p className="mt-2 text-sm text-on-dark-2">
             Nothing available to withdraw yet.
+            {e.unsettledNet > 0 &&
+              ` ${naira(e.unsettledNet)} is waiting for Paystack and becomes available once it is settled.`}
           </p>
         ) : (
           <form
@@ -319,7 +363,8 @@ export default function FinancePage() {
             an hour later stops trusting the number above it. */}
         <p className="mt-3 text-xs text-on-dark-3">
           Requests are reviewed and paid by hand — this doesn&apos;t move money
-          on its own. You&apos;ll see it below as pending until it&apos;s sent.
+          on its own. You&apos;ll see each step below: requested, approved,
+          being sent, then paid with the bank transfer reference.
         </p>
       </section>
 
@@ -339,58 +384,54 @@ export default function FinancePage() {
             <p className="text-sm text-on-dark-2">No payouts yet.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-line-dark bg-surface">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-line-dark text-on-dark-3">
-                  <th className="px-5 py-3 font-semibold">Requested</th>
-                  <th className="px-5 py-3 font-semibold">To</th>
-                  <th className="px-5 py-3 text-right font-semibold">Amount</th>
-                  <th className="px-5 py-3 text-right font-semibold">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.history.map((p) => (
-                  <tr key={p.id} className="border-b border-line-dark last:border-0">
-                    <td className="px-5 py-3 text-on-dark-2">
-                      {new Date(p.requestedAt).toLocaleDateString("en-NG", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </td>
-                    <td className="px-5 py-3 text-on-dark-2">
-                      {p.bankName} ···· {p.accountNumberLast4}
-                    </td>
-                    <td className="px-5 py-3 text-right font-semibold text-on-dark">
-                      {naira(p.amount)}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          p.status === "paid"
-                            ? "bg-success/25 text-sage"
-                            : p.status === "failed"
-                              ? "bg-error/15 text-error"
-                              : "bg-warning/15 text-warning"
-                        }`}
-                      >
-                        {p.status === "paid" ? (
-                          <Check className="h-3 w-3" />
-                        ) : (
-                          <Clock className="h-3 w-3" />
-                        )}
-                        {p.status}
-                      </span>
-                      {p.note && (
-                        <p className="mt-1 text-xs text-on-dark-3">{p.note}</p>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          // One card per request: reads on a phone without sideways scrolling.
+          <ul className="space-y-3">
+            {data.history.map((p) => {
+              const status = STATUS_LABEL[p.status] ?? { label: p.status, tone: "wait" };
+              return (
+                <li key={p.id} className={card}>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-lg font-bold text-on-dark">{naira(p.amount)}</p>
+                    <span
+                      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        status.tone === "good"
+                          ? "bg-success/25 text-sage"
+                          : status.tone === "bad"
+                            ? "bg-error/15 text-error"
+                            : "bg-warning/15 text-warning"
+                      }`}
+                    >
+                      {status.tone === "good" ? <Check className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                      {status.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-on-dark-2">
+                    Requested{" "}
+                    {new Date(p.requestedAt).toLocaleDateString("en-NG", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}{" "}
+                    · to {p.bankName} ···· {p.accountNumberLast4}
+                  </p>
+                  {p.status === "paid" && (
+                    <p className="mt-1 text-xs text-on-dark-3">
+                      Paid
+                      {p.paidAt &&
+                        ` ${new Date(p.paidAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}`}
+                      {p.paymentReference && ` · transfer reference ${p.paymentReference}`}
+                    </p>
+                  )}
+                  {p.note && p.status !== "paid" && (
+                    <p className="mt-2 text-sm text-on-dark-2">
+                      {p.status === "rejected" ? "Reason: " : ""}
+                      {p.note}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
     </div>

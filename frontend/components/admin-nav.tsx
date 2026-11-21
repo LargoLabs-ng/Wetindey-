@@ -11,25 +11,32 @@ import { usePathname } from "next/navigation";
  * dashboard, and Departments was not on any of them — the only way in was to
  * type the URL. This lives in the layout so every admin page carries it.
  *
- * Departments shows its pending count, because that queue fills up on its own
- * as students sign up. A number nobody can see is a number nobody acts on.
+ * Departments and Payouts show their pending counts, because those queues
+ * fill up on their own. A number nobody can see is a number nobody acts on.
  */
 const LINKS = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/events", label: "Events" },
   { href: "/admin/analytics", label: "Analytics" },
-  { href: "/admin/departments", label: "Departments", countKey: "pending" },
+  { href: "/admin/departments", label: "Departments", countKey: "departments" },
+  { href: "/admin/payouts", label: "Payouts", countKey: "payouts" },
   { href: "/admin/payment-reviews", label: "Payment reviews" },
-];
+] as const;
 
 export function AdminNav() {
   const pathname = usePathname();
-  const [pending, setPending] = useState(0);
+  const [counts, setCounts] = useState({ departments: 0, payouts: 0 });
 
   useEffect(() => {
     fetch("/api/admin/departments")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setPending(d.counts?.pending ?? 0))
+      .then((d) => d && setCounts((c) => ({ ...c, departments: d.counts?.pending ?? 0 })))
+      .catch(() => {});
+    // Payout requests waiting for a first look. The badge counts pending
+    // only: approved and processing ones are already in someone's hands.
+    fetch("/api/admin/payouts?countsOnly=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setCounts((c) => ({ ...c, payouts: d.counts?.pending ?? 0 })))
       .catch(() => {});
   }, [pathname]);
 
@@ -42,7 +49,9 @@ export function AdminNav() {
       }}
     >
       <div className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 sm:px-6 lg:px-8">
-        {LINKS.map(({ href, label, countKey }) => {
+        {LINKS.map((link) => {
+          const { href, label } = link;
+          const count = "countKey" in link ? counts[link.countKey] : 0;
           // /admin must match exactly or it lights up on every child route.
           const active = href === "/admin" ? pathname === href : pathname.startsWith(href);
           return (
@@ -57,12 +66,12 @@ export function AdminNav() {
               }}
             >
               {label}
-              {countKey && pending > 0 && (
+              {count > 0 && (
                 <span
                   className="ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-bold text-white"
                   style={{ backgroundColor: "var(--color-purple)" }}
                 >
-                  {pending}
+                  {count}
                 </span>
               )}
             </Link>

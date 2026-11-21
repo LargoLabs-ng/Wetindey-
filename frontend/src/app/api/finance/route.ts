@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -9,6 +9,8 @@ import {
   getSessionUserId,
 } from "@/lib/authz";
 import { earningsForOrganization } from "@/lib/earnings";
+import { createWithdrawalRequest, PayoutRequestError } from "@/lib/payout-requests";
+import { notifyAdminsOfPayoutRequest, notifyBankDetailsChanged } from "@/lib/payout-emails";
 
 /**
  * The organisation's money.
@@ -68,6 +70,7 @@ export async function GET() {
         requestedAt: payouts.requestedAt,
         paidAt: payouts.paidAt,
         note: payouts.note,
+        paymentReference: payouts.paymentReference,
         bankName: payouts.bankName,
         bankAccountNumber: payouts.bankAccountNumber,
       })
@@ -97,6 +100,7 @@ export async function GET() {
       requestedAt: h.requestedAt,
       paidAt: h.paidAt,
       note: h.note,
+      paymentReference: h.paymentReference,
       bankName: h.bankName,
       accountNumberLast4: h.bankAccountNumber
         ? h.bankAccountNumber.slice(-4)
@@ -140,6 +144,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (parsed.data.action === "bank") {
+    const bank = parsed.data;
+    const [before] = await db
+      .select({ bankName: organizations.bankName, accountNumber: organizations.bankAccountNumber, accountName: organizations.bankAccountName })
+      .from(organizations)
+      .where(eq(organizations.id, auth.organizationId))
+      .limit(1);
+
     await db
       .update(organizations)
       .set({
@@ -149,60 +160,49 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(organizations.id, auth.organizationId));
 
+    // Tell the owner whenever the payout account changes — the one change a
+    // stolen login would make first. Sent after the response; a failed email
+    // never undoes the save.
+    const changed =
+      !before ||
+      before.bankName !== bank.bankName ||
+      before.accountName !== bank.accountName ||
+      before.accountNumber !== bank.accountNumber;
+    if (changed) {
+      after(() =>
+        notifyBankDetailsChanged({
+          organizationId: auth.organizationId,
+          before: before?.accountNumber ? { bankName: before.bankName, accountNumber: before.accountNumber } : null,
+          after: {
+            bankName: bank.bankName,
+            accountName: bank.accountName,
+            accountNumber: bank.accountNumber,
+          },
+        })
+      );
+    }
+
     return NextResponse.json({ ok: true });
   }
 
   // ── A withdrawal request ──────────────────────────────────────────────
-  const [org] = await db
-    .select({
-      bankName: organizations.bankName,
-      bankAccountName: organizations.bankAccountName,
-      bankAccountNumber: organizations.bankAccountNumber,
-    })
-    .from(organizations)
-    .where(eq(organizations.id, auth.organizationId))
-    .limit(1);
-
-  if (!org?.bankAccountNumber) {
-    return NextResponse.json(
-      { error: "Add your bank account before requesting a payout." },
-      { status: 400 }
-    );
-  }
-
-  // Recomputed here rather than trusting the number the page was showing.
-  // A tab left open for an hour, or a refund issued in between, and the
-  // figure on screen is no longer the figure that is owed.
-  const earnings = await earningsForOrganization(auth.organizationId);
-
-  if (parsed.data.amount > earnings.available + 0.01) {
-    return NextResponse.json(
-      {
-        error: "That's more than you have available.",
-        available: earnings.available,
-      },
-      { status: 409 }
-    );
-  }
-
-  const [created] = await db
-    .insert(payouts)
-    .values({
+  // Checked and saved under a lock on the organisation (lib/payout-requests),
+  // so two requests sent at once cannot overspend between them, and the
+  // balance is recomputed there rather than trusted from the screen. Only
+  // money Paystack has settled to Wetin Dey counts.
+  try {
+    const created = await createWithdrawalRequest({
       organizationId: auth.organizationId,
-      // Account-wide, not tied to one event: the balance it draws on is the
-      // whole organisation's.
-      eventId: null,
-      grossAmount: earnings.grossSales.toFixed(2),
-      platformFee: earnings.platformFee.toFixed(2),
-      paymentProcessingFee: earnings.processingFee.toFixed(2),
-      netAmount: parsed.data.amount.toFixed(2),
-      status: "pending",
-      bankName: org.bankName,
-      bankAccountName: org.bankAccountName,
-      bankAccountNumber: org.bankAccountNumber,
-      requestedBy: auth.userId,
-    })
-    .returning({ id: payouts.id });
-
-  return NextResponse.json({ ok: true, id: created.id });
+      userId: auth.userId,
+      amount: parsed.data.amount,
+    });
+    after(() => notifyAdminsOfPayoutRequest(created.id));
+    return NextResponse.json({ ok: true, id: created.id });
+  } catch (error) {
+    if (error instanceof PayoutRequestError) {
+      return NextResponse.json({ error: error.message, ...error.extra }, { status: error.status });
+    }
+    console.error("Withdrawal request failed:", error);
+    return NextResponse.json({ error: "That didn't work. Nothing was requested." }, { status: 500 });
+  }
 }

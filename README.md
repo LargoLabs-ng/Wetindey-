@@ -115,6 +115,54 @@ account-transfer transactions only; they remain pending until Monnify confirms
 success. Keep the old Monnify credentials configured only if historical
 transactions still need to be verified or refunded.
 
+### Paystack settlements (what organisers can withdraw)
+
+A `charge.success` webhook means the buyer paid Paystack. It does **not** mean
+Paystack has paid Wetin Dey. Paystack pays out in batches ("settlements") and
+sends no webhook when it does, so `payments.settled_at` (migration 0022) is
+filled by asking the Settlements API which transactions each successful
+settlement contained (`backend/lib/paystack-settlements.ts`). Only settled
+money will count towards an organiser's withdrawable balance.
+
+Order of operations, and it matters:
+
+1. `npm run settlements:dry-run` — read-only. Uses a READ ONLY database
+   transaction and only GET requests to Paystack, and prints what would be
+   marked settled and anything that does not match. Add
+   `-- --json report.json` for the full list. Works before migration 0022.
+2. Apply `backend/migrations/0022_payment_settlement.sql`.
+3. Only after the dry run has been reviewed, set `SETTLEMENT_SYNC_ENABLED=true`.
+   Until then every sync, scheduled or manual, refuses to write.
+
+A payment is marked settled only if it is a Paystack payment recorded here as
+successful, its reference is in exactly one successful settlement, the
+amounts agree, and it has no settled date yet. Running the sync again is
+harmless. Legacy Monnify payments are never marked: the dry run reports
+their count and value separately.
+
+### Payout requests
+
+An organiser asks for money on `/dashboard/finance`; admins act on it via
+`/api/admin/payouts` (`payouts.view` to see, `payouts.manage` to act —
+Super Admin only for now). Statuses: pending → approved → processing → paid,
+plus failed (money stays held; retry or reject) and rejected (reason
+required, shown to the organiser). Approving never marks anything paid:
+paid needs the bank transfer reference, unique across payouts. Every step is
+written to `payout_events` with who and when. Rules: `lib/payout-lifecycle.ts`;
+locking and writes: `lib/payout-requests.ts`. Requires migrations 0023 then
+0024. Nothing here moves money — transfers are made by hand.
+
+The schedule lives in `vercel.json` (one copy at the repo root and one in
+`frontend/`, identical — Vercel reads whichever folder is the project's Root
+Directory and ignores the other). It runs once a day at 10:00 UTC, the most
+Vercel's Hobby plan allows: anything more frequent fails the deployment, and
+Hobby may fire it any time within that hour. The admin "Refresh from
+Paystack" button covers the gaps.
+
+`GET /api/cron/settlements` is the scheduled entry point (needs `CRON_SECRET`);
+`POST /api/admin/payouts/sync-settlements` is the manual one (super admin,
+dry run unless `{"mode":"write"}`).
+
 ---
 
 ## Migrations — read this before touching the database
@@ -195,6 +243,13 @@ npm run db:check
 
 `next dev` transpiles without type-checking, so **a page rendering cleanly
 proves syntax and nothing else.** Run `typecheck` before you believe anything.
+
+The payout tests in `backend/lib/*.db.test.ts` need a real Postgres and are
+skipped unless `PAYOUT_DB_TEST_URL` is set. Point it only at a throwaway
+database with the schema and migrations 0022–0024 applied — never production
+or shared staging: the tests create and delete their own rows. They prove the
+row locks (two simultaneous withdrawals, two admins acting at once), the
+unique transfer reference and the settlement sync's writes.
 
 ---
 
