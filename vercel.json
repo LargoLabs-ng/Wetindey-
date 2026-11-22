@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/settlements",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/notifications?task=daily",
+      "schedule": "30 9 * * *"
     }
   ]
 }

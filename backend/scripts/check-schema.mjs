@@ -183,6 +183,26 @@ const EXPECT = [
     tables: ["payout_events"],
     types: [],
   },
+  {
+    migration: "0025_notifications.sql",
+    columns: [
+      ["notification_events", "dedupe_key"],
+      ["notification_events", "available_at"],
+      ["notification_deliveries", "max_attempts"],
+      ["notifications", "read_at"],
+    ],
+    tables: [
+      "notification_events",
+      "notifications",
+      "notification_deliveries",
+      "notification_delivery_attempts",
+      "notification_preferences",
+      "push_subscriptions",
+      "discovery_items",
+      "notification_settings",
+    ],
+    types: [],
+  },
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });
