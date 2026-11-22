@@ -71,6 +71,9 @@ export async function GET(request: NextRequest) {
         status: 'success',
         orderId: order.id,
         eventTitle: order.event.title,
+        // Free RSVPs land on this same page; nothing was paid, so the page
+        // shouldn't say "Payment Confirmed".
+        free: Number(order.total) === 0,
         // Inside the success branch on purpose, and nowhere else in this
         // file. The whole promise of this field is that it is visible only to
         // somebody who paid — putting it in the pending or failed response

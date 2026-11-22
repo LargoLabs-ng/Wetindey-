@@ -28,6 +28,8 @@ interface PaymentStatus {
   orderId?: string;
   eventTitle?: string;
   tickets?: Ticket[];
+  /** A free RSVP: nothing was paid, so the page celebrates instead. */
+  free?: boolean;
   /**
    * The organiser's note to people who have paid — a WhatsApp group, a Zoom
    * link, where to come in. Only ever arrives on a successful verification;
@@ -81,9 +83,13 @@ export default function PaymentCallbackClient() {
         if (cancelled) return;
 
         if (data.status === 'success') {
+          const free = data.free === true;
           setPaymentStatus({
             status: 'success',
-            message: 'Payment successful! Your tickets are ready.',
+            message: free
+              ? 'Your spot is confirmed. Your ticket is ready.'
+              : 'Payment successful! Your tickets are ready.',
+            free,
             orderId: data.orderId,
             eventTitle: data.eventTitle,
             tickets: data.tickets,
@@ -147,7 +153,8 @@ export default function PaymentCallbackClient() {
           )}
 
           <h1 className="mt-6 text-3xl font-bold" style={{ color: 'var(--color-forest)' }}>
-            {paymentStatus.status === 'success' && 'Payment Confirmed! 🎉'}
+            {paymentStatus.status === 'success' &&
+              (paymentStatus.free ? "You're in! 🎉" : 'Payment Confirmed! 🎉')}
             {paymentStatus.status === 'failed' && 'Payment Failed'}
             {paymentStatus.status === 'manual_review' && 'Payment Under Review'}
             {paymentStatus.status === 'pending' && 'Processing Payment'}
