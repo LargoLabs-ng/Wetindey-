@@ -57,7 +57,11 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
           <div className="mb-5"><WordMark size="lg" /></div>
           <h1 className="text-2xl font-bold text-ink">Welcome back</h1>
           <p className="text-ink-2 text-sm mt-1">
-            Log in to manage your events.
+            {/* Buyers land here from an event page now that tickets need an
+                account, so don't talk to them as organisers. */}
+            {destination.startsWith("/events/")
+              ? "Log in to get your tickets."
+              : "Log in to your account."}
           </p>
         </div>
 
@@ -122,7 +126,7 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
         </form>
 
         <p className="text-center text-sm text-ink-2 mt-4">
-          New organizer?{" "}
+          New here?{" "}
           <Link href={signupHref} className="text-purple font-semibold">
             Create an account
           </Link>
