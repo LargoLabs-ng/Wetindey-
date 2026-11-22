@@ -38,6 +38,7 @@ export default function AdminNotificationsPage() {
   const [data, setData] = useState<Health | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const fetchHealth = useCallback(async (): Promise<Health> => {
     const res = await fetch("/api/admin/notifications", { cache: "no-store" });
@@ -70,6 +71,35 @@ export default function AdminNotificationsPage() {
     };
   }, [fetchHealth]);
 
+  async function runNow(task: "worker" | "daily") {
+    setBusy(task);
+    setNotice(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/notifications/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "The run failed.");
+      if (body.skipped) {
+        setNotice(body.skipped);
+      } else {
+        const w = body.worker;
+        setNotice(
+          `Done. Events handled: ${w.events.done}. Sent: ${w.deliveries.sent}. Will retry: ${w.deliveries.retried + w.events.retried}. Failed: ${w.deliveries.failed + w.events.failed}.` +
+            (task === "daily" && body.sweep ? ` Missed items found by the daily check: ${(body.sweep.ordersRecovered ?? 0) + (body.sweep.payoutRequestsRecovered ?? 0) + (body.sweep.payoutUpdatesRecovered ?? 0)}.` : "")
+        );
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The run failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function retry(kind: "delivery" | "event", id: string) {
     setBusy(id);
     try {
@@ -96,6 +126,27 @@ export default function AdminNotificationsPage() {
       <p className="mt-2 text-sm" style={{ color: "var(--color-stone)" }}>
         What&apos;s waiting, what failed, and today&apos;s email use. Failed items can be retried: each retry gets a fresh 5 attempts.
       </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={() => runNow("worker")}
+          className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          style={{ backgroundColor: "var(--color-purple)" }}
+        >
+          {busy === "worker" ? "Processing…" : "Process now"}
+        </button>
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={() => runNow("daily")}
+          className="rounded-lg border bg-white px-4 py-2 text-sm font-semibold disabled:opacity-60"
+          style={{ borderColor: "var(--color-line)" }}
+        >
+          {busy === "daily" ? "Checking…" : "Run daily check"}
+        </button>
+      </div>
+      {notice && <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-800">{notice}</p>}
       {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {!data && !error && <p className="mt-6">Loading…</p>}
 

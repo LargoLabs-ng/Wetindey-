@@ -1,12 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { appUrl } from "@/lib/app-url";
-import { notificationsEnabled } from "@/lib/notifications/config";
-import { checkNotificationHealth } from "@/lib/notifications/health";
-import { cleanUpOldNotifications } from "@/lib/notifications/maintenance";
 import { verifyQStashRequest } from "@/lib/notifications/qstash";
-import { runReconciliationSweep } from "@/lib/notifications/sweep";
-import { runWorker } from "@/lib/notifications/worker";
+import { runNotificationTask, TASKS, type Task } from "@/lib/notifications/tasks";
 
 // A claim lasts 120 seconds; the host stops this function long before that.
 export const maxDuration = 60;
@@ -31,9 +27,6 @@ export const maxDuration = 60;
  * QStash logs it and (for timed tasks) retries.
  */
 
-const TASKS = ["worker", "daily", "discovery-daily", "discovery-weekly"] as const;
-type Task = (typeof TASKS)[number];
-
 function hasCronSecret(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
@@ -48,20 +41,8 @@ function taskOf(request: NextRequest): Task | null {
 }
 
 async function run(task: Task) {
-  if (!notificationsEnabled()) {
-    return NextResponse.json({ skipped: "Notifications are switched off (NOTIFICATIONS_ENABLED)." });
-  }
   try {
-    if (task === "discovery-daily" || task === "discovery-weekly") {
-      return NextResponse.json({ skipped: `${task} arrives in Phase 3.` });
-    }
-    const sweep = task === "daily" ? await runReconciliationSweep() : undefined;
-    const cleanup = task === "daily" ? await cleanUpOldNotifications() : undefined;
-    const health = task === "daily" ? await checkNotificationHealth() : undefined;
-    const worker = await runWorker({ source: task });
-    const summary = { task, sweep, cleanup, health, worker };
-    console.log("Notification run:", JSON.stringify(summary));
-    return NextResponse.json(summary);
+    return NextResponse.json(await runNotificationTask(task));
   } catch (error) {
     console.error(`Notification ${task} run failed:`, error);
     return NextResponse.json({ error: "The notification run failed." }, { status: 502 });
