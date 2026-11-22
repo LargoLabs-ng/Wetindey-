@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { hasDashboardAccess } from "@/lib/authz";
 import { SignOutButton } from "@/components/sign-out-button";
 import { DashboardNav } from "@/components/dashboard-nav";
+import { NotificationBell } from "@/components/notification-bell";
 import { WordMark } from "@/components/wordmark";
 import { db } from "@/db";
 import { organizations } from "@/db/schema";
@@ -42,7 +43,8 @@ export default async function DashboardLayout({
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <NotificationBell tone="dark" />
             <span className="hidden text-sm text-on-dark-2 sm:inline">
               {session?.user?.name}
             </span>
