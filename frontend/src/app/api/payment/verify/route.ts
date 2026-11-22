@@ -3,7 +3,10 @@ import { db } from '@/db';
 import { payments } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { verifyAndFinalizeMonnifyPayment } from "@/lib/monnify-payments";
-import { verifyAndFinalizePaystackPayment } from "@/lib/paystack";
+import {
+  LATE_PAYMENT_REVIEW_REASON,
+  verifyAndFinalizePaystackPayment,
+} from "@/lib/paystack";
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,7 +60,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         status: "manual_review",
         message:
-          "Your payment reached us, but the ticket price changed during checkout. No ticket was issued. Our team will review the charge and contact you about the next step.",
+          payment.manualReviewReason === LATE_PAYMENT_REVIEW_REASON
+            ? "Your payment reached us after your seats had been released, and this ticket sold out in the meantime. No ticket was issued. Our team will refund you or contact you about the next step."
+            : "Your payment reached us, but the ticket price changed during checkout. No ticket was issued. Our team will review the charge and contact you about the next step.",
       });
     }
 

@@ -14,7 +14,7 @@ import {
 } from '@/db/schema';
 import { and, asc, eq } from 'drizzle-orm';
 import { randomUUID } from "node:crypto";
-import { getSessionUserId } from '@/lib/authz';
+import { getSessionUserId, isUuid } from '@/lib/authz';
 import { validateAnswers, type RegistrationField } from '@/lib/registration';
 import {
   applyPromo,
@@ -24,10 +24,13 @@ import {
 } from '@/lib/promo';
 import { loadPromoCode } from '@/lib/promo-lookup';
 import {
-  availableQuantity,
+  HOLD_MINUTES,
+  holdSeats,
   releaseExpiredReservations,
   releaseOrderReservation,
 } from '@/lib/inventory';
+import { checkTierSale } from '@/lib/checkout-rules';
+import { getBuyerAccount } from '@/lib/buyer-account';
 import { initializePaystackCheckout } from "@/lib/paystack";
 import { finalizeFreeOrder } from "@/lib/finalize-order";
 import { activeTicketPrice } from "@/lib/early-bird";
@@ -75,7 +78,12 @@ interface CreateOrderRequest {
   eventId: string;
   ticketTypeId: string;
   quantity: number;
-  buyerEmail: string;
+  /**
+   * Ignored. The order's email is always the signed-in account's verified
+   * address — see the account checks in POST. Still accepted so an older
+   * page mid-session doesn't fail on an unexpected field.
+   */
+  buyerEmail?: string;
   buyerPhone: string;
   attendees: Array<{ name: string; email: string }>;
   /**
@@ -98,6 +106,9 @@ interface CreateOrderRequest {
   marketingConsent?: boolean;
 }
 
+/** Thrown inside the hold transaction when the seats went to someone else. */
+class SeatsGone extends Error {}
+
 function generateQRToken(): string {
   const randomBytes = crypto.getRandomValues(new Uint8Array(64));
   return Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -105,6 +116,38 @@ function generateQRToken(): string {
 
 export async function POST(request: NextRequest) {
   try {
+    // Every ticket, paid or free, belongs to a signed-in account with a
+    // verified email. The event page asks people to sign in before this is
+    // ever called, but the page is a courtesy; this is the rule. Checked
+    // before anything else, so a signed-out request holds no seats and
+    // writes nothing.
+    const userId = await getSessionUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Please sign in to get tickets.', code: 'sign_in_required' },
+        { status: 401 }
+      );
+    }
+    const account = await getBuyerAccount(userId);
+    if (!account) {
+      return NextResponse.json(
+        { error: 'Please sign in to get tickets.', code: 'sign_in_required' },
+        { status: 401 }
+      );
+    }
+    if (!account.emailVerified) {
+      return NextResponse.json(
+        {
+          error: 'Please confirm your email before getting tickets.',
+          code: 'email_unverified',
+        },
+        { status: 403 }
+      );
+    }
+    // Tickets and receipts go to the account's own address. Whatever the
+    // page sent as buyerEmail is ignored.
+    const buyerEmail = account.email;
+
     // Hand back inventory from checkouts that were abandoned past their
     // 15-minute hold, before we decide what's available.
     await releaseExpiredReservations();
@@ -114,7 +157,6 @@ export async function POST(request: NextRequest) {
       eventId,
       ticketTypeId,
       quantity,
-      buyerEmail,
       buyerPhone,
       attendees,
       ref,
@@ -123,9 +165,26 @@ export async function POST(request: NextRequest) {
     const submittedAnswers = body.answers;
     const typedPromoCode = body.promoCode;
 
-    if (!eventId || !ticketTypeId || !quantity || !buyerEmail || !buyerPhone) {
+    if (!eventId || !ticketTypeId || !quantity || !buyerPhone) {
       return NextResponse.json(
         { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    // A malformed id makes Postgres throw rather than find nothing.
+    if (!isUuid(eventId) || !isUuid(ticketTypeId)) {
+      return NextResponse.json({ error: 'Ticket type not found' }, { status: 404 });
+    }
+
+    if (
+      !Array.isArray(attendees) ||
+      attendees.some(
+        (a) => typeof a?.name !== 'string' || typeof a?.email !== 'string'
+      )
+    ) {
+      return NextResponse.json(
+        { error: 'Please enter a name and email for every attendee.' },
         { status: 400 }
       );
     }
@@ -145,13 +204,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
-    if (event.status !== 'published' || event.archivedAt) {
-      return NextResponse.json(
-        { error: 'Event is not available for ticket sales' },
-        { status: 400 }
-      );
-    }
-
     const ticketType = await db.query.ticketTypes.findFirst({
       where: eq(ticketTypes.id, ticketTypeId),
     });
@@ -169,6 +221,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: `You can buy up to ${ticketType.maxPerOrder} tickets per order.` },
         { status: 400 }
+      );
+    }
+
+    // Published, not ended (unless the date is still TBA), tier not paused
+    // or sold out, inside its sales window, and enough left. The final word
+    // on stock is the atomic hold further down; this gives a clear reason
+    // when the answer is already no.
+    const sale = checkTierSale({ event, tier: ticketType, quantity, now: new Date() });
+    if (!sale.ok) {
+      return NextResponse.json(
+        // `available` deliberately left out: stock numbers are organiser-only.
+        { error: sale.message, code: sale.code },
+        { status: sale.code === 'event_unavailable' ? 400 : 409 }
       );
     }
 
@@ -196,18 +261,6 @@ export async function POST(request: NextRequest) {
     );
     if (!checked.ok) {
       return NextResponse.json({ error: checked.error }, { status: 400 });
-    }
-
-    const available = availableQuantity(ticketType);
-    if (available < quantity) {
-      return NextResponse.json(
-        // No number in the message: how many are left is organiser-only.
-        {
-          error:
-            "There aren't enough tickets left for that many. Please choose fewer, or another ticket.",
-        },
-        { status: 400 }
-      );
     }
 
     /**
@@ -249,74 +302,85 @@ export async function POST(request: NextRequest) {
     const fees = quote.platformFee;
     const total = quote.buyerTotal;
 
-    const [order] = await db
-      .insert(orders)
-      .values({
-        eventId,
-        // Link the order to the account when there is one. Guest checkout
-        // stays guest checkout — that is the point of it — but a signed-in
-        // student's purchase needs to be findable in My Events later, and
-        // matching on email alone would let anyone see another person's
-        // tickets by signing up with their address.
-        buyerId: await getSessionUserId(),
-        promoterId: await resolvePromoter(eventId, ref),
-        promoCodeId: promo?.id ?? null,
-        discountAmount: effect.discount.toString(),
-        ticketUnitPrice: activePrice.toFixed(2),
-        // Frozen here. The code's rate can be edited tomorrow; what this
-        // promoter earned tonight cannot.
-        commissionAmount: effect.commission.toString(),
-        marketingConsent: marketingConsent === true,
-        email: buyerEmail,
-        phone: buyerPhone,
-        subtotal: subtotal.toString(),
-        fees: fees.toString(),
-        total: total.toString(),
-        platformFeePaidBy: "organizer",
-        status: 'pending' as const,
-        reservationExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
-      })
-      .returning();
+    const promoterId = await resolvePromoter(eventId, ref);
 
-    if (!order) {
-      return NextResponse.json(
-        { error: 'Failed to create order' },
-        { status: 500 }
-      );
+    // Hold the seats and write the order in one transaction. The hold is a
+    // single conditional UPDATE (see holdSeats), so two buyers going for the
+    // last ticket can't both get it; and if anything after it fails, the
+    // whole thing rolls back and no seat is left stuck on hold.
+    let order: typeof orders.$inferSelect;
+    try {
+      order = await db.transaction(async (tx) => {
+        const held = await holdSeats(ticketTypeId, quantity, { executor: tx });
+        if (!held) throw new SeatsGone();
+
+        const [created] = await tx
+          .insert(orders)
+          .values({
+            eventId,
+            buyerId: account.id,
+            promoterId,
+            promoCodeId: promo?.id ?? null,
+            discountAmount: effect.discount.toString(),
+            ticketUnitPrice: activePrice.toFixed(2),
+            // Frozen here. The code's rate can be edited tomorrow; what this
+            // promoter earned tonight cannot.
+            commissionAmount: effect.commission.toString(),
+            marketingConsent: marketingConsent === true,
+            email: buyerEmail,
+            phone: buyerPhone,
+            subtotal: subtotal.toString(),
+            fees: fees.toString(),
+            total: total.toString(),
+            platformFeePaidBy: "organizer",
+            status: 'pending' as const,
+            reservationExpiresAt: new Date(Date.now() + HOLD_MINUTES * 60 * 1000),
+          })
+          .returning();
+
+        // Attendee details stay exactly as typed: buying for friends is
+        // normal, and their names and emails needn't match the account.
+        await tx.insert(tickets).values(
+          attendees.map((attendee) => ({
+            orderId: created.id,
+            eventId,
+            ticketTypeId,
+            attendeeName: attendee.name,
+            attendeeEmail: attendee.email,
+            qrToken: generateQRToken(),
+            status: 'pending' as const,
+          }))
+        );
+
+        if (checked.rows.length) {
+          await tx.insert(registrationAnswers).values(
+            checked.rows.map((row) => ({
+              orderId: created.id,
+              eventId,
+              fieldId: row.fieldId,
+              // The label as it read when this person was asked. See the table's
+              // comment: renaming a question later must not rewrite history.
+              label: row.label,
+              value: row.value,
+            }))
+          );
+        }
+
+        return created;
+      });
+    } catch (holdError) {
+      if (holdError instanceof SeatsGone) {
+        return NextResponse.json(
+          {
+            error:
+              'Someone just got the last of these. Please pick another ticket or a smaller number.',
+            code: 'not_enough',
+          },
+          { status: 409 }
+        );
+      }
+      throw holdError;
     }
-
-    const ticketInserts = attendees.map((attendee) => ({
-      orderId: order.id,
-      eventId,
-      ticketTypeId,
-      attendeeName: attendee.name,
-      attendeeEmail: attendee.email,
-      qrToken: generateQRToken(),
-      status: 'pending' as const,
-    }));
-
-    await db.insert(tickets).values(ticketInserts);
-
-    if (checked.rows.length) {
-      await db.insert(registrationAnswers).values(
-        checked.rows.map((row) => ({
-          orderId: order.id,
-          eventId,
-          fieldId: row.fieldId,
-          // The label as it read when this person was asked. See the table's
-          // comment: renaming a question later must not rewrite history.
-          label: row.label,
-          value: row.value,
-        }))
-      );
-    }
-
-    await db
-      .update(ticketTypes)
-      .set({
-        quantityReserved: ticketType.quantityReserved + quantity,
-      })
-      .where(eq(ticketTypes.id, ticketTypeId));
 
     const paymentReference = `WD-${order.id.slice(0, 8)}-${randomUUID()}`;
 
