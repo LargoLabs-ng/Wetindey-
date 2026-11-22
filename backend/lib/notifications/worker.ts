@@ -35,6 +35,7 @@ import {
   startOfLagosDay,
 } from "./config";
 import { fanOutPage } from "./fanout";
+import { registerBuiltInHandlers } from "./handlers";
 import { getHandler, type EventRow } from "./registry";
 import { afterTemporaryFailure, classifyFailure, trimError } from "./retry";
 
@@ -405,6 +406,7 @@ export async function runWorker(
   };
   const timeLeft = () => Date.now() < deadline;
 
+  registerBuiltInHandlers();
   summary.exhaustedClaims = await failExhaustedClaims();
 
   while (timeLeft()) {

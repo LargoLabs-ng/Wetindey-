@@ -20,6 +20,8 @@ import {
   releaseOrderReservation,
   secureSeatsForPayment,
 } from "@/lib/inventory";
+import { kickNotificationWorker } from "@/lib/notifications/kick";
+import { recordEvent } from "@/lib/notifications/outbox";
 
 /**
  * Why a successful payment was held back for a person to resolve. Stored on
@@ -283,20 +285,33 @@ export async function verifyAndFinalizePaystackPayment(
       payment.order.tickets.length
     );
     if (stalePrice) {
-      const claimed = await db
-        .update(payments)
-        .set({
-          status: "success",
-          paidAt,
-          manualReviewRequired: true,
-          manualReviewReason: PRICE_CHANGED_REVIEW_REASON,
-          rawProviderResponse: {
-            initialization: payment.rawProviderResponse,
-            verification: raw,
-          },
-        })
-        .where(and(eq(payments.id, payment.id), ne(payments.status, "success")))
-        .returning({ id: payments.id });
+      // The review flag and the admins' "payment needs review" alert are
+      // saved together, and only by the first report of this payment.
+      const claimed = await db.transaction(async (tx) => {
+        const flagged = await tx
+          .update(payments)
+          .set({
+            status: "success",
+            paidAt,
+            manualReviewRequired: true,
+            manualReviewReason: PRICE_CHANGED_REVIEW_REASON,
+            rawProviderResponse: {
+              initialization: payment.rawProviderResponse,
+              verification: raw,
+            },
+          })
+          .where(and(eq(payments.id, payment.id), ne(payments.status, "success")))
+          .returning({ id: payments.id });
+        if (flagged.length > 0) {
+          await recordEvent(tx, {
+            type: "payment.review",
+            key: [payment.id],
+            payload: { paymentId: payment.id, orderId: payment.order.id, reason: "price_changed" },
+          });
+        }
+        return flagged;
+      });
+      if (claimed.length > 0) kickNotificationWorker();
 
       if (claimed.length > 0) {
         const cancelled = await db
@@ -324,19 +339,31 @@ export async function verifyAndFinalizePaystackPayment(
     // issues tickets, exactly once.
     const seats = await secureSeatsForPayment(payment.order.id);
     if (seats === "no-seats") {
-      await db
-        .update(payments)
-        .set({
-          status: "success",
-          paidAt,
-          manualReviewRequired: true,
-          manualReviewReason: LATE_PAYMENT_REVIEW_REASON,
-          rawProviderResponse: {
-            initialization: payment.rawProviderResponse,
-            verification: raw,
-          },
-        })
-        .where(and(eq(payments.id, payment.id), ne(payments.status, "success")));
+      const flagged = await db.transaction(async (tx) => {
+        const rows = await tx
+          .update(payments)
+          .set({
+            status: "success",
+            paidAt,
+            manualReviewRequired: true,
+            manualReviewReason: LATE_PAYMENT_REVIEW_REASON,
+            rawProviderResponse: {
+              initialization: payment.rawProviderResponse,
+              verification: raw,
+            },
+          })
+          .where(and(eq(payments.id, payment.id), ne(payments.status, "success")))
+          .returning({ id: payments.id });
+        if (rows.length > 0) {
+          await recordEvent(tx, {
+            type: "payment.review",
+            key: [payment.id],
+            payload: { paymentId: payment.id, orderId: payment.order.id, reason: "late_payment" },
+          });
+        }
+        return rows;
+      });
+      if (flagged.length > 0) kickNotificationWorker();
       return { status: "manual_review", orderId: payment.order.id };
     }
 

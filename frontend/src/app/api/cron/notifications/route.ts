@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { appUrl } from "@/lib/app-url";
 import { notificationsEnabled } from "@/lib/notifications/config";
+import { checkNotificationHealth } from "@/lib/notifications/health";
 import { cleanUpOldNotifications } from "@/lib/notifications/maintenance";
 import { verifyQStashRequest } from "@/lib/notifications/qstash";
 import { runReconciliationSweep } from "@/lib/notifications/sweep";
@@ -20,7 +21,8 @@ export const maxDuration = 60;
  * Anything else gets a 401.
  *
  * ?task=worker            claim and send whatever is due (the default)
- * ?task=daily             reconciliation sweep, clean-up, then a worker pass
+ * ?task=daily             reconciliation sweep, clean-up, health check, then
+ *                         a worker pass
  * ?task=discovery-daily   Phase 3
  * ?task=discovery-weekly  Phase 3
  *
@@ -55,8 +57,9 @@ async function run(task: Task) {
     }
     const sweep = task === "daily" ? await runReconciliationSweep() : undefined;
     const cleanup = task === "daily" ? await cleanUpOldNotifications() : undefined;
+    const health = task === "daily" ? await checkNotificationHealth() : undefined;
     const worker = await runWorker({ source: task });
-    const summary = { task, sweep, cleanup, worker };
+    const summary = { task, sweep, cleanup, health, worker };
     console.log("Notification run:", JSON.stringify(summary));
     return NextResponse.json(summary);
   } catch (error) {

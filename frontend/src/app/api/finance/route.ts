@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { after, NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -11,6 +12,8 @@ import {
 import { earningsForOrganization } from "@/lib/earnings";
 import { createWithdrawalRequest, PayoutRequestError } from "@/lib/payout-requests";
 import { notifyAdminsOfPayoutRequest, notifyBankDetailsChanged } from "@/lib/payout-emails";
+import { kickNotificationWorker } from "@/lib/notifications/kick";
+import { recordEvent } from "@/lib/notifications/outbox";
 
 /**
  * The organisation's money.
@@ -151,24 +154,39 @@ export async function POST(request: NextRequest) {
       .where(eq(organizations.id, auth.organizationId))
       .limit(1);
 
-    await db
-      .update(organizations)
-      .set({
-        bankName: parsed.data.bankName,
-        bankAccountName: parsed.data.accountName,
-        bankAccountNumber: parsed.data.accountNumber,
-      })
-      .where(eq(organizations.id, auth.organizationId));
-
     // Tell the owner whenever the payout account changes — the one change a
-    // stolen login would make first. Sent after the response; a failed email
-    // never undoes the save.
+    // stolen login would make first.
     const changed =
       !before ||
       before.bankName !== bank.bankName ||
       before.accountName !== bank.accountName ||
       before.accountNumber !== bank.accountNumber;
+
+    // The in-app security alert is recorded in the same save as the change.
+    // It carries only the organisation id; the bank details are read (last
+    // four digits only) when the notification is built.
+    await db.transaction(async (tx) => {
+      await tx
+        .update(organizations)
+        .set({
+          bankName: bank.bankName,
+          bankAccountName: bank.accountName,
+          bankAccountNumber: bank.accountNumber,
+        })
+        .where(eq(organizations.id, auth.organizationId));
+      if (changed) {
+        await recordEvent(tx, {
+          type: "org.bank_changed",
+          key: [auth.organizationId, randomUUID()],
+          payload: { organizationId: auth.organizationId },
+        });
+      }
+    });
+
+    // The existing email is still sent after the response; a failed email
+    // never undoes the save.
     if (changed) {
+      kickNotificationWorker();
       after(() =>
         notifyBankDetailsChanged({
           organizationId: auth.organizationId,

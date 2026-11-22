@@ -69,7 +69,7 @@ export async function finalizePaidOrder(reference: string): Promise<FinalizeResu
     await tx.update(tickets).set({ status: "valid" }).where(eq(tickets.orderId, orderId));
 
     // Move this order's held inventory into the sold column.
-    await confirmOrderInventory(orderId, tx);
+    const soldOut = await confirmOrderInventory(orderId, tx);
 
     await countPromoUse(orderId, tx);
 
@@ -80,6 +80,7 @@ export async function finalizePaidOrder(reference: string): Promise<FinalizeResu
       key: [orderId],
       payload: { orderId, eventId, paymentId: payment.id },
     });
+    await recordSoldOut(tx, soldOut, eventId);
     return true;
   });
 
@@ -103,6 +104,25 @@ export async function finalizePaidOrder(reference: string): Promise<FinalizeResu
   return { ok: true, orderId, alreadyDone: false, emailSent };
 }
 
+/**
+ * One "sold out" alert per tier per capacity: if the organizer adds seats and
+ * it sells out again, that's a new alert; the same sell-out reported twice
+ * is not.
+ */
+async function recordSoldOut(
+  tx: Executor,
+  tiers: Array<{ id: string; quantityTotal: number }>,
+  eventId: string
+): Promise<void> {
+  for (const tier of tiers) {
+    await recordEvent(tx, {
+      type: "tier.sold_out",
+      key: [tier.id, tier.quantityTotal],
+      payload: { ticketTypeId: tier.id, eventId },
+    });
+  }
+}
+
 /** A free order (RSVP): the same all-or-nothing completion, without a payment. */
 export async function finalizeFreeOrder(orderId: string): Promise<boolean> {
   const claimed = await db.transaction(async (tx) => {
@@ -114,13 +134,14 @@ export async function finalizeFreeOrder(orderId: string): Promise<boolean> {
     if (won.length === 0) return false;
 
     await tx.update(tickets).set({ status: "valid" }).where(eq(tickets.orderId, orderId));
-    await confirmOrderInventory(orderId, tx);
+    const soldOut = await confirmOrderInventory(orderId, tx);
     await countPromoUse(orderId, tx);
     await recordEvent(tx, {
       type: "order.confirmed",
       key: [orderId],
       payload: { orderId, eventId: won[0].eventId },
     });
+    await recordSoldOut(tx, soldOut, won[0].eventId);
     return true;
   });
   if (!claimed) return false;

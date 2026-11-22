@@ -35,7 +35,7 @@ async function ticketCountsByType(orderId: string, executor: Executor = db) {
 export async function confirmOrderInventory(
   orderId: string,
   executor: Executor = db
-): Promise<void> {
+): Promise<Array<{ id: string; quantityTotal: number }>> {
   const rows = await ticketCountsByType(orderId, executor);
 
   for (const row of rows) {
@@ -48,20 +48,21 @@ export async function confirmOrderInventory(
       .where(eq(ticketTypes.id, row.ticketTypeId));
   }
 
-  // Mark anything that just filled up, so it stops being offered.
+  // Mark anything that just filled up, so it stops being offered. Returns
+  // the tiers that sold out with this order, for the "sold out" alert.
   const typeIds = rows.map((r) => r.ticketTypeId);
-  if (typeIds.length > 0) {
-    await executor
-      .update(ticketTypes)
-      .set({ status: "sold_out" })
-      .where(
-        and(
-          inArray(ticketTypes.id, typeIds),
-          eq(ticketTypes.status, "active"),
-          sql`${ticketTypes.quantitySold} >= ${ticketTypes.quantityTotal}`
-        )
-      );
-  }
+  if (typeIds.length === 0) return [];
+  return executor
+    .update(ticketTypes)
+    .set({ status: "sold_out" })
+    .where(
+      and(
+        inArray(ticketTypes.id, typeIds),
+        eq(ticketTypes.status, "active"),
+        sql`${ticketTypes.quantitySold} >= ${ticketTypes.quantityTotal}`
+      )
+    )
+    .returning({ id: ticketTypes.id, quantityTotal: ticketTypes.quantityTotal });
 }
 
 /** Checkout failed or was rolled back: give the held inventory back. */
