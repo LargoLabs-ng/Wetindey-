@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
-import { datetimeLocalFromUtc } from "@/lib/early-bird";
+import { datetimeLocalFromUtc, datetimeLocalToUtc } from "@/lib/early-bird";
 
 export type Tier = {
   id: string;
@@ -50,14 +50,20 @@ const statusLabels: Record<string, string> = {
   sold_out: "Sold out",
 };
 
-/** datetime-local wants "YYYY-MM-DDTHH:mm" in local time. */
-function toLocalInput(iso: string | null) {
+/**
+ * datetime-local wants "YYYY-MM-DDTHH:mm". Sales dates are shown and typed
+ * in the EVENT's timezone, like the early-bird deadline — not whatever
+ * timezone the organiser's browser happens to be in — because that is the
+ * clock checkout enforces them against and the one buyers are told.
+ */
+function toLocalInput(iso: string | null, timeZone: string) {
   if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours()
-  )}:${pad(d.getMinutes())}`;
+  return datetimeLocalFromUtc(new Date(iso), timeZone);
+}
+
+function fromLocalInput(value: string, timeZone: string): string | null {
+  if (!value) return null;
+  return datetimeLocalToUtc(value, timeZone)?.toISOString() ?? null;
 }
 
 const fieldClass =
@@ -302,7 +308,7 @@ function TierForm({
             />
           </div>
           <div>
-            <label className={labelClass}>Sales start</label>
+            <label className={labelClass}>Sales start ({timeZone})</label>
             <input
               type="datetime-local"
               value={values.salesStart}
@@ -311,7 +317,7 @@ function TierForm({
             />
           </div>
           <div>
-            <label className={labelClass}>Sales end</label>
+            <label className={labelClass}>Sales end ({timeZone})</label>
             <input
               type="datetime-local"
               value={values.salesEnd}
@@ -378,8 +384,8 @@ export function TicketTiers({
       maxPerOrder: Number(values.maxPerOrder),
       admits: Math.max(1, Number(values.admits) || 1),
       description: values.description.trim() || undefined,
-      salesStart: values.salesStart ? new Date(values.salesStart).toISOString() : null,
-      salesEnd: values.salesEnd ? new Date(values.salesEnd).toISOString() : null,
+      salesStart: fromLocalInput(values.salesStart, timeZone),
+      salesEnd: fromLocalInput(values.salesEnd, timeZone),
       earlyBirdEnabled: values.earlyBirdEnabled,
       earlyBirdPrice: values.earlyBirdEnabled ? Number(values.earlyBirdPrice) : null,
       earlyBirdEndsAtLocal: values.earlyBirdEnabled ? values.earlyBirdEndsAt : null,
@@ -494,8 +500,8 @@ export function TicketTiers({
                 quantityTotal: String(tier.quantityTotal),
                 maxPerOrder: String(tier.maxPerOrder),
                 description: tier.description ?? "",
-                salesStart: toLocalInput(tier.salesStart),
-                salesEnd: toLocalInput(tier.salesEnd),
+                salesStart: toLocalInput(tier.salesStart, timeZone),
+                salesEnd: toLocalInput(tier.salesEnd, timeZone),
                 admits: String(tier.admits ?? 1),
                 earlyBirdEnabled: tier.earlyBirdEnabled,
                 earlyBirdPrice: tier.earlyBirdPrice ? String(Number(tier.earlyBirdPrice)) : "",

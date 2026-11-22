@@ -16,7 +16,20 @@ import {
   checkoutPriceChanged,
   ticketPriceConfigurationAt,
 } from "@/lib/early-bird";
-import { releaseOrderReservation } from "@/lib/inventory";
+import {
+  releaseOrderReservation,
+  secureSeatsForPayment,
+} from "@/lib/inventory";
+
+/**
+ * Why a successful payment was held back for a person to resolve. Stored on
+ * the payment, shown on the admin payment-review page, and used by the
+ * payment result page to tell the buyer what happened.
+ */
+export const PRICE_CHANGED_REVIEW_REASON =
+  "The active ticket price changed after checkout was initialized. Verify the amount and refund or resolve manually; no ticket was issued.";
+export const LATE_PAYMENT_REVIEW_REASON =
+  "Payment completed after the checkout's seat hold expired, and there were no longer enough tickets left. No ticket was issued; refund or resolve manually.";
 type PaystackEnvelope<T> = {
   status: true;
   message?: string;
@@ -276,8 +289,7 @@ export async function verifyAndFinalizePaystackPayment(
           status: "success",
           paidAt,
           manualReviewRequired: true,
-          manualReviewReason:
-            "The active ticket price changed after checkout was initialized. Verify the amount and refund or resolve manually; no ticket was issued.",
+          manualReviewReason: PRICE_CHANGED_REVIEW_REASON,
           rawProviderResponse: {
             initialization: payment.rawProviderResponse,
             verification: raw,
@@ -300,6 +312,31 @@ export async function verifyAndFinalizePaystackPayment(
           await releaseOrderReservation(payment.order.id);
         }
       }
+      return { status: "manual_review", orderId: payment.order.id };
+    }
+
+    // The money is real and verified. Before any ticket is issued, make sure
+    // the seats are still this order's: a buyer who took longer than the
+    // hold on Paystack had their seats released for someone else. Seats are
+    // re-held only if enough are still free; otherwise no ticket is issued
+    // and the payment goes to the same manual review as a price change.
+    // finalizePaidOrder below is unchanged and still the only thing that
+    // issues tickets, exactly once.
+    const seats = await secureSeatsForPayment(payment.order.id);
+    if (seats === "no-seats") {
+      await db
+        .update(payments)
+        .set({
+          status: "success",
+          paidAt,
+          manualReviewRequired: true,
+          manualReviewReason: LATE_PAYMENT_REVIEW_REASON,
+          rawProviderResponse: {
+            initialization: payment.rawProviderResponse,
+            verification: raw,
+          },
+        })
+        .where(and(eq(payments.id, payment.id), ne(payments.status, "success")));
       return { status: "manual_review", orderId: payment.order.id };
     }
 

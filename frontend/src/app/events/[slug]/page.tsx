@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { quoteOrder, naira } from '@/lib/fees';
 import {
   ArrowLeft,
@@ -14,7 +14,8 @@ import {
   Share2,
   Ticket,
 } from 'lucide-react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { EventBanner } from '@/components/event-banner';
 import { safeHttpUrl, type GalleryItem, type Sponsor } from '@/lib/media';
 import { WordMark } from '@/components/wordmark';
@@ -46,6 +47,38 @@ interface TicketType {
   earlyBirdEnabled: boolean;
   earlyBirdPrice: string | null;
   earlyBirdEndsAt: string | null;
+  /** Organiser-set sales window. The server enforces it; this only labels it. */
+  salesStart?: string | null;
+  salesEnd?: string | null;
+}
+
+/** The signed-in buyer, from /api/checkout/account. */
+interface CheckoutAccount {
+  email: string;
+  fullName: string;
+  phone: string | null;
+  emailVerified: boolean;
+}
+
+/**
+ * Can this tier be picked right now? Mirrors the server's rule
+ * (backend/lib/checkout-rules.ts) closely enough to grey things out
+ * honestly; the server still has the final say at checkout.
+ */
+function tierWindow(t: TicketType, now: number): 'open' | 'not_yet' | 'closed' {
+  const start = t.salesStart ? Date.parse(t.salesStart) : NaN;
+  const end = t.salesEnd ? Date.parse(t.salesEnd) : NaN;
+  if (Number.isFinite(start) && now < start) return 'not_yet';
+  if (Number.isFinite(end) && now >= end) return 'closed';
+  return 'open';
+}
+
+function tierOnSale(t: TicketType, now: number): boolean {
+  return (
+    t.status === 'active' &&
+    !t.soldOut &&
+    tierWindow(t, now) === 'open'
+  );
 }
 
 interface Event {
@@ -81,7 +114,29 @@ const REF_KEY = "wd-ref";
 export default function EventDetailPage() {
   const params = useParams();
   const search = useSearchParams();
+  const router = useRouter();
+  const { status: authStatus } = useSession();
   const slug = params.slug as string;
+
+  /**
+   * Where to come back to after signing in or confirming an email: this
+   * event, with the tier and quantity they'd picked, and `buy=1` so the
+   * page reopens checkout. Read once, on arrival — the address bar is
+   * tidied afterwards so a refresh doesn't replay it.
+   */
+  const arrival = useRef({
+    buy: search.get('buy') === '1',
+    tier: search.get('tier'),
+    qty: Number(search.get('qty')) || 1,
+  });
+  const [resumeCheckout, setResumeCheckout] = useState(false);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
+  const [account, setAccount] = useState<CheckoutAccount | null>(null);
+  const [verifyState, setVerifyState] = useState<
+    { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'error'; message: string }
+  >({ kind: 'idle' });
+  const [eventVersion, setEventVersion] = useState(0);
+  const selectedRef = useRef<string | null>(null);
 
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
@@ -182,10 +237,48 @@ export default function EventDetailPage() {
           setServerOffset(serverTime - Date.now());
           setPriceClock(serverTime);
         }
-        if (data.ticketTypes.length > 0) {
-          setSelectedTicket(data.ticketTypes[0].id);
+        // Pick a tier that can actually be bought: the one they had before
+        // signing in (if it's still on sale), else the one already selected,
+        // else the first on sale. Prices and stock come fresh from the
+        // server every time, so nothing picked before sign-in is trusted.
+        const clock = Number.isFinite(serverTime) ? serverTime : Date.now();
+        const tiers: TicketType[] = data.ticketTypes ?? [];
+        const firstLoad = selectedRef.current === null;
+        const wanted = firstLoad && arrival.current.buy ? arrival.current.tier : selectedRef.current;
+        const wantedTier = tiers.find((t) => t.id === wanted);
+        const chosen =
+          (wantedTier && tierOnSale(wantedTier, clock) ? wantedTier : null) ??
+          tiers.find((t) => tierOnSale(t, clock)) ??
+          tiers[0] ??
+          null;
+        setSelectedTicket(chosen?.id ?? null);
+
+        if (firstLoad) {
+          setAttendees(Array(1).fill({ name: '', email: '' }));
+          if (arrival.current.buy) {
+            if (chosen && wantedTier && chosen.id === wantedTier.id) {
+              // Capped at the per-order limit only: stock isn't known here,
+              // and checkout refuses more than remains.
+              const cap = Math.max(1, chosen.maxPerOrder);
+              setQuantity(Math.max(1, Math.min(arrival.current.qty, cap)));
+            } else {
+              setResumeNotice(
+                "The ticket you picked isn't available any more. Please choose another one."
+              );
+            }
+            setResumeCheckout(true);
+            // Tidy the address bar so a refresh doesn't reopen checkout, but
+            // keep anything else on it (a promoter's code, for one).
+            const rest = new URLSearchParams(window.location.search);
+            rest.delete('buy');
+            rest.delete('tier');
+            rest.delete('qty');
+            const query = rest.toString();
+            router.replace(`/events/${encodeURIComponent(slug)}${query ? `?${query}` : ''}`, {
+              scroll: false,
+            });
+          }
         }
-        setAttendees(Array(1).fill({ name: '', email: '' }));
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load event');
@@ -195,7 +288,110 @@ export default function EventDetailPage() {
     };
 
     if (slug) fetchEvent();
-  }, [slug]);
+  }, [slug, eventVersion, router]);
+
+  useEffect(() => {
+    selectedRef.current = selectedTicket;
+  }, [selectedTicket]);
+
+  /**
+   * The signed-in buyer: pre-fills name and phone, shows where tickets go,
+   * and says whether the email still needs confirming. Never fills over
+   * something they've already typed.
+   */
+  const loadAccount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/checkout/account', { cache: 'no-store' });
+      if (!res.ok) return;
+      const data: CheckoutAccount = await res.json();
+      setAccount(data);
+      setBuyerEmail(data.email);
+      setBuyerName((current) => current || data.fullName);
+      setBuyerPhone((current) => current || data.phone || '');
+    } catch {
+      // Checkout still asks for anything missing.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (authStatus !== 'authenticated') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/checkout/account', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data: CheckoutAccount = await res.json();
+        if (cancelled) return;
+        setAccount(data);
+        setBuyerEmail(data.email);
+        setBuyerName((current) => current || data.fullName);
+        setBuyerPhone((current) => current || data.phone || '');
+      } catch {
+        // Checkout still asks for anything missing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authStatus]);
+
+  // Checkout is open when they tapped "I'm in", or when they've just come
+  // back from signing in (or confirming their email) to finish buying.
+  const checkoutOpen = joining || (resumeCheckout && authStatus === 'authenticated');
+
+  /** This event, with the current pick, as a path to come back to. */
+  const checkoutReturnPath = () => {
+    const back = new URLSearchParams();
+    if (selectedTicket) back.set('tier', selectedTicket);
+    back.set('qty', String(quantity));
+    back.set('buy', '1');
+    return `/events/${encodeURIComponent(slug)}?${back.toString()}`;
+  };
+
+  const sendToSignIn = () => {
+    router.push(`/login?callbackUrl=${encodeURIComponent(checkoutReturnPath())}`);
+  };
+
+  /**
+   * "I'm in". Browsing never needs an account; getting a ticket does. A
+   * signed-out visitor goes to sign in (or sign up) and comes straight back
+   * here with the same tier and quantity, and checkout reopens.
+   */
+  const startCheckout = () => {
+    if (authStatus === 'loading') return;
+    if (authStatus !== 'authenticated') {
+      sendToSignIn();
+      return;
+    }
+    setJoining(true);
+  };
+
+  const sendVerificationLink = async () => {
+    setVerifyState({ kind: 'sending' });
+    try {
+      const res = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ returnTo: checkoutReturnPath() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.verified) {
+        await loadAccount();
+        setVerifyState({ kind: 'idle' });
+        return;
+      }
+      if (res.ok) {
+        setVerifyState({ kind: 'sent' });
+        return;
+      }
+      setVerifyState({
+        kind: 'error',
+        message: data.error ?? "We couldn't send the email. Please try again.",
+      });
+    } catch {
+      setVerifyState({ kind: 'error', message: "We couldn't send the email. Please try again." });
+    }
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -218,14 +414,9 @@ export default function EventDetailPage() {
   };
 
   const selectedTicketType = event?.ticketTypes.find((t) => t.id === selectedTicket);
-  // Whether the picked tier can be bought, and the most one order may take.
-  // The stepper stops at the organiser's per-order limit, not at what's
-  // left; asking for more than remains is refused at checkout with a plain
-  // message, so the count is never revealed.
-  const canBuySelected =
-    !!selectedTicketType &&
-    !selectedTicketType.soldOut &&
-    selectedTicketType.status !== 'paused';
+  // The most one order may take. The stepper stops at the organiser's
+  // per-order limit, not at what's left; asking for more than remains is
+  // refused at checkout with a plain message, so the count is never shown.
   const maxQuantity = selectedTicketType?.maxPerOrder || 10;
 
   useEffect(() => {
@@ -382,20 +573,23 @@ export default function EventDetailPage() {
 
     setFormError(null);
 
-    if (!buyerName.trim() || !buyerEmail.trim() || !buyerPhone.trim()) {
-      setFormError('Please enter your name, email and phone number.');
+    if (!buyerName.trim() || !buyerPhone.trim()) {
+      setFormError('Please enter your name and phone number.');
       return;
     }
 
-    // Ticket 1 belongs to the buyer unless they said otherwise; any extra
-    // tickets need their own holder.
+    // Ticket 1 belongs to the buyer. Every extra ticket needs its holder's
+    // name; their email is optional and falls back to the buyer's, because
+    // every ticket in the order is emailed to the buyer anyway. (Before, the
+    // page asked guests for a name only but then demanded an email for each,
+    // so no order of two or more tickets could ever go through.)
     const resolvedAttendees = Array.from({ length: quantity }, (_, i) => ({
       name: attendees[i]?.name?.trim() || (i === 0 ? buyerName.trim() : ''),
-      email: attendees[i]?.email?.trim() || (i === 0 ? buyerEmail.trim() : ''),
+      email: attendees[i]?.email?.trim() || buyerEmail.trim(),
     }));
 
-    if (resolvedAttendees.some((a) => !a.name || !a.email)) {
-      setFormError('Please enter a name and email for every attendee.');
+    if (resolvedAttendees.some((a) => !a.name)) {
+      setFormError('Please enter a name for every ticket.');
       return;
     }
 
@@ -436,8 +630,23 @@ export default function EventDetailPage() {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create order');
+        const failure = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          // Signed out somewhere along the way. Back through sign-in, and
+          // straight back here.
+          sendToSignIn();
+          return;
+        }
+        if (failure.code === 'email_unverified') {
+          setAccount((current) => (current ? { ...current, emailVerified: false } : current));
+          return;
+        }
+        if (response.status === 409) {
+          // Stock or sales window changed while they were filling the form.
+          // Reload the tiers so the page shows what's actually left.
+          setEventVersion((v) => v + 1);
+        }
+        throw new Error(failure.error || 'Failed to create order');
       }
 
       const { paymentUrl } = await response.json();
@@ -854,12 +1063,18 @@ export default function EventDetailPage() {
                     <Ticket className="h-4 w-4 text-purple" />
                     Tickets
                   </h2>
+                  {resumeNotice && (
+                    <p className="mt-2 rounded-lg bg-cream-2 px-3 py-2 text-sm text-coral">
+                      {resumeNotice}
+                    </p>
+                  )}
 
                   <div className="mt-3 space-y-2">
                     {event.ticketTypes.map((t) => {
                       const gone = t.soldOut;
                       const paused = t.status === 'paused';
-                      const disabled = gone || paused;
+                      const salesWindow = tierWindow(t, priceClock);
+                      const disabled = gone || paused || salesWindow !== 'open';
                       const selected = selectedTicket === t.id;
                       const currentPrice = activeTicketPrice(t, priceClock);
                       return (
@@ -911,9 +1126,15 @@ export default function EventDetailPage() {
                           )}
                           {/* Only the states a buyer acts on. How many are
                               left is the organiser's to know, not the page's. */}
-                          {(paused || gone) && (
+                          {(paused || gone || salesWindow !== 'open') && (
                             <span className="mt-1 block text-xs font-semibold text-ink-3">
-                              {paused ? 'Not on sale' : 'Sold out'}
+                              {paused
+                                ? 'Not on sale'
+                                : salesWindow === 'not_yet' && t.salesStart
+                                  ? `Sales open ${formatDeadline(t.salesStart, event.timeZone)}`
+                                  : salesWindow === 'closed'
+                                    ? 'Sales closed'
+                                    : 'Sold out'}
                             </span>
                           )}
                         </button>
@@ -976,15 +1197,58 @@ export default function EventDetailPage() {
                         Paystack will show any processing fee before you complete payment.
                       </p>
 
-                      {!joining ? (
+                      {!checkoutOpen ? (
                         <button
                           type="button"
-                          onClick={() => setJoining(true)}
-                          disabled={!canBuySelected}
+                          onClick={startCheckout}
+                          disabled={!tierOnSale(selectedTicketType, priceClock)}
                           className="mt-4 w-full rounded-xl bg-purple py-3.5 text-base font-bold text-white transition-colors hover:bg-purple-deep disabled:opacity-50"
                         >
                           {selectedPrice === 0 ? "I'm in" : `I'm in · ${naira(quote.paystackAmount)}`}
                         </button>
+                      ) : !account ? (
+                        <p className="mt-4 border-t border-line pt-4 text-sm text-ink-3">
+                          Loading your details…
+                        </p>
+                      ) : !account.emailVerified ? (
+                        // Tickets go to the account's address, so it has to be
+                        // proven theirs before anything is bought.
+                        <div className="mt-4 space-y-3 border-t border-line pt-4">
+                          <p className="text-sm font-semibold text-ink">Confirm your email first</p>
+                          <p className="text-sm text-ink-2">
+                            Your tickets will be sent to{' '}
+                            <span className="font-semibold text-ink">{account.email}</span>. Tap
+                            below and we&apos;ll email you a link to confirm it&apos;s yours. The
+                            link brings you straight back here.
+                          </p>
+                          {verifyState.kind === 'sent' && (
+                            <p className="rounded-lg bg-cream-2 px-3 py-2 text-sm text-ink">
+                              Link sent. Check your inbox, and your spam folder too.
+                            </p>
+                          )}
+                          {verifyState.kind === 'error' && (
+                            <p className="text-sm text-coral">{verifyState.message}</p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void sendVerificationLink()}
+                            disabled={verifyState.kind === 'sending'}
+                            className="w-full rounded-xl bg-purple py-3.5 text-base font-bold text-white transition-colors hover:bg-purple-deep disabled:opacity-50"
+                          >
+                            {verifyState.kind === 'sending'
+                              ? 'Sending…'
+                              : verifyState.kind === 'sent'
+                                ? 'Send it again'
+                                : 'Send confirmation link'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void loadAccount()}
+                            className="w-full rounded-xl border border-line py-3 text-sm font-semibold text-ink hover:border-ink-3"
+                          >
+                            I&apos;ve confirmed it
+                          </button>
+                        </div>
                       ) : (
                         <div className="mt-4 space-y-3 border-t border-line pt-4">
                           <p className="text-sm font-semibold text-ink">Who&apos;s coming?</p>
@@ -994,15 +1258,13 @@ export default function EventDetailPage() {
                             value={buyerName}
                             onChange={(e) => setBuyerName(e.target.value)}
                             placeholder="Full name"
+                            autoComplete="name"
                             className="w-full rounded-lg border border-line px-3 py-2.5 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
                           />
-                          <input
-                            type="email"
-                            value={buyerEmail}
-                            onChange={(e) => setBuyerEmail(e.target.value)}
-                            placeholder="Email — your ticket goes here"
-                            className="w-full rounded-lg border border-line px-3 py-2.5 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
-                          />
+                          <p className="rounded-lg bg-cream-2 px-3 py-2.5 text-sm text-ink-2">
+                            Tickets go to{' '}
+                            <span className="break-all font-semibold text-ink">{account.email}</span>
+                          </p>
                           <input
                             type="tel"
                             value={buyerPhone}
@@ -1067,14 +1329,25 @@ export default function EventDetailPage() {
                                 {quantity - 1 === 1 ? 'ticket' : 'tickets'}
                               </p>
                               {attendees.slice(1).map((a, i) => (
-                                <input
-                                  key={i}
-                                  value={a.name}
-                                  onChange={(e) => updateAttendee(i + 1, 'name', e.target.value)}
-                                  placeholder={`Guest ${i + 2} name`}
-                                  className="w-full rounded-lg border border-line px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
-                                />
+                                <div key={i} className="space-y-1.5">
+                                  <input
+                                    value={a.name}
+                                    onChange={(e) => updateAttendee(i + 1, 'name', e.target.value)}
+                                    placeholder={`Guest ${i + 2} name`}
+                                    className="w-full rounded-lg border border-line px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
+                                  />
+                                  <input
+                                    type="email"
+                                    value={a.email}
+                                    onChange={(e) => updateAttendee(i + 1, 'email', e.target.value)}
+                                    placeholder={`Guest ${i + 2} email (optional)`}
+                                    className="w-full rounded-lg border border-line px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-purple"
+                                  />
+                                </div>
                               ))}
+                              <p className="text-xs text-ink-3">
+                                All tickets are emailed to you to share.
+                              </p>
                             </div>
                           )}
 
@@ -1093,7 +1366,7 @@ export default function EventDetailPage() {
 
                           <button
                             onClick={handleCheckout}
-                            disabled={processing || !canBuySelected}
+                            disabled={processing || !tierOnSale(selectedTicketType, priceClock)}
                             className="w-full rounded-xl bg-purple py-3.5 text-base font-bold text-white transition-colors hover:bg-purple-deep disabled:opacity-50"
                           >
                             {processing

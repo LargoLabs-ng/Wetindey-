@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { GoogleIcon } from "@/components/google-icon";
 import { WordMark } from "@/components/wordmark";
+import { safeCallbackPath } from "@/lib/safe-redirect";
 
 function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
   const router = useRouter();
@@ -14,10 +15,13 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
   // Only ever follow a same-site path, so ?callbackUrl= can't be used to
   // bounce someone to another domain after they log in.
   const requested = searchParams.get("callbackUrl");
-  const destination =
-    requested && requested.startsWith("/") && !requested.startsWith("//")
-      ? requested
-      : "/dashboard";
+  const destination = safeCallbackPath(requested, "/dashboard");
+  // Carried over to signup, so someone who came here to buy a ticket and
+  // turns out to need an account still lands back on that event.
+  const signupHref =
+    requested && destination !== "/dashboard"
+      ? `/signup?callbackUrl=${encodeURIComponent(destination)}`
+      : "/signup";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -53,7 +57,11 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
           <div className="mb-5"><WordMark size="lg" /></div>
           <h1 className="text-2xl font-bold text-ink">Welcome back</h1>
           <p className="text-ink-2 text-sm mt-1">
-            Log in to manage your events.
+            {/* Buyers land here from an event page now that tickets need an
+                account, so don't talk to them as organisers. */}
+            {destination.startsWith("/events/")
+              ? "Log in to get your tickets."
+              : "Log in to your account."}
           </p>
         </div>
 
@@ -118,8 +126,8 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
         </form>
 
         <p className="text-center text-sm text-ink-2 mt-4">
-          New organizer?{" "}
-          <Link href="/signup" className="text-purple font-semibold">
+          New here?{" "}
+          <Link href={signupHref} className="text-purple font-semibold">
             Create an account
           </Link>
         </p>

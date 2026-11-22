@@ -3,7 +3,10 @@ import { db } from '@/db';
 import { payments } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { verifyAndFinalizeMonnifyPayment } from "@/lib/monnify-payments";
-import { verifyAndFinalizePaystackPayment } from "@/lib/paystack";
+import {
+  LATE_PAYMENT_REVIEW_REASON,
+  verifyAndFinalizePaystackPayment,
+} from "@/lib/paystack";
 
 export async function GET(request: NextRequest) {
   try {
@@ -57,7 +60,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         status: "manual_review",
         message:
-          "Your payment reached us, but the ticket price changed during checkout. No ticket was issued. Our team will review the charge and contact you about the next step.",
+          payment.manualReviewReason === LATE_PAYMENT_REVIEW_REASON
+            ? "Your payment reached us after your seats had been released, and this ticket sold out in the meantime. No ticket was issued. Our team will refund you or contact you about the next step."
+            : "Your payment reached us, but the ticket price changed during checkout. No ticket was issued. Our team will review the charge and contact you about the next step.",
       });
     }
 
@@ -66,6 +71,9 @@ export async function GET(request: NextRequest) {
         status: 'success',
         orderId: order.id,
         eventTitle: order.event.title,
+        // Free RSVPs land on this same page; nothing was paid, so the page
+        // shouldn't say "Payment Confirmed".
+        free: Number(order.total) === 0,
         // Inside the success branch on purpose, and nowhere else in this
         // file. The whole promise of this field is that it is visible only to
         // somebody who paid — putting it in the pending or failed response

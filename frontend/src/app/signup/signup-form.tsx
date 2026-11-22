@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { GoogleIcon } from "@/components/google-icon";
 import { WordMark } from "@/components/wordmark";
+import { safeCallbackPath } from "@/lib/safe-redirect";
 import {
   CampusPicker,
   EMPTY_CAMPUS_SELECTION,
@@ -36,10 +37,12 @@ function SignupForm({ googleEnabled }: { googleEnabled: boolean }) {
 
   // Same-site paths only, so ?callbackUrl= can't redirect off-domain.
   const requested = searchParams.get("callbackUrl");
-  const destination =
-    requested && requested.startsWith("/") && !requested.startsWith("//")
-      ? requested
-      : null;
+  const safeRequested = safeCallbackPath(requested, "");
+  const destination = safeRequested || null;
+  // Kept when switching to "log in", and on the fallback below.
+  const loginHref = destination
+    ? `/login?callbackUrl=${encodeURIComponent(destination)}`
+    : "/login";
   const [form, setForm] = useState<FormState>(initialState);
   const [campus, setCampus] = useState<CampusSelection>(EMPTY_CAMPUS_SELECTION);
   // Hosting is the minority path, so it is opt-in rather than the default.
@@ -97,7 +100,7 @@ function SignupForm({ googleEnabled }: { googleEnabled: boolean }) {
     if (result?.error) {
       // Account exists but auto-login failed for some reason — send them
       // to log in manually rather than leaving them stuck on this form.
-      router.push("/login");
+      router.push(loginHref);
       return;
     }
 
@@ -259,7 +262,7 @@ function SignupForm({ googleEnabled }: { googleEnabled: boolean }) {
 
         <p className="text-center text-sm text-secondary-text mt-4">
           Already have an account?{" "}
-          <Link href="/login" className="text-forest font-medium">
+          <Link href={loginHref} className="text-forest font-medium">
             Log in
           </Link>
         </p>

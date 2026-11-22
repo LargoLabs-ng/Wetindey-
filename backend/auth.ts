@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users, accounts, organizations, organizationMembers } from "@/db/schema";
 import { verifyPassword } from "@/lib/password";
+import { markEmailVerified } from "@/lib/buyer-account";
 import { generateUniqueSlug } from "@/lib/slug";
 
 const googleConfigured = Boolean(
@@ -63,6 +64,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   // breaks the routing that decides between the organizer dashboard and the
   // gate console. Organizations are created on demand instead — see
   // ensureOrganizationForUser in lib/organization.ts.
+  events: {
+    // Auth.js creates Google users with email_verified empty, even though
+    // Google only signs someone in once it has confirmed the address.
+    // Checkout requires a verified email, so record what Google told us.
+    async signIn({ user, account, profile }) {
+      if (
+        account?.provider === "google" &&
+        profile?.email_verified === true &&
+        typeof user?.id === "string"
+      ) {
+        await markEmailVerified(user.id);
+      }
+    },
+  },
   callbacks: {
     async jwt({ token, user }) {
       if (user) token.userId = user.id;
