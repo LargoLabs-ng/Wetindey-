@@ -4,6 +4,7 @@ import { appUrl } from "@/lib/app-url";
 import { notificationsEnabled } from "@/lib/notifications/config";
 import { cleanUpOldNotifications } from "@/lib/notifications/maintenance";
 import { verifyQStashRequest } from "@/lib/notifications/qstash";
+import { runReconciliationSweep } from "@/lib/notifications/sweep";
 import { runWorker } from "@/lib/notifications/worker";
 
 // A claim lasts 120 seconds; the host stops this function long before that.
@@ -19,8 +20,7 @@ export const maxDuration = 60;
  * Anything else gets a 401.
  *
  * ?task=worker            claim and send whatever is due (the default)
- * ?task=daily             clean-up (+ the reconciliation sweep, Stage 2),
- *                         then a worker pass
+ * ?task=daily             reconciliation sweep, clean-up, then a worker pass
  * ?task=discovery-daily   Phase 3
  * ?task=discovery-weekly  Phase 3
  *
@@ -53,9 +53,10 @@ async function run(task: Task) {
     if (task === "discovery-daily" || task === "discovery-weekly") {
       return NextResponse.json({ skipped: `${task} arrives in Phase 3.` });
     }
+    const sweep = task === "daily" ? await runReconciliationSweep() : undefined;
     const cleanup = task === "daily" ? await cleanUpOldNotifications() : undefined;
     const worker = await runWorker({ source: task });
-    const summary = { task, cleanup, worker };
+    const summary = { task, sweep, cleanup, worker };
     console.log("Notification run:", JSON.stringify(summary));
     return NextResponse.json(summary);
   } catch (error) {

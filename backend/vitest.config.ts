@@ -8,6 +8,10 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     // Database-backed tests talk to Neon; give them room.
     testTimeout: 30_000,
+    // When a real test database is configured, run test files one at a time:
+    // several of them share it, and the notification worker in one file
+    // would otherwise pick up rows another file is still asserting on.
+    fileParallelism: !process.env.NOTIFICATIONS_DB_TEST_URL,
   },
   resolve: {
     alias: {

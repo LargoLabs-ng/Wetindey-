@@ -15,8 +15,8 @@ import { orders, tickets, ticketTypes } from "@/db/schema";
  */
 
 /** How many tickets of each type belong to an order. */
-async function ticketCountsByType(orderId: string) {
-  const rows = await db
+async function ticketCountsByType(orderId: string, executor: Executor = db) {
+  const rows = await executor
     .select({
       ticketTypeId: tickets.ticketTypeId,
       count: sql<number>`count(*)::int`,
@@ -30,12 +30,16 @@ async function ticketCountsByType(orderId: string) {
 /**
  * Payment confirmed: turn this order's reservations into sales.
  * Counters are clamped so a double-fire can never push them negative.
+ * Pass the transaction (`tx`) so this is saved together with the order.
  */
-export async function confirmOrderInventory(orderId: string): Promise<void> {
-  const rows = await ticketCountsByType(orderId);
+export async function confirmOrderInventory(
+  orderId: string,
+  executor: Executor = db
+): Promise<void> {
+  const rows = await ticketCountsByType(orderId, executor);
 
   for (const row of rows) {
-    await db
+    await executor
       .update(ticketTypes)
       .set({
         quantitySold: sql`${ticketTypes.quantitySold} + ${row.count}`,
@@ -47,7 +51,7 @@ export async function confirmOrderInventory(orderId: string): Promise<void> {
   // Mark anything that just filled up, so it stops being offered.
   const typeIds = rows.map((r) => r.ticketTypeId);
   if (typeIds.length > 0) {
-    await db
+    await executor
       .update(ticketTypes)
       .set({ status: "sold_out" })
       .where(

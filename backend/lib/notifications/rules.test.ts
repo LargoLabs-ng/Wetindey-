@@ -145,3 +145,16 @@ describe("startOfLagosDay", () => {
     );
   });
 });
+
+describe("recordEvent when the outbox table is missing", () => {
+  it("skips (so the business change still succeeds) only for a missing table", async () => {
+    const { recordEvent } = await import("./outbox");
+    const missing = { transaction: async () => { throw Object.assign(new Error("relation does not exist"), { code: "42P01" }); } };
+    const other = { transaction: async () => { throw Object.assign(new Error("deadlock"), { code: "40P01" }); } };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await recordEvent(missing as any, { type: "order.paid", key: ["o1"] });
+    expect(result).toEqual({ recorded: false, dedupeKey: "order.paid:o1", skipped: "table_missing" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(recordEvent(other as any, { type: "order.paid", key: ["o1"] })).rejects.toThrow("deadlock");
+  });
+});
