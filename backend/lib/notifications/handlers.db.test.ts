@@ -54,9 +54,11 @@ describe.skipIf(!URL)("organizer and admin notifications", () => {
 
   async function checkout(qty = 1, opts: { free?: boolean } = {}) {
     const total = opts.free ? 0 : 1500 * qty;
+    // A processing fee on top, as Paystack adds: the sale notice must not count it.
+    const fees = opts.free ? 0 : 77.5;
     const [o] = await sql`
       INSERT INTO orders (event_id, email, phone, subtotal, fees, total, status, platform_fee_paid_by, reservation_expires_at)
-      VALUES (${event}, 'buyer@example.test', '0800', ${total}, 0, ${total}, 'pending', 'organizer', now() + interval '15 minutes')
+      VALUES (${event}, 'buyer@example.test', '0800', ${total}, ${fees}, ${total + fees}, 'pending', 'organizer', now() + interval '15 minutes')
       RETURNING id`;
     for (let i = 0; i < qty; i += 1) {
       await sql`INSERT INTO tickets (order_id, event_id, ticket_type_id, attendee_name, attendee_email, qr_token, status)
@@ -65,7 +67,7 @@ describe.skipIf(!URL)("organizer and admin notifications", () => {
     await sql`UPDATE ticket_types SET quantity_reserved = quantity_reserved + ${qty} WHERE id = ${tier}`;
     const reference = `WD-H-${randomUUID()}`;
     await sql`INSERT INTO payments (order_id, provider, provider_reference, amount, status)
-              VALUES (${o.id}, ${opts.free ? "free" : "paystack"}, ${reference}, ${total}, ${opts.free ? "success" : "initialized"})`;
+              VALUES (${o.id}, ${opts.free ? "free" : "paystack"}, ${reference}, ${total + fees}, ${opts.free ? "success" : "initialized"})`;
     return { orderId: o.id as string, reference };
   }
 

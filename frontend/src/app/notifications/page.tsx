@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { NotificationList } from "@/components/notification-list";
 import { WordMark } from "@/components/wordmark";
 
-export const metadata = { title: "Notifications · Wetin Dey" };
+export const metadata = { title: "Notifications" };
 
 export default async function NotificationsPage() {
   const session = await auth();

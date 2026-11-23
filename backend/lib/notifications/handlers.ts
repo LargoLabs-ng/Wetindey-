@@ -68,6 +68,10 @@ async function orderSummary(orderId: string) {
   const [order] = await db
     .select({
       id: orders.id,
+      // Ticket money after any discount; leaves out the processing fee the
+      // buyer paid on top, which never reaches the organiser.
+      subtotal: orders.subtotal,
+      // Everything the buyer paid, fees included (for payment reviews).
       total: orders.total,
       status: orders.status,
       eventId: orders.eventId,
@@ -96,7 +100,7 @@ function salesHandler(kind: "sale" | "rsvp") {
       // Refunded or cancelled since? Then it's not news any more.
       if (!order || order.status !== "paid") return none;
       const what = order.lines.map((l) => `${l.count} × ${l.name}`).join(", ");
-      const body = kind === "sale" ? `${what} · ${naira(order.total)}` : what;
+      const body = kind === "sale" ? `${what} · ${naira(order.subtotal)}` : what;
       const team = await eventTeam(order.eventId, "finance:view");
       return inAppOnly(team, "sales", {
         title: `${kind === "sale" ? "New sale" : "New RSVP"} · ${order.eventTitle}`,
