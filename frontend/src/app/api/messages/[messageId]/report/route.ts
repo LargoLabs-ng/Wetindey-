@@ -4,6 +4,8 @@ import { z } from "zod";
 import { db } from "@/db";
 import { eventMessages, messageReports } from "@/db/schema";
 import { getSessionUserId, isUuid } from "@/lib/authz";
+import { kickNotificationWorker } from "@/lib/notifications/kick";
+import { recordEvent } from "@/lib/notifications/outbox";
 
 type RouteContext = { params: Promise<{ messageId: string }> };
 
@@ -53,15 +55,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
   // onConflictDoNothing against the unique index on (message, reporter):
   // reporting twice is a no-op rather than an error, so the UI never has to
   // explain a failure that doesn't matter.
-  await db
-    .insert(messageReports)
-    .values({
-      messageId,
-      reporterId: userId,
-      reason: parsed.data.reason,
-      note: parsed.data.note ?? null,
-    })
-    .onConflictDoNothing();
+  // The organiser's (and admins') "message reported" alert is saved with the
+  // report, and only for a new report.
+  const created = await db.transaction(async (tx) => {
+    const [report] = await tx
+      .insert(messageReports)
+      .values({
+        messageId,
+        reporterId: userId,
+        reason: parsed.data.reason,
+        note: parsed.data.note ?? null,
+      })
+      .onConflictDoNothing()
+      .returning({ id: messageReports.id });
+    if (report) {
+      await recordEvent(tx, {
+        type: "message.reported",
+        key: [report.id],
+        payload: { reportId: report.id, messageId },
+      });
+    }
+    return Boolean(report);
+  });
+  if (created) kickNotificationWorker();
 
   return NextResponse.json({
     ok: true,

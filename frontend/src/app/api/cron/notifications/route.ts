@@ -1,0 +1,74 @@
+import { timingSafeEqual } from "node:crypto";
+import { NextRequest, NextResponse } from "next/server";
+import { appUrl } from "@/lib/app-url";
+import { verifyQStashRequest } from "@/lib/notifications/qstash";
+import { runNotificationTask, TASKS, type Task } from "@/lib/notifications/tasks";
+
+// A claim lasts 120 seconds; the host stops this function long before that.
+export const maxDuration = 60;
+
+/**
+ * /api/cron/notifications — the notification worker.
+ *
+ * Exactly two callers are accepted:
+ *   POST from the QStash schedules, proven by QStash's signature.
+ *   GET  from the daily Vercel cron backstop, proven by CRON_SECRET.
+ * (A POST with the CRON_SECRET header is also accepted, for a manual run.)
+ * Anything else gets a 401.
+ *
+ * ?task=worker            claim and send whatever is due (the default)
+ * ?task=daily             reconciliation sweep, clean-up, health check, then
+ *                         a worker pass
+ * ?task=discovery-daily   Phase 3
+ * ?task=discovery-weekly  Phase 3
+ *
+ * Answers 200 whenever it ran, even with nothing to do, so QStash doesn't
+ * retry a healthy call. An error status means it genuinely couldn't run, so
+ * QStash logs it and (for timed tasks) retries.
+ */
+
+function hasCronSecret(request: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  const expected = Buffer.from(`Bearer ${secret}`, "utf8");
+  const received = Buffer.from(request.headers.get("authorization") ?? "", "utf8");
+  return expected.length === received.length && timingSafeEqual(expected, received);
+}
+
+function taskOf(request: NextRequest): Task | null {
+  const raw = request.nextUrl.searchParams.get("task") ?? "worker";
+  return (TASKS as readonly string[]).includes(raw) ? (raw as Task) : null;
+}
+
+async function run(task: Task) {
+  try {
+    return NextResponse.json(await runNotificationTask(task));
+  } catch (error) {
+    console.error(`Notification ${task} run failed:`, error);
+    return NextResponse.json({ error: "The notification run failed." }, { status: 502 });
+  }
+}
+
+export async function GET(request: NextRequest) {
+  if (!hasCronSecret(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const task = taskOf(request);
+  if (!task) return NextResponse.json({ error: "Unknown task." }, { status: 400 });
+  return run(task);
+}
+
+export async function POST(request: NextRequest) {
+  const body = await request.text();
+  const fromQStash = await verifyQStashRequest({
+    signature: request.headers.get("upstash-signature"),
+    body,
+    urls: [request.url, `${appUrl("/api/cron/notifications")}${request.nextUrl.search}`],
+  });
+  if (!fromQStash && !hasCronSecret(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const task = taskOf(request);
+  if (!task) return NextResponse.json({ error: "Unknown task." }, { status: 400 });
+  return run(task);
+}

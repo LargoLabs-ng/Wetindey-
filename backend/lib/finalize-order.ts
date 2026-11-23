@@ -6,6 +6,8 @@ import {
   releaseOrderReservation,
   releaseRefundedTicket,
 } from "@/lib/inventory";
+import { kickNotificationWorker } from "@/lib/notifications/kick";
+import { recordEvent, type Executor } from "@/lib/notifications/outbox";
 import { sendTicketsForOrder } from "@/lib/ticket-email";
 
 /**
@@ -24,6 +26,23 @@ export type FinalizeResult =
   | { ok: true; orderId: string; alreadyDone: boolean; emailSent: boolean }
   | { ok: false; reason: "unknown-reference" };
 
+/**
+ * Everything that turns a payment into tickets happens in ONE database
+ * transaction: claim the payment, mark the order paid, make the tickets
+ * valid, move the held seats into "sold", count the promo code, and record
+ * the `order.paid` notification event. Either all of it is saved, or none
+ * of it is.
+ *
+ * Before this, those were separate writes. A timeout or a deploy after the
+ * first one left the payment marked "success" with the order still pending —
+ * and every retry then saw the claim taken and skipped the order, so the
+ * buyer had paid and held no valid ticket. Now a failure part-way rolls the
+ * whole thing back, the webhook answers with an error, and Paystack's retry
+ * (or the buyer's return page) completes it cleanly.
+ *
+ * The ticket email is sent after the commit, exactly as before, and a failed
+ * email still never undoes a purchase.
+ */
 export async function finalizePaidOrder(reference: string): Promise<FinalizeResult> {
   const payment = await db.query.payments.findFirst({
     where: eq(payments.providerReference, reference),
@@ -32,28 +51,45 @@ export async function finalizePaidOrder(reference: string): Promise<FinalizeResu
 
   if (!payment || !payment.order) return { ok: false, reason: "unknown-reference" };
   const orderId = payment.order.id;
+  const eventId = payment.order.eventId;
 
-  // Claim with the write itself. Two callers racing — webhook and browser, or
-  // a duplicate provider retry — can both read 'initialized' before either writes, and
-  // would then both issue tickets and both email the buyer. Putting the status
-  // in the WHERE means exactly one caller can claim it.
-  const claimed = await db
-    .update(payments)
-    .set({ status: "success", paidAt: new Date() })
-    .where(and(eq(payments.id, payment.id), ne(payments.status, "success")))
-    .returning({ id: payments.id });
+  const claimed = await db.transaction(async (tx) => {
+    // Claim with the write itself. Two callers racing — webhook and browser,
+    // or a duplicate provider retry — both reach this UPDATE; the second
+    // waits for the first to commit, then finds the status already
+    // "success" and claims nothing. Exactly one caller issues tickets.
+    const won = await tx
+      .update(payments)
+      .set({ status: "success", paidAt: new Date() })
+      .where(and(eq(payments.id, payment.id), ne(payments.status, "success")))
+      .returning({ id: payments.id });
+    if (won.length === 0) return false;
 
-  if (claimed.length === 0) {
+    await tx.update(orders).set({ status: "paid" }).where(eq(orders.id, orderId));
+    await tx.update(tickets).set({ status: "valid" }).where(eq(tickets.orderId, orderId));
+
+    // Move this order's held inventory into the sold column.
+    const soldOut = await confirmOrderInventory(orderId, tx);
+
+    await countPromoUse(orderId, tx);
+
+    // Saved with the order or not at all. The worker turns it into the
+    // organizer's and admins' notifications later; nothing is sent here.
+    await recordEvent(tx, {
+      type: "order.paid",
+      key: [orderId],
+      payload: { orderId, eventId, paymentId: payment.id },
+    });
+    await recordSoldOut(tx, soldOut, eventId);
+    return true;
+  });
+
+  if (!claimed) {
     return { ok: true, orderId, alreadyDone: true, emailSent: false };
   }
 
-  await db.update(orders).set({ status: "paid" }).where(eq(orders.id, orderId));
-  await db.update(tickets).set({ status: "valid" }).where(eq(tickets.orderId, orderId));
-
-  // Move this order's held inventory into the sold column.
-  await confirmOrderInventory(orderId);
-
-  await countPromoUse(orderId);
+  // Optional: start the notification worker as soon as the response is out.
+  kickNotificationWorker();
 
   // Best effort: a failed email must not undo a completed purchase. The buyer
   // can always retrieve the ticket from /tickets/recover.
@@ -68,17 +104,49 @@ export async function finalizePaidOrder(reference: string): Promise<FinalizeResu
   return { ok: true, orderId, alreadyDone: false, emailSent };
 }
 
-export async function finalizeFreeOrder(orderId: string): Promise<boolean> {
-  const claimed = await db
-    .update(orders)
-    .set({ status: "paid" })
-    .where(and(eq(orders.id, orderId), eq(orders.status, "pending")))
-    .returning({ id: orders.id });
-  if (claimed.length === 0) return false;
+/**
+ * One "sold out" alert per tier per capacity: if the organizer adds seats and
+ * it sells out again, that's a new alert; the same sell-out reported twice
+ * is not.
+ */
+async function recordSoldOut(
+  tx: Executor,
+  tiers: Array<{ id: string; quantityTotal: number }>,
+  eventId: string
+): Promise<void> {
+  for (const tier of tiers) {
+    await recordEvent(tx, {
+      type: "tier.sold_out",
+      key: [tier.id, tier.quantityTotal],
+      payload: { ticketTypeId: tier.id, eventId },
+    });
+  }
+}
 
-  await db.update(tickets).set({ status: "valid" }).where(eq(tickets.orderId, orderId));
-  await confirmOrderInventory(orderId);
-  await countPromoUse(orderId);
+/** A free order (RSVP): the same all-or-nothing completion, without a payment. */
+export async function finalizeFreeOrder(orderId: string): Promise<boolean> {
+  const claimed = await db.transaction(async (tx) => {
+    const won = await tx
+      .update(orders)
+      .set({ status: "paid" })
+      .where(and(eq(orders.id, orderId), eq(orders.status, "pending")))
+      .returning({ id: orders.id, eventId: orders.eventId });
+    if (won.length === 0) return false;
+
+    await tx.update(tickets).set({ status: "valid" }).where(eq(tickets.orderId, orderId));
+    const soldOut = await confirmOrderInventory(orderId, tx);
+    await countPromoUse(orderId, tx);
+    await recordEvent(tx, {
+      type: "order.confirmed",
+      key: [orderId],
+      payload: { orderId, eventId: won[0].eventId },
+    });
+    await recordSoldOut(tx, soldOut, won[0].eventId);
+    return true;
+  });
+  if (!claimed) return false;
+
+  kickNotificationWorker();
   try {
     await sendTicketsForOrder(orderId);
   } catch (error) {
@@ -374,20 +442,25 @@ export async function recordExternalRefundFailure(data: {
  * above), so a webhook and a browser return racing each other cannot both
  * count it. Never throws: a miscount must not undo a completed purchase.
  */
-async function countPromoUse(orderId: string): Promise<void> {
+async function countPromoUse(orderId: string, executor: Executor = db): Promise<void> {
   try {
-    const [order] = await db
-      .select({ promoCodeId: orders.promoCodeId })
-      .from(orders)
-      .where(eq(orders.id, orderId))
-      .limit(1);
+    // A savepoint: a failure here is rolled back on its own and never undoes
+    // the purchase around it. (In Postgres, an error inside a transaction
+    // would otherwise abort the whole transaction.)
+    await executor.transaction(async (sp) => {
+      const [order] = await sp
+        .select({ promoCodeId: orders.promoCodeId })
+        .from(orders)
+        .where(eq(orders.id, orderId))
+        .limit(1);
 
-    if (!order?.promoCodeId) return;
+      if (!order?.promoCodeId) return;
 
-    await db
-      .update(promoCodes)
-      .set({ usedCount: sql`${promoCodes.usedCount} + 1` })
-      .where(eq(promoCodes.id, order.promoCodeId));
+      await sp
+        .update(promoCodes)
+        .set({ usedCount: sql`${promoCodes.usedCount} + 1` })
+        .where(eq(promoCodes.id, order.promoCodeId));
+    });
   } catch (error) {
     console.error(`Could not count promo use for order ${orderId}:`, error);
   }

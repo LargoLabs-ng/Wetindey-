@@ -12,9 +12,10 @@ import {
   index,
   uniqueIndex,
   primaryKey,
+  check,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // ─── Enums ───────────────────────────────────────────────────────────────
 
@@ -1420,3 +1421,212 @@ export const eventBans = pgTable(
     oncePerEvent: uniqueIndex("event_ban_unique").on(t.eventId, t.userId),
   })
 );
+
+// ─── Notifications (migration 0025) ─────────────────────────────────────
+//
+// The database is the source of truth for every notification. A business
+// change (an order paid, a payout requested) writes one `notification_events`
+// row in the SAME transaction as the change itself; a scheduled worker then
+// turns it into inbox rows and deliveries and sends them, with retries.
+// See backend/lib/notifications/ and backend/migrations/0025_notifications.sql.
+//
+// The attempt rule is the same in the database, the worker and the plan:
+// `max_attempts` (5) is the TOTAL number of tries, including the first.
+
+/** The outbox: one row per thing that happened. */
+export const notificationEvents = pgTable(
+  "notification_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    type: varchar("type", { length: 80 }).notNull(),
+    /** Ids only — never content, secrets or bank details. */
+    payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
+    dedupeKey: varchar("dedupe_key", { length: 300 }).notNull().unique("notification_events_dedupe_key_unique"),
+    status: varchar("status", { length: 20 }).default("pending").notNull(),
+    /** Now, or later for scheduled events such as reminders. */
+    availableAt: timestamp("available_at").defaultNow().notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    maxAttempts: integer("max_attempts").default(5).notNull(),
+    nextAttemptAt: timestamp("next_attempt_at").defaultNow().notNull(),
+    lockedUntil: timestamp("locked_until"),
+    claimedBy: varchar("claimed_by", { length: 64 }),
+    fanoutCursor: varchar("fanout_cursor", { length: 200 }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    processedAt: timestamp("processed_at"),
+  },
+  (t) => ({
+    due: index("notification_events_due_idx").on(t.status, t.availableAt, t.nextAttemptAt),
+    attemptsCheck: check(
+      "notification_events_attempts_check",
+      sql`${t.attempts} >= 0 AND ${t.attempts} <= ${t.maxAttempts}`
+    ),
+    statusCheck: check(
+      "notification_events_status_check",
+      sql`${t.status} IN ('pending', 'processing', 'done', 'failed')`
+    ),
+  })
+);
+
+/** The in-app inbox: one row per person per thing. */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    eventId: uuid("event_id").references(() => notificationEvents.id, { onDelete: "set null" }),
+    type: varchar("type", { length: 80 }).notNull(),
+    category: varchar("category", { length: 40 }).notNull(),
+    title: varchar("title", { length: 200 }).notNull(),
+    body: text("body"),
+    url: varchar("url", { length: 500 }),
+    data: jsonb("data").$type<Record<string, unknown>>().default({}).notNull(),
+    dedupeKey: varchar("dedupe_key", { length: 400 }).notNull().unique("notifications_dedupe_key_unique"),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    inbox: index("notifications_user_inbox_idx").on(t.userId, t.readAt, t.createdAt.desc()),
+  })
+);
+
+/** Browser push devices — many per person (used from Phase 4). */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    endpoint: text("endpoint").notNull().unique("push_subscriptions_endpoint_unique"),
+    p256dh: varchar("p256dh", { length: 200 }).notNull(),
+    auth: varchar("auth", { length: 100 }).notNull(),
+    userAgent: varchar("user_agent", { length: 300 }),
+    deviceLabel: varchar("device_label", { length: 100 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastSuccessAt: timestamp("last_success_at"),
+    failureCount: integer("failure_count").default(0).notNull(),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => ({
+    byUser: index("push_subscriptions_user_idx").on(t.userId),
+  })
+);
+
+/** One row per person x thing x channel x destination, each with its own retries. */
+export const notificationDeliveries = pgTable(
+  "notification_deliveries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventId: uuid("event_id").references(() => notificationEvents.id, { onDelete: "set null" }),
+    notificationId: uuid("notification_id").references(() => notifications.id, { onDelete: "set null" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
+    /** Set for email deliveries (also for guests with no account). */
+    email: varchar("email", { length: 255 }),
+    channel: varchar("channel", { length: 20 }).notNull(),
+    pushSubscriptionId: uuid("push_subscription_id").references(() => pushSubscriptions.id, {
+      onDelete: "cascade",
+    }),
+    category: varchar("category", { length: 40 }).notNull(),
+    /** Tickets, money, security: always sent first, never held by the daily email budget. */
+    essential: boolean("essential").default(false).notNull(),
+    /** What to send, rendered at fan-out time (subject, html, text, url). */
+    content: jsonb("content").$type<Record<string, unknown>>().default({}).notNull(),
+    dedupeKey: varchar("dedupe_key", { length: 400 }).notNull().unique("notification_deliveries_dedupe_key_unique"),
+    status: varchar("status", { length: 20 }).default("pending").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    maxAttempts: integer("max_attempts").default(5).notNull(),
+    nextAttemptAt: timestamp("next_attempt_at").defaultNow().notNull(),
+    lockedUntil: timestamp("locked_until"),
+    claimedBy: varchar("claimed_by", { length: 64 }),
+    lastError: text("last_error"),
+    providerMessageId: varchar("provider_message_id", { length: 200 }),
+    sentAt: timestamp("sent_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    due: index("notification_deliveries_due_idx").on(t.status, t.nextAttemptAt),
+    attemptsCheck: check(
+      "notification_deliveries_attempts_check",
+      sql`${t.attempts} >= 0 AND ${t.attempts} <= ${t.maxAttempts}`
+    ),
+    statusCheck: check(
+      "notification_deliveries_status_check",
+      sql`${t.status} IN ('pending', 'processing', 'sent', 'failed', 'skipped')`
+    ),
+    channelCheck: check("notification_deliveries_channel_check", sql`${t.channel} IN ('email', 'push')`),
+  })
+);
+
+/** Every send attempt, kept for 90 days. */
+export const notificationDeliveryAttempts = pgTable(
+  "notification_delivery_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    deliveryId: uuid("delivery_id")
+      .references(() => notificationDeliveries.id, { onDelete: "cascade" })
+      .notNull(),
+    attemptNumber: integer("attempt_number").notNull(),
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    finishedAt: timestamp("finished_at"),
+    /** sent | temporary_failure | permanent_failure | abandoned */
+    outcome: varchar("outcome", { length: 30 }),
+    providerStatus: varchar("provider_status", { length: 40 }),
+    error: text("error"),
+    providerMessageId: varchar("provider_message_id", { length: 200 }),
+  },
+  (t) => ({
+    byDelivery: index("notification_delivery_attempts_delivery_idx").on(t.deliveryId),
+    numberCheck: check(
+      "notification_delivery_attempts_number_check",
+      sql`${t.attemptNumber} BETWEEN 1 AND 5`
+    ),
+  })
+);
+
+/** Only the switches someone changed from the default; defaults live in code. */
+export const notificationPreferences = pgTable(
+  "notification_preferences",
+  {
+    userId: uuid("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    category: varchar("category", { length: 40 }).notNull(),
+    channel: varchar("channel", { length: 20 }).notNull(),
+    enabled: boolean("enabled").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.category, t.channel] }),
+  })
+);
+
+/** Events that became discoverable, bundled into daily/weekly summaries (Phase 3). */
+export const discoveryItems = pgTable(
+  "discovery_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventId: uuid("event_id")
+      .references(() => events.id, { onDelete: "cascade" })
+      .notNull()
+      .unique("discovery_items_event_unique"),
+    universityId: uuid("university_id").references(() => universities.id, { onDelete: "set null" }),
+    campusId: uuid("campus_id").references(() => campuses.id, { onDelete: "set null" }),
+    city: varchar("city", { length: 100 }),
+    category: varchar("category", { length: 100 }),
+    listedAt: timestamp("listed_at").defaultNow().notNull(),
+    bundledAt: timestamp("bundled_at"),
+  },
+  (t) => ({
+    unbundled: index("discovery_items_unbundled_idx").on(t.bundledAt, t.universityId),
+  })
+);
+
+/** Small key/value settings for the notification system (e.g. sweep_since). */
+export const notificationSettings = pgTable("notification_settings", {
+  key: varchar("key", { length: 60 }).primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

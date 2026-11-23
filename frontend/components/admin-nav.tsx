@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { NotificationBell } from "@/components/notification-bell";
 
 /**
  * Admin navigation.
@@ -21,6 +22,7 @@ const LINKS = [
   { href: "/admin/departments", label: "Departments", countKey: "departments" },
   { href: "/admin/payouts", label: "Payouts", countKey: "payouts" },
   { href: "/admin/payment-reviews", label: "Payment reviews" },
+  { href: "/admin/notifications", label: "Notifications" },
 ] as const;
 
 export function AdminNav() {
@@ -48,7 +50,8 @@ export function AdminNav() {
         backgroundColor: "var(--color-ivory-2)",
       }}
     >
-      <div className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl items-center px-4 sm:px-6 lg:px-8">
+      <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
         {LINKS.map((link) => {
           const { href, label } = link;
           const count = "countKey" in link ? counts[link.countKey] : 0;
@@ -77,6 +80,11 @@ export function AdminNav() {
             </Link>
           );
         })}
+      </div>
+      {/* Outside the scrolling strip, so its dropdown isn't clipped. */}
+      <div className="shrink-0 pl-2">
+        <NotificationBell tone="light" />
+      </div>
       </div>
     </nav>
   );

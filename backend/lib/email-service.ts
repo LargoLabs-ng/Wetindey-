@@ -32,6 +32,13 @@ interface EmailOptions {
   html: string;
   replyTo?: string;
   attachments?: EmailAttachment[];
+  /**
+   * Sent to Resend as its Idempotency-Key: a second request with the same key
+   * within 24 hours is dropped instead of delivered twice. The notification
+   * worker passes the delivery's id, so a retry after a crash can't produce a
+   * duplicate email. Ignored by the SMTP providers.
+   */
+  idempotencyKey?: string;
 }
 
 /**
@@ -93,7 +100,14 @@ function getTransporter() {
 /**
  * Send email
  */
-export type SendResult = { ok: boolean; error?: string };
+export type SendResult = {
+  ok: boolean;
+  error?: string;
+  /** HTTP status from the provider, when there was one (Resend only). */
+  status?: number;
+  /** The provider's id for the sent message (Resend only). */
+  id?: string;
+};
 
 /**
  * Resend over HTTPS rather than their SMTP relay.
@@ -115,6 +129,7 @@ async function sendViaResend(
     headers: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
+      ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
     },
     body: JSON.stringify({
       from,
@@ -140,9 +155,14 @@ async function sendViaResend(
 
   if (!response.ok) {
     const body = await response.text();
-    return { ok: false, error: `Resend ${response.status}: ${body}` };
+    return { ok: false, status: response.status, error: `Resend ${response.status}: ${body}` };
   }
-  return { ok: true };
+  const sent = (await response.json().catch(() => null)) as { id?: unknown } | null;
+  return {
+    ok: true,
+    status: response.status,
+    ...(typeof sent?.id === "string" ? { id: sent.id } : {}),
+  };
 }
 
 /**

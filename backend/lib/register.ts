@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { organizations, organizationMembers, users, departments } from "@/db/schema";
+import { recordEvent } from "@/lib/notifications/outbox";
 import type { db as Database } from "@/db";
 
 /** The transaction handle Drizzle hands to db.transaction(). */
@@ -68,6 +69,13 @@ export async function suggestDepartment(
       suggestedBy: input.suggestedBy,
     })
     .returning({ id: departments.id });
+
+  // Saved with the suggestion: the admins' "department waiting" alert.
+  await recordEvent(tx, {
+    type: "department.pending",
+    key: [created.id],
+    payload: { departmentId: created.id },
+  });
 
   return created.id;
 }

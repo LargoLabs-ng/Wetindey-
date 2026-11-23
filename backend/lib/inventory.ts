@@ -15,8 +15,8 @@ import { orders, tickets, ticketTypes } from "@/db/schema";
  */
 
 /** How many tickets of each type belong to an order. */
-async function ticketCountsByType(orderId: string) {
-  const rows = await db
+async function ticketCountsByType(orderId: string, executor: Executor = db) {
+  const rows = await executor
     .select({
       ticketTypeId: tickets.ticketTypeId,
       count: sql<number>`count(*)::int`,
@@ -30,12 +30,16 @@ async function ticketCountsByType(orderId: string) {
 /**
  * Payment confirmed: turn this order's reservations into sales.
  * Counters are clamped so a double-fire can never push them negative.
+ * Pass the transaction (`tx`) so this is saved together with the order.
  */
-export async function confirmOrderInventory(orderId: string): Promise<void> {
-  const rows = await ticketCountsByType(orderId);
+export async function confirmOrderInventory(
+  orderId: string,
+  executor: Executor = db
+): Promise<Array<{ id: string; quantityTotal: number }>> {
+  const rows = await ticketCountsByType(orderId, executor);
 
   for (const row of rows) {
-    await db
+    await executor
       .update(ticketTypes)
       .set({
         quantitySold: sql`${ticketTypes.quantitySold} + ${row.count}`,
@@ -44,20 +48,21 @@ export async function confirmOrderInventory(orderId: string): Promise<void> {
       .where(eq(ticketTypes.id, row.ticketTypeId));
   }
 
-  // Mark anything that just filled up, so it stops being offered.
+  // Mark anything that just filled up, so it stops being offered. Returns
+  // the tiers that sold out with this order, for the "sold out" alert.
   const typeIds = rows.map((r) => r.ticketTypeId);
-  if (typeIds.length > 0) {
-    await db
-      .update(ticketTypes)
-      .set({ status: "sold_out" })
-      .where(
-        and(
-          inArray(ticketTypes.id, typeIds),
-          eq(ticketTypes.status, "active"),
-          sql`${ticketTypes.quantitySold} >= ${ticketTypes.quantityTotal}`
-        )
-      );
-  }
+  if (typeIds.length === 0) return [];
+  return executor
+    .update(ticketTypes)
+    .set({ status: "sold_out" })
+    .where(
+      and(
+        inArray(ticketTypes.id, typeIds),
+        eq(ticketTypes.status, "active"),
+        sql`${ticketTypes.quantitySold} >= ${ticketTypes.quantityTotal}`
+      )
+    )
+    .returning({ id: ticketTypes.id, quantityTotal: ticketTypes.quantityTotal });
 }
 
 /** Checkout failed or was rolled back: give the held inventory back. */

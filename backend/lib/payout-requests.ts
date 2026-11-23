@@ -13,6 +13,8 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { events, organizations, payoutEvents, payouts, users } from "@/db/schema";
 import { earningsForEvent, earningsForOrganization } from "@/lib/earnings";
+import { kickNotificationWorker } from "@/lib/notifications/kick";
+import { recordEvent } from "@/lib/notifications/outbox";
 import type { Earnings } from "@/lib/earnings-compute";
 import {
   allowedActions,
@@ -50,7 +52,7 @@ export async function createWithdrawalRequest(input: {
     throw new PayoutRequestError("Enter an amount above zero.", 400);
   }
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // The lock. A second request for this organisation waits here until the
     // first has committed, then sees its amount as committed.
     const [org] = await tx
@@ -108,8 +110,17 @@ export async function createWithdrawalRequest(input: {
       createdAt: now,
     });
 
+    // Saved with the request: the admins' "payout request waiting" alert.
+    await recordEvent(tx, {
+      type: "payout.requested",
+      key: [created.id],
+      payload: { payoutId: created.id, organizationId: org.id },
+    });
+
     return { id: created.id, availableBefore: earnings.available };
   });
+  kickNotificationWorker();
+  return result;
 }
 
 // ── Admin: act on a request ─────────────────────────────────────────────
@@ -120,7 +131,7 @@ export async function applyPayoutAction(input: {
   action: ActionInput;
 }): Promise<{ id: string; from: PayoutStatus; to: PayoutStatus }> {
   try {
-    return await db.transaction(async (tx) => {
+    const changed = await db.transaction(async (tx) => {
       const [payout] = await tx
         .select({ id: payouts.id, status: payouts.status })
         .from(payouts)
@@ -151,18 +162,31 @@ export async function applyPayoutAction(input: {
         throw new PayoutRequestError("This request was just updated by someone else.", 409);
       }
 
-      await tx.insert(payoutEvents).values({
-        payoutId: payout.id,
-        fromStatus: payout.status,
-        toStatus: to,
-        actorId: input.actorId,
-        note: historyNote,
-        paymentReference,
-        createdAt: now,
+      const [history] = await tx
+        .insert(payoutEvents)
+        .values({
+          payoutId: payout.id,
+          fromStatus: payout.status,
+          toStatus: to,
+          actorId: input.actorId,
+          note: historyNote,
+          paymentReference,
+          createdAt: now,
+        })
+        .returning({ id: payoutEvents.id });
+
+      // Saved with the change: the organizer's in-app payout update. One per
+      // history row, so a retry after "failed" is its own notification.
+      await recordEvent(tx, {
+        type: "payout.status_changed",
+        key: [history.id],
+        payload: { payoutId: payout.id, from: payout.status, to },
       });
 
       return { id: payout.id, from: payout.status as PayoutStatus, to };
     });
+    kickNotificationWorker();
+    return changed;
   } catch (error) {
     if (isUniqueViolation(error)) {
       throw new PayoutRequestError(
