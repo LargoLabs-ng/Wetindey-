@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { ArrowLeft, CalendarDays, MapPin, Pencil, QrCode, UserPlus, Users, Wallet } from "lucide-react";
 import { db } from "@/db";
-import { eventStaff, orders, tickets, ticketTypes, users } from "@/db/schema";
+import { ticketTypes } from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 import { PublishToggle } from "@/components/publish-toggle";
 import { TicketTiers } from "@/components/ticket-tiers";
 import { CopyEventLink } from "@/components/copy-event-link";
+import { promoterSales } from "@/lib/event-revenue";
 
 const statusStyles: Record<string, string> = {
   draft: "bg-surface-2 text-on-dark-2",
@@ -48,40 +49,7 @@ export default async function EventDetailPage({
    * knowledge, not money. Finance can see the revenue without seeing this.
    */
   const promoters = can(role, "attendees:view", grant)
-    ? await db
-        .select({
-          name: users.name,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          refCode: eventStaff.refCode,
-          sold: sql<number>`count(${tickets.id})::int`,
-          faceValue: sql<number>`coalesce(sum(${orders.subtotal}), 0)::float`,
-        })
-        .from(eventStaff)
-        .innerJoin(users, eq(users.id, eventStaff.userId))
-        .leftJoin(
-          orders,
-          and(
-            eq(orders.promoterId, eventStaff.userId),
-            eq(orders.eventId, event.id),
-            eq(orders.status, "paid")
-          )
-        )
-        .leftJoin(tickets, eq(tickets.orderId, orders.id))
-        .where(
-          and(
-            eq(eventStaff.eventId, event.id),
-            eq(eventStaff.role, "promoter"),
-            eq(eventStaff.status, "active")
-          )
-        )
-        .groupBy(
-          users.name,
-          users.firstName,
-          users.lastName,
-          eventStaff.refCode
-        )
-        .orderBy(desc(sql`count(${tickets.id})`))
+    ? await promoterSales(event.id)
     : [];
 
   const dateLabel = new Date(event.startDatetime).toLocaleString("en-NG", {

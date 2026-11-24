@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
 import { datetimeLocalFromUtc, datetimeLocalToUtc } from "@/lib/early-bird";
@@ -370,6 +370,10 @@ export function TicketTiers({
   onChange?: () => void;
 }) {
   const router = useRouter();
+  // True from a successful save until the refreshed list has arrived. On a
+  // slow or just-woken server that can take a few seconds, and without this
+  // the list shows the old values with no sign anything is happening.
+  const [updating, startUpdating] = useTransition();
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -406,7 +410,7 @@ export function TicketTiers({
         setError(data.error ?? "Something went wrong.");
         return false;
       }
-      router.refresh();
+      startUpdating(() => router.refresh());
       onChange?.();
       return true;
     } catch {
@@ -469,6 +473,11 @@ export function TicketTiers({
       </div>
 
       <div className="space-y-4 p-6">
+        {updating && (
+          <p role="status" aria-live="polite" className="text-sm text-on-dark-2">
+            Saved. Updating the list…
+          </p>
+        )}
         {adding && (
           <TierForm
             initial={emptyForm}
