@@ -7,6 +7,7 @@ import { toPublicTier } from '@/lib/public-tiers';
 import { requireEventAccess } from '@/lib/authz';
 import { can } from '@/lib/permissions';
 import { releaseExpiredReservations } from '@/lib/inventory';
+import { ticketTypeOrder } from '@/lib/ticket-type-order';
 
 type RouteContext = { params: Promise<{ slug: string }> };
 
@@ -30,7 +31,7 @@ export async function GET(
     const event = await db.query.events.findFirst({
       where: eq(events.slug, slug),
       with: {
-        ticketTypes: true,
+        ticketTypes: { orderBy: (t) => ticketTypeOrder(t) },
       },
     });
 

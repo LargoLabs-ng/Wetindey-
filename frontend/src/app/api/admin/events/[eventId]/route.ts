@@ -12,6 +12,7 @@ import {
   users,
 } from "@/db/schema";
 import { isPlatformAdmin, isUuid } from "@/lib/authz";
+import { ticketTypeOrder } from "@/lib/ticket-type-order";
 
 const archiveSchema = z.object({
   action: z.enum(["archive", "restore"]),
@@ -86,7 +87,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           quantitySold: ticketTypes.quantitySold,
         })
         .from(ticketTypes)
-        .where(eq(ticketTypes.eventId, event.id)),
+        .where(eq(ticketTypes.eventId, event.id))
+        .orderBy(...ticketTypeOrder()),
     ]);
 
     const paidTickets = ticketRows.filter(

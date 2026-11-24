@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import { requireEventCapability } from '@/lib/authz';
 import { analyzeEventSales } from '@/lib/event-analytics';
 import { ticketSales } from '@/lib/event-revenue';
+import { ticketTypeOrder } from '@/lib/ticket-type-order';
 
 /**
  * GET /api/dashboard/metrics?eventId=xyz
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest) {
     // Fetch ticket types for this event
     const eventTicketTypes = await db.query.ticketTypes.findMany({
       where: eq(ticketTypes.eventId, eventId),
+      orderBy: (t) => ticketTypeOrder(t),
     });
 
     // Fetch all tickets for this event

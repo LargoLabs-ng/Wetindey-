@@ -10,6 +10,7 @@ import { PublishToggle } from "@/components/publish-toggle";
 import { TicketTiers } from "@/components/ticket-tiers";
 import { CopyEventLink } from "@/components/copy-event-link";
 import { promoterSales } from "@/lib/event-revenue";
+import { ticketTypeOrder } from "@/lib/ticket-type-order";
 
 const statusStyles: Record<string, string> = {
   draft: "bg-surface-2 text-on-dark-2",
@@ -35,7 +36,8 @@ export default async function EventDetailPage({
   const tiers = await db
     .select()
     .from(ticketTypes)
-    .where(eq(ticketTypes.eventId, event.id));
+    .where(eq(ticketTypes.eventId, event.id))
+    .orderBy(...ticketTypeOrder());
 
   /**
    * Who sold what.

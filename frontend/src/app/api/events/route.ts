@@ -9,6 +9,7 @@ import { generateUniqueSlug } from '@/lib/slug';
 import { isSafeHttpUrl } from "@/lib/media";
 import { isValidTimeZone } from "@/lib/early-bird";
 import { publicListingWhere } from "@/lib/event-visibility";
+import { ticketTypeOrder } from "@/lib/ticket-type-order";
 
 export async function GET() {
   try {
@@ -16,7 +17,7 @@ export async function GET() {
       // Public and unauthenticated, so unlisted events stay out of it.
       where: publicListingWhere(),
       with: {
-        ticketTypes: true,
+        ticketTypes: { orderBy: (t) => ticketTypeOrder(t) },
       },
       orderBy: (events, { desc }) => desc(events.startDatetime),
     });

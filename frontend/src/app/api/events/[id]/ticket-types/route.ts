@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { events, ticketTypes } from "@/db/schema";
 import { getEventRole, getSessionUserId } from "@/lib/authz";
@@ -9,6 +9,7 @@ import {
   datetimeLocalToUtc,
   isValidEarlyBirdConfiguration,
 } from "@/lib/early-bird";
+import { ticketTypeOrder } from "@/lib/ticket-type-order";
 
 const createTicketTypeSchema = z.object({
   name: z.string().min(1).max(100),
@@ -58,7 +59,7 @@ export async function GET(_request: Request, context: RouteContext) {
     .select()
     .from(ticketTypes)
     .where(eq(ticketTypes.eventId, eventId))
-    .orderBy(asc(ticketTypes.price));
+    .orderBy(...ticketTypeOrder());
 
   return NextResponse.json({ ticketTypes: tiers });
 }
