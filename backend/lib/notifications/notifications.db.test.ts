@@ -27,7 +27,13 @@ vi.mock("@/db", async () => {
 
 type Outcome = { ok: boolean; status?: number; error?: string; id?: string };
 const mail = {
-  sent: [] as Array<{ to: string; subject: string; idempotencyKey?: string }>,
+  sent: [] as Array<{
+    to: string;
+    subject: string;
+    idempotencyKey?: string;
+    html?: string;
+    headers?: Record<string, string>;
+  }>,
   next: [] as Outcome[],
   delayMs: 0,
 };
@@ -35,9 +41,15 @@ vi.mock("@/lib/email-service", async (importOriginal) => {
   const real = await importOriginal<typeof import("../email-service")>();
   return {
     ...real,
-    sendEmailWithResult: async (o: { to: string; subject: string; idempotencyKey?: string }) => {
+    sendEmailWithResult: async (o: {
+      to: string;
+      subject: string;
+      idempotencyKey?: string;
+      html?: string;
+      headers?: Record<string, string>;
+    }) => {
       if (mail.delayMs) await new Promise((r) => setTimeout(r, mail.delayMs));
-      mail.sent.push({ to: o.to, subject: o.subject, idempotencyKey: o.idempotencyKey });
+      mail.sent.push({ to: o.to, subject: o.subject, idempotencyKey: o.idempotencyKey, html: o.html, headers: o.headers });
       return mail.next.shift() ?? { ok: true, status: 200, id: `re_${randomUUID()}` };
     },
   };
@@ -71,7 +83,7 @@ describe.skipIf(!URL)("notification engine on a real database", () => {
             category: opts.category ?? "sales",
             essential: opts.essential,
             inApp: { title: `Hello ${page}`, body: "Body", url: "/dashboard" },
-            emailContent: { subject: `Subject ${page}`, html: "<p>Hi</p>" },
+            emailContent: { subject: `Subject ${page}`, html: "<p>Hi</p><!--wd:unsubscribe-->" },
           })),
           nextCursor: page < last ? String(page + 1) : null,
         };
@@ -189,6 +201,35 @@ describe.skipIf(!URL)("notification engine on a real database", () => {
     expect(new Set(keys).size).toBe(keys.length);
     const [{ n }] = await sql`SELECT count(*)::int AS n FROM notification_deliveries WHERE status = 'sent' AND attempts = 1`;
     expect(n).toBe(30);
+  });
+
+  it("adds an unsubscribe link and headers only to emails that can be turned off", async () => {
+    process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-secret-for-unsubscribe-links";
+    registerSimple("test.unsub.sales", [userA], { category: "sales" });
+    registerSimple("test.unsub.payouts", [userA], { category: "payouts" });
+    registerSimple("test.unsub.urgent", [userB], { category: "sales", essential: true });
+    await record("test.unsub.sales");
+    await record("test.unsub.payouts");
+    await record("test.unsub.urgent");
+    await worker.runWorker({ timeBudgetMs: 10_000 });
+    expect(mail.sent).toHaveLength(3);
+
+    const byKind = async (type: string) => {
+      const [d] = await sql`SELECT d.id FROM notification_deliveries d JOIN notification_events e ON e.id = d.event_id WHERE e.type = ${type}`;
+      return mail.sent.find((m) => m.idempotencyKey === d.id)!;
+    };
+    const sales = await byKind("test.unsub.sales");
+    expect(sales.html).toContain("/unsubscribe?t=");
+    expect(sales.html).not.toContain("<!--wd:unsubscribe-->");
+    expect(sales.headers?.["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
+    expect(sales.headers?.["List-Unsubscribe"]).toMatch(/^<.+\/api\/notifications\/unsubscribe\?t=.+>$/);
+
+    for (const kind of ["test.unsub.payouts", "test.unsub.urgent"]) {
+      const m = await byKind(kind);
+      expect(m.html).not.toContain("unsubscribe?t=");
+      expect(m.html).not.toContain("<!--wd:unsubscribe-->");
+      expect(m.headers).toBeUndefined();
+    }
   });
 
   it("retries a temporary failure on the schedule and stops after the 5th attempt", async () => {

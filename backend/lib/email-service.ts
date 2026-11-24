@@ -39,6 +39,8 @@ interface EmailOptions {
    * duplicate email. Ignored by the SMTP providers.
    */
   idempotencyKey?: string;
+  /** Extra email headers, such as List-Unsubscribe. */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -137,6 +139,7 @@ async function sendViaResend(
       subject: options.subject,
       html: options.html,
       ...(options.replyTo ? { reply_to: options.replyTo } : {}),
+      ...(options.headers ? { headers: options.headers } : {}),
       // Resend's REST API is snake_case: content_id, not contentId (that
       // spelling belongs to their Node SDK). Getting this wrong silently
       // downgrades an inline image to a plain attachment.
@@ -189,6 +192,7 @@ export async function sendEmailWithResult(
       subject: options.subject,
       html: options.html,
       replyTo: options.replyTo || from,
+      ...(options.headers ? { headers: options.headers } : {}),
       ...(options.attachments?.length
         ? {
             attachments: options.attachments.map((a) => ({
