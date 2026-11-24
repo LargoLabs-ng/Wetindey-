@@ -340,7 +340,7 @@ export default function DashboardPage() {
               <p className="text-3xl font-bold text-gold">
                 {naira(metrics.revenue)}
               </p>
-              <p className="mt-3 text-xs text-on-dark-3">Paid orders only</p>
+              <p className="mt-3 text-xs text-on-dark-3">Ticket sales, before fees</p>
             </div>
 
             <div className="rounded-2xl border border-line-dark bg-surface p-5">

@@ -4,6 +4,7 @@ import { tickets, orders, ticketTypes } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { requireEventCapability } from '@/lib/authz';
 import { analyzeEventSales } from '@/lib/event-analytics';
+import { ticketSales } from '@/lib/event-revenue';
 
 /**
  * GET /api/dashboard/metrics?eventId=xyz
@@ -41,10 +42,9 @@ export async function GET(request: NextRequest) {
       where: and(eq(orders.eventId, eventId), eq(orders.status, 'paid')),
     });
 
-    const totalRevenue = eventOrders.reduce((sum, order) => {
-      const totalNum = typeof order.total === 'string' ? parseFloat(order.total) : order.total;
-      return sum + totalNum;
-    }, 0);
+    // Ticket sales after discounts, minus refunds, without the processing
+    // fee buyers pay on top: the same figure as Finance's "Ticket sales".
+    const sales = ticketSales(eventOrders, eventTickets);
 
     const analytics = analyzeEventSales({
       now: new Date(),
@@ -70,33 +70,18 @@ export async function GET(request: NextRequest) {
         (t) => t.ticketTypeId === ticketType.id && (t.status === 'valid' || t.status === 'checked_in')
       );
 
-      const typeOrders = eventOrders.filter((o) =>
-        eventTickets
-          .filter((t) => t.orderId === o.id && t.ticketTypeId === ticketType.id)
-          .some((t) => t.status === 'valid' || t.status === 'checked_in')
-      );
-
-      const typeRevenue = typeOrders.reduce((sum, order) => {
-        const ticketCount = eventTickets.filter(
-          (t) => t.orderId === order.id && t.ticketTypeId === ticketType.id
-        ).length;
-        const orderTotal = typeof order.total === 'string' ? parseFloat(order.total) : order.total;
-        const totalTicketsInOrder = eventTickets.filter((t) => t.orderId === order.id).length || 1;
-        return sum + (orderTotal / totalTicketsInOrder) * ticketCount;
-      }, 0);
-
       return {
         tier: ticketType.name,
         sold: typeTickets.length,
         remaining: ticketType.quantityTotal - typeTickets.length,
-        revenue: Math.round(typeRevenue),
+        revenue: sales.byTicketType.get(ticketType.id) ?? 0,
       };
     });
 
     return NextResponse.json({
       ticketsSold: soldTickets,
       ticketsTotal: totalTickets,
-      revenue: totalRevenue,
+      revenue: sales.total,
       checkedIn: checkedInTickets,
       eventTitle: event.title,
       ticketBreakdown,
