@@ -6,6 +6,7 @@ import { requireEventCapability } from '@/lib/authz';
 import { PLATFORM_FEE_RATE } from '@/lib/fees';
 import { computeEarnings, orderOrganizerNet } from '@/lib/earnings-compute';
 import { loadEarningsOrders } from '@/lib/earnings';
+import { ticketTypeOrder } from '@/lib/ticket-type-order';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -37,7 +38,10 @@ export async function GET(request: NextRequest) {
     // totals above, discounts included.
     const paidOrderIds = orderInputs.filter((o) => o.status === 'paid').map((o) => o.id);
     const [tierRows, ticketRows] = await Promise.all([
-      db.query.ticketTypes.findMany({ where: (t, { eq }) => eq(t.eventId, event.id) }),
+      db.query.ticketTypes.findMany({
+        where: (t, { eq }) => eq(t.eventId, event.id),
+        orderBy: (t) => ticketTypeOrder(t),
+      }),
       paidOrderIds.length
         ? db
             .select({

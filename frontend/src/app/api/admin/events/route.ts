@@ -4,6 +4,7 @@ import { isPlatformAdmin } from '@/lib/authz';
 import { db } from '@/db';
 import { orders, tickets, users } from '@/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
+import { ticketTypeOrder } from '@/lib/ticket-type-order';
 
 export async function GET() {
   try {
@@ -20,7 +21,7 @@ export async function GET() {
     }
 
     const allEvents = await db.query.events.findMany({
-      with: { organization: true, ticketTypes: true },
+      with: { organization: true, ticketTypes: { orderBy: (t) => ticketTypeOrder(t) } },
     });
     const ownerIds = [...new Set(
       allEvents
