@@ -21,7 +21,12 @@ export default async function NotificationsPage() {
         </div>
       </header>
       <main className="mx-auto max-w-2xl px-4 py-6">
-        <h1 className="mb-4 text-2xl font-bold text-ink">Notifications</h1>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold text-ink">Notifications</h1>
+          <Link href="/profile/notifications" className="text-sm font-semibold text-purple">
+            Settings
+          </Link>
+        </div>
         <NotificationList />
       </main>
     </div>
