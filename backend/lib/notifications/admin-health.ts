@@ -8,6 +8,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { notificationDeliveries, notificationEvents } from "@/db/schema";
 import { nonEssentialEmailDailyBudget, notificationEmailEnabled, notificationsEnabled } from "./config";
+import { digestsEnabled } from "./digests";
 import { notificationHealth } from "./health";
 import { emailsSentToday } from "./worker";
 
@@ -63,7 +64,7 @@ export async function deliveryHealth() {
     .limit(50);
 
   return {
-    switches: { notifications: notificationsEnabled(), email: notificationEmailEnabled() },
+    switches: { notifications: notificationsEnabled(), email: notificationEmailEnabled(), digests: digestsEnabled() },
     email: { sentToday: await emailsSentToday(), dailyBudget: nonEssentialEmailDailyBudget() },
     health,
     last24h: {

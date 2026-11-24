@@ -263,6 +263,13 @@ export function NotificationBell({ tone = "dark" }: { tone?: "dark" | "light" })
           >
             See all notifications
           </Link>
+          <Link
+            href="/profile/notifications"
+            onClick={() => setOpen(false)}
+            className="block border-t border-line px-4 py-2.5 text-center text-xs font-semibold text-ink-2 hover:bg-cream-2"
+          >
+            Notification settings
+          </Link>
         </div>
       )}
     </div>

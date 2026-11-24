@@ -24,6 +24,7 @@ import { and, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { notificationDeliveryAttempts } from "@/db/schema";
 import { sendEmailWithResult } from "@/lib/email-service";
+import { withUnsubscribe } from "./unsubscribe";
 import {
   CLAIM_SECONDS,
   DELIVERY_BATCH,
@@ -35,6 +36,7 @@ import {
   startOfLagosDay,
 } from "./config";
 import { fanOutPage } from "./fanout";
+import { registerDigestHandlers } from "./digests";
 import { registerBuiltInHandlers } from "./handlers";
 import { getHandler, type EventRow } from "./registry";
 import { afterTemporaryFailure, classifyFailure, trimError } from "./retry";
@@ -61,6 +63,8 @@ type ClaimedDelivery = {
   channel: string;
   email: string | null;
   essential: boolean;
+  userId: string | null;
+  category: string;
   content: { subject?: string; html?: string };
   attempts: number;
   maxAttempts: number;
@@ -233,6 +237,8 @@ async function claimDeliveryBatch(
     channel: string;
     email: string | null;
     essential: boolean;
+    user_id: string | null;
+    category: string;
     content: { subject?: string; html?: string };
     attempts: number;
     max_attempts: number;
@@ -256,7 +262,7 @@ async function claimDeliveryBatch(
         FOR UPDATE SKIP LOCKED
         LIMIT ${limit}
       )
-      RETURNING d.id, d.channel, d.email, d.essential, d.content,
+      RETURNING d.id, d.channel, d.email, d.essential, d.content, d.user_id, d.category,
                 d.attempts, d.max_attempts, d.created_at`)
   );
   const claimed = rows.map((r) => ({
@@ -264,6 +270,8 @@ async function claimDeliveryBatch(
     channel: r.channel,
     email: r.email,
     essential: r.essential,
+    userId: r.user_id ?? null,
+    category: r.category,
     content: r.content ?? {},
     attempts: r.attempts,
     maxAttempts: r.max_attempts,
@@ -335,10 +343,18 @@ async function sendDelivery(
 
   let result: Awaited<ReturnType<typeof sendEmailWithResult>>;
   try {
+    // The unsubscribe line and headers are added here, per person, so
+    // every notification email gets them without each handler remembering.
+    const finished = withUnsubscribe(d.content.html, {
+      userId: d.userId,
+      category: d.category,
+      essential: d.essential,
+    });
     result = await sendEmailWithResult({
       to: d.email,
       subject: d.content.subject,
-      html: d.content.html,
+      html: finished.html,
+      headers: finished.headers,
       idempotencyKey: d.id,
     });
   } catch (error) {
@@ -407,6 +423,7 @@ export async function runWorker(
   const timeLeft = () => Date.now() < deadline;
 
   registerBuiltInHandlers();
+  registerDigestHandlers();
   summary.exhaustedClaims = await failExhaustedClaims();
 
   while (timeLeft()) {

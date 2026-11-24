@@ -217,6 +217,14 @@ export default function ProfilePage() {
               )}
             </div>
 
+            <Link
+              href="/profile/notifications"
+              className="flex items-center justify-between rounded-2xl border border-line bg-card p-5 font-semibold text-ink hover:border-purple sm:p-6"
+            >
+              Notification settings
+              <span aria-hidden className="text-purple">→</span>
+            </Link>
+
             {error && <p className="text-sm text-coral">{error}</p>}
 
             <div className="flex items-center gap-4">

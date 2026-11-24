@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 type Health = {
-  switches: { notifications: boolean; email: boolean };
+  switches: { notifications: boolean; email: boolean; digests: boolean };
   email: { sentToday: number; dailyBudget: number };
   health: { failedLast24h: number; oldestWaitingMinutes: number; pending: number; unhealthy: boolean };
   last24h: { inApp: number; emailsSent: number; skipped: number };
@@ -100,6 +100,25 @@ export default function AdminNotificationsPage() {
     }
   }
 
+  async function sendTest() {
+    setBusy("test");
+    setNotice(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/notifications/test-digest", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "The test didn't go through.");
+      setNotice(
+        `Sent ${body.sent} test email${body.sent === 1 ? "" : "s"}${body.email ? ` to ${body.email}` : ""}: the daily sales email and the admin summary, covering today so far. Check your inbox (and spam).`
+      );
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The test didn't go through.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function retry(kind: "delivery" | "event", id: string) {
     setBusy(id);
     try {
@@ -145,6 +164,15 @@ export default function AdminNotificationsPage() {
         >
           {busy === "daily" ? "Checking…" : "Run daily check"}
         </button>
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={sendTest}
+          className="rounded-lg border bg-white px-4 py-2 text-sm font-semibold disabled:opacity-60"
+          style={{ borderColor: "var(--color-line)" }}
+        >
+          {busy === "test" ? "Sending…" : "Send me a test summary"}
+        </button>
       </div>
       {notice && <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-800">{notice}</p>}
       {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -158,6 +186,9 @@ export default function AdminNotificationsPage() {
             </span>
             <span className="rounded-full border bg-white px-3 py-1" style={{ borderColor: "var(--color-line)" }}>
               Email sending: <strong>{data.switches.email ? "on" : "off"}</strong>
+            </span>
+            <span className="rounded-full border bg-white px-3 py-1" style={{ borderColor: "var(--color-line)" }}>
+              Daily summary emails: <strong>{data.switches.digests ? "on" : "off"}</strong>
             </span>
             {data.health.unhealthy && (
               <span className="rounded-full px-3 py-1 font-semibold text-white" style={{ backgroundColor: "var(--color-bad)" }}>

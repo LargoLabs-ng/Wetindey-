@@ -7,6 +7,9 @@
 import { BRAND_NAME } from "@/lib/brand";
 import { escapeHtml } from "@/lib/email-service";
 
+/** Kept in step with UNSUBSCRIBE_MARKER in unsubscribe.ts; the worker fills it in per person. */
+const UNSUBSCRIBE_MARKER = "<!--wd:unsubscribe-->";
+
 export type EmailBlock = {
   /** Shown in the inbox list next to the subject on most mail apps. */
   preheader?: string;
@@ -41,6 +44,7 @@ export function renderEmail(block: EmailBlock): string {
       ${paragraphs}
       ${cta}
       ${footnote}
+      ${UNSUBSCRIBE_MARKER}
       <p style="margin: 24px 0 0 0; font-size: 12px; color: #9a96a8;">© ${escapeHtml(BRAND_NAME)}</p>
     </div>
   </body>
