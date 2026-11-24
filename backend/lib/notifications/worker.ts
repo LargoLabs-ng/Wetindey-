@@ -36,6 +36,7 @@ import {
   startOfLagosDay,
 } from "./config";
 import { fanOutPage } from "./fanout";
+import { registerDigestHandlers } from "./digests";
 import { registerBuiltInHandlers } from "./handlers";
 import { getHandler, type EventRow } from "./registry";
 import { afterTemporaryFailure, classifyFailure, trimError } from "./retry";
@@ -422,6 +423,7 @@ export async function runWorker(
   const timeLeft = () => Date.now() < deadline;
 
   registerBuiltInHandlers();
+  registerDigestHandlers();
   summary.exhaustedClaims = await failExhaustedClaims();
 
   while (timeLeft()) {
