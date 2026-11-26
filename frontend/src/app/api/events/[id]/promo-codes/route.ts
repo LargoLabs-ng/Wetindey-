@@ -2,9 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { orders, promoCodes, promoCodeTicketTypes, tickets, ticketTypes } from "@/db/schema";
+import {
+  eventStaff,
+  orders,
+  promoCodes,
+  promoCodeTicketTypes,
+  tickets,
+  ticketTypes,
+  users,
+} from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
-import { tierScopeError, type CodePerformance, type PromoKind } from "@/lib/promo";
+import {
+  addOrderToPerformance,
+  tierScopeError,
+  type CodePerformance,
+  type PromoKind,
+} from "@/lib/promo";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -33,6 +46,11 @@ const codeSchema = z.object({
   // all ticket types.
   appliesToAllTiers: z.boolean().optional(),
   ticketTypeIds: z.array(z.string().uuid()).max(50).optional(),
+  // The team member a referral code belongs to (promo_codes.staff_id, an
+  // event_staff row on this event). Optional, and only written when sent,
+  // like the tier limit. Linking one stops that person earning commission
+  // on their own purchase.
+  staffId: z.string().uuid().nullish(),
 });
 
 const bodySchema = z.object({ codes: z.array(codeSchema).max(40) });
@@ -72,13 +90,19 @@ async function loadCodes(eventId: string) {
     .from(orders)
     .where(and(eq(orders.eventId, eventId), eq(orders.status, "paid")));
 
+  // All tickets and the ones that still count, per order: a refunded or
+  // cancelled ticket takes its share of the order's money with it.
   const ticketCounts = await db
-    .select({ orderId: tickets.orderId, n: sql<number>`count(*)::int` })
+    .select({
+      orderId: tickets.orderId,
+      all: sql<number>`count(*)::int`,
+      live: sql<number>`(count(*) filter (where ${tickets.status} in ('valid', 'checked_in')))::int`,
+    })
     .from(tickets)
     .where(eq(tickets.eventId, eventId))
     .groupBy(tickets.orderId);
 
-  const ticketsByOrder = new Map(ticketCounts.map((r) => [r.orderId, r.n]));
+  const ticketsByOrder = new Map(ticketCounts.map((r) => [r.orderId, r]));
 
   const tierRows = await db
     .select({
@@ -115,11 +139,7 @@ async function loadCodes(eventId: string) {
     if (!o.promoCodeId) continue;
     const row = perf.get(o.promoCodeId);
     if (!row) continue;
-    row.orders += 1;
-    row.tickets += ticketsByOrder.get(o.id) ?? 0;
-    row.revenue += Number(o.subtotal) || 0;
-    row.discountGiven += Number(o.discountAmount) || 0;
-    row.commissionOwed += Number(o.commissionAmount) || 0;
+    addOrderToPerformance(row, o, ticketsByOrder.get(o.id) ?? { all: 0, live: 0 });
   }
 
   return codes.map((c) => {
@@ -129,11 +149,40 @@ async function loadCodes(eventId: string) {
       ...p,
       appliesToAllTiers: c.appliesToAllTiers,
       ticketTypeIds: c.appliesToAllTiers ? [] : tiersByCode.get(c.id) ?? [],
+      staffId: c.kind === "refer_to_earn" ? c.staffId : null,
       revenue: round2(p.revenue),
       discountGiven: round2(p.discountGiven),
       commissionOwed: round2(p.commissionOwed),
     };
   });
+}
+
+/**
+ * Team members a referral code can be linked to: this event's active staff
+ * who have an account. Names only — it's a picker, not a team page.
+ */
+async function loadTeam(eventId: string) {
+  const rows = await db
+    .select({
+      id: eventStaff.id,
+      email: eventStaff.userEmail,
+      name: users.name,
+      firstName: users.firstName,
+      lastName: users.lastName,
+    })
+    .from(eventStaff)
+    .innerJoin(users, eq(users.id, eventStaff.userId))
+    .where(and(eq(eventStaff.eventId, eventId), eq(eventStaff.status, "active")));
+
+  return rows
+    .map((r) => ({
+      id: r.id,
+      name:
+        [r.firstName, r.lastName].filter(Boolean).join(" ").trim() ||
+        r.name?.trim() ||
+        r.email,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -152,7 +201,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
-  return NextResponse.json({ codes: await loadCodes(id) });
+  return NextResponse.json({ codes: await loadCodes(id), team: await loadTeam(id) });
 }
 
 /**
@@ -220,6 +269,27 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: scopeError }, { status: 400 });
   }
 
+  // A linked team member must be on this event's team.
+  const linked = [
+    ...new Set(
+      parsed.data.codes
+        .filter((c) => c.kind === "refer_to_earn" && c.staffId)
+        .map((c) => c.staffId as string)
+    ),
+  ];
+  if (linked.length) {
+    const found = await db
+      .select({ id: eventStaff.id })
+      .from(eventStaff)
+      .where(and(eq(eventStaff.eventId, id), inArray(eventStaff.id, linked)));
+    if (found.length !== linked.length) {
+      return NextResponse.json(
+        { error: "One of those codes is linked to someone who isn't on this event's team." },
+        { status: 400 }
+      );
+    }
+  }
+
   const existing = await db
     .select({ id: promoCodes.id })
     .from(promoCodes)
@@ -261,6 +331,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
           ...(c.appliesToAllTiers !== undefined
             ? { appliesToAllTiers: c.appliesToAllTiers }
             : {}),
+          // Only referral codes belong to someone. Written only when sent,
+          // so an older open editor never unlinks a code by accident.
+          ...(c.kind === "discount"
+            ? { staffId: null }
+            : c.staffId !== undefined
+              ? { staffId: c.staffId ?? null }
+              : {}),
         };
 
         let codeId: string;
@@ -304,5 +381,5 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
   // Answers with the same shape GET does, so the editor rebuilds itself from
   // the response and picks up ids for codes it just created.
-  return NextResponse.json({ codes: await loadCodes(id) });
+  return NextResponse.json({ codes: await loadCodes(id), team: await loadTeam(id) });
 }

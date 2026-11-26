@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { promoCodes } from "@/db/schema";
 import {
+  addOrderToPerformance,
   applyPromo,
   checkCode,
   codeAppliesToTier,
@@ -326,5 +327,54 @@ describe("migration 0021 — existing codes keep working on every tier", () => {
     expect(sqlText).toContain(`CREATE TABLE IF NOT EXISTS "promo_code_ticket_types"`);
     expect(sqlText).toContain(`CREATE INDEX IF NOT EXISTS "promo_code_ticket_types_tier_idx"`);
     expect(sqlText).not.toMatch(/\bDROP\b|\bUPDATE\b|\bDELETE\b(?! CASCADE)/i);
+  });
+});
+
+describe("addOrderToPerformance (figures net of refunds and cancellations)", () => {
+  const empty = () => ({ orders: 0, tickets: 0, revenue: 0, discountGiven: 0, commissionOwed: 0 });
+  const order = { subtotal: "4500", discountAmount: "0", commissionAmount: "450" };
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+
+  it("counts an untouched order whole", () => {
+    const p = empty();
+    addOrderToPerformance(p, order, { all: 3, live: 3 });
+    expect(p).toEqual({ orders: 1, tickets: 3, revenue: 4500, discountGiven: 0, commissionOwed: 450 });
+  });
+
+  it("takes a refunded ticket's share off sales and commission", () => {
+    const p = empty();
+    addOrderToPerformance(p, order, { all: 3, live: 2 });
+    expect(p.orders).toBe(1);
+    expect(p.tickets).toBe(2);
+    expect(r2(p.revenue)).toBe(3000);
+    expect(r2(p.commissionOwed)).toBe(300);
+  });
+
+  it("drops an order whose event was cancelled (every ticket voided)", () => {
+    const p = empty();
+    addOrderToPerformance(p, order, { all: 3, live: 0 });
+    expect(p).toEqual(empty());
+  });
+
+  it("scales the discount given too", () => {
+    const p = empty();
+    addOrderToPerformance(p, { subtotal: "1800", discountAmount: "200", commissionAmount: "0" }, { all: 2, live: 1 });
+    expect(r2(p.discountGiven)).toBe(100);
+    expect(r2(p.revenue)).toBe(900);
+  });
+
+  it("adds orders up before rounding, so thirds don't drift", () => {
+    const p = empty();
+    for (let i = 0; i < 3; i += 1) {
+      addOrderToPerformance(p, { subtotal: "1000", discountAmount: "0", commissionAmount: "100" }, { all: 3, live: 1 });
+    }
+    expect(r2(p.commissionOwed)).toBe(100);
+    expect(r2(p.revenue)).toBe(1000);
+  });
+
+  it("counts an order with no ticket rows whole rather than losing it", () => {
+    const p = empty();
+    addOrderToPerformance(p, order, { all: 0, live: 0 });
+    expect(p.commissionOwed).toBe(450);
   });
 });

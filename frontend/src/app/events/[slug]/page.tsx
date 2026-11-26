@@ -29,6 +29,7 @@ import {
 } from '@/components/registration-answers-form';
 import { activeTicketPrice, formatDeadline } from "@/lib/early-bird";
 import { goingLabel } from "@/lib/going-badge";
+import { recallRef, refFromQuery, rememberRef } from "@/lib/referral";
 
 interface TicketType {
   id: string;
@@ -107,9 +108,6 @@ interface Event {
   gallery?: GalleryItem[] | null;
   sponsors?: Sponsor[] | null;
 }
-
-/** Where a promoter's code lives between arriving and buying. */
-const REF_KEY = "wd-ref";
 
 export default function EventDetailPage() {
   const params = useParams();
@@ -193,24 +191,25 @@ export default function EventDetailPage() {
    * Remember who sent them.
    *
    * A promoter's link is `?p=AMAKA7`, and the gap between opening it and
-   * paying is long enough to lose: they read the page, tap share, come back,
-   * refresh. Holding the code only in the URL means any of that loses the
-   * attribution, and an unattributed sale is an argument between an
+   * paying is long enough to lose: they read the page, sign up, confirm
+   * their email from a link that opens a new tab, close WhatsApp and come
+   * back tomorrow. Holding the code only in the URL means any of that loses
+   * the attribution, and an unattributed sale is an argument between an
    * organiser and a student who swears they sold it.
    *
-   * Scoped per event, so a code from one event's link cannot follow someone
-   * to another. sessionStorage rather than localStorage: credit for sending
-   * you here should not outlive the browsing session.
+   * Kept on this phone for 7 days (lib/referral.ts), scoped per event so a
+   * code from one event's link cannot follow someone to another. A newer
+   * link replaces an older one: the last promoter to send them gets credit.
    */
   useEffect(() => {
     if (!slug) return;
-    const key = `${REF_KEY}:${slug}`;
-    const fromUrl = search.get("p") ?? search.get("ref");
+    const now = Date.now();
+    const fromUrl = refFromQuery((name) => search.get(name));
 
     if (fromUrl) {
       setRef(fromUrl);
       try {
-        window.sessionStorage.setItem(key, fromUrl);
+        rememberRef(window.localStorage, slug, fromUrl, now);
       } catch {
         /* private browsing — the URL still works for this page view */
       }
@@ -218,7 +217,7 @@ export default function EventDetailPage() {
     }
 
     try {
-      setRef(window.sessionStorage.getItem(key));
+      setRef(recallRef(window.localStorage, slug, now));
     } catch {
       setRef(null);
     }
@@ -345,6 +344,10 @@ export default function EventDetailPage() {
     if (selectedTicket) back.set('tier', selectedTicket);
     back.set('qty', String(quantity));
     back.set('buy', '1');
+    // The promoter's code rides along too. Confirming an email opens a new
+    // tab, sometimes a different browser, where nothing saved on this page
+    // exists — without it here, most first-time buyers lost the credit.
+    if (ref) back.set('p', ref);
     return `/events/${encodeURIComponent(slug)}?${back.toString()}`;
   };
 

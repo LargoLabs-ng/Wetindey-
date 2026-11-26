@@ -39,6 +39,12 @@ export type PromoCode = {
    */
   appliesToAllTiers?: boolean;
   ticketTypeIds?: string[];
+  /**
+   * The team member (event_staff row) a referral code belongs to, if the
+   * organiser linked one. Only used to stop someone earning commission on
+   * their own purchase; the commission still goes to `promoterName`.
+   */
+  staffId?: string | null;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -203,20 +209,56 @@ export type CodePerformance = {
   label: string | null;
   promoterName: string | null;
   rate: number;
-  /** Paid orders that used it. */
+  /** Paid orders that used it and still have a ticket that counts. */
   orders: number;
-  /** Tickets across those orders. */
+  /** Tickets across those orders that still count (not refunded or cancelled). */
   tickets: number;
-  /** Face value brought in, after any discount. */
+  /** Face value brought in, after any discount, net of refunds. */
   revenue: number;
-  /** Given away, on a discount code. */
+  /** Given away, on a discount code, net of refunds. */
   discountGiven: number;
-  /** Owed to the promoter, on a referral code. */
+  /** Owed to the promoter, on a referral code, net of refunds and cancellations. */
   commissionOwed: number;
   usageLimit: number | null;
   usedCount: number;
   active: boolean;
 };
+
+/**
+ * Add one paid order to a code's figures, counting only what still stands.
+ *
+ * An order's money is spread evenly across its tickets, the same rule the
+ * dashboard's "Ticket sales" uses (lib/event-revenue.ts). Refund one ticket
+ * of three and the order's sales, discount and commission each drop by a
+ * third; cancel the event (every ticket voided) and they drop to nothing.
+ * The commission frozen on the order at checkout is never changed — only
+ * how much of it is still owed.
+ *
+ * Rounded once, when the totals are shown, not per order, so a code with
+ * many part-refunded orders doesn't drift by a kobo each time.
+ */
+export function addOrderToPerformance(
+  perf: Pick<CodePerformance, "orders" | "tickets" | "revenue" | "discountGiven" | "commissionOwed">,
+  order: {
+    subtotal: string | number | null;
+    discountAmount: string | number | null;
+    commissionAmount: string | number | null;
+  },
+  ticketCount: { all: number; live: number }
+): void {
+  const all = Math.max(0, ticketCount.all);
+  const live = Math.min(Math.max(0, ticketCount.live), all);
+  // An order with no tickets at all shouldn't exist; if one does, count its
+  // money whole rather than make it vanish, as promoterSales does.
+  const share = all > 0 ? live / all : 1;
+  if (all > 0 && live === 0) return;
+
+  perf.orders += 1;
+  perf.tickets += live;
+  perf.revenue += (Number(order.subtotal) || 0) * share;
+  perf.discountGiven += (Number(order.discountAmount) || 0) * share;
+  perf.commissionOwed += (Number(order.commissionAmount) || 0) * share;
+}
 
 /**
  * Which code an order used, as the guest list shows it.

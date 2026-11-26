@@ -84,4 +84,24 @@ describe.skipIf(!URL)("promoterSales on a real database", () => {
     });
     expect(rows.map((r) => r.firstName)).toEqual(["ada", "bayo", "chidi"]);
   });
+
+  it("gives a promoter the same figures on their own page, and zero for a cancelled event", async () => {
+    const mine = await revenue.salesForPromoter(users.ada, [event]);
+    expect(mine.get(event)).toEqual({ sold: 3, faceValue: 4500 });
+
+    const bayo = await revenue.salesForPromoter(users.bayo, [event]);
+    expect(bayo.get(event)).toEqual({ sold: 2, faceValue: 3000 });
+
+    // No sales: no entry, which the page shows as 0.
+    expect((await revenue.salesForPromoter(users.chidi, [event])).has(event)).toBe(false);
+    expect((await revenue.salesForPromoter(users.ada, [])).size).toBe(0);
+
+    // Cancelling an event voids its tickets.
+    const voided = await sql`UPDATE tickets SET status = 'cancelled' WHERE event_id = ${event} AND status = 'valid' RETURNING id`;
+    try {
+      expect((await revenue.salesForPromoter(users.ada, [event])).get(event)).toEqual({ sold: 0, faceValue: 0 });
+    } finally {
+      await sql`UPDATE tickets SET status = 'valid' WHERE id IN ${sql(voided.map((t) => t.id))}`;
+    }
+  });
 });

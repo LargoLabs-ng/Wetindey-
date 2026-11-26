@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { eventStaff, events, orders, tickets } from "@/db/schema";
+import { eventStaff, events } from "@/db/schema";
+import { salesForPromoter } from "@/lib/event-revenue";
 import { getSessionUserId } from "@/lib/authz";
 import { appUrl } from "@/lib/app-url";
 
@@ -42,27 +43,14 @@ export async function GET() {
   // Tickets sold through this person's link, per event, in one query.
   // Counted from tickets rather than orders because "I sold 12" means twelve
   // people through the door, not twelve transactions.
-  const sold = await db
-    .select({
-      eventId: orders.eventId,
-      tickets: sql<number>`count(${tickets.id})::int`,
-      revenue: sql<number>`coalesce(sum(${orders.subtotal}), 0)::float`,
-    })
-    .from(orders)
-    .innerJoin(tickets, eq(tickets.orderId, orders.id))
-    .where(
-      and(
-        eq(orders.promoterId, userId),
-        eq(orders.status, "paid"),
-        inArray(
-          orders.eventId,
-          rows.map((r) => r.eventId)
-        )
-      )
-    )
-    .groupBy(orders.eventId);
-
-  const byEvent = new Map(sold.map((s) => [s.eventId, s]));
+  // Same rule as the organiser's promoter table (lib/event-revenue.ts):
+  // live tickets only, each order counted once. Summing the order subtotal
+  // over a join with its tickets counted a 3-ticket order three times, and
+  // refunded or cancelled tickets stayed in.
+  const byEvent = await salesForPromoter(
+    userId,
+    rows.map((r) => r.eventId)
+  );
 
   return NextResponse.json({
     events: rows.map((r) => {
@@ -79,11 +67,11 @@ export async function GET() {
         link: r.refCode
           ? appUrl(`/e/${r.slug}?p=${r.refCode}`)
           : appUrl(`/events/${r.slug}`),
-        ticketsSold: s?.tickets ?? 0,
+        ticketsSold: s?.sold ?? 0,
         // What the tickets were worth, not what the promoter is owed. There
         // is no commission in this build and this number must not be mistaken
         // for one.
-        faceValue: Math.round((s?.revenue ?? 0) * 100) / 100,
+        faceValue: Math.round((s?.faceValue ?? 0) * 100) / 100,
       };
     }),
   });

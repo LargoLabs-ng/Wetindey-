@@ -9,7 +9,7 @@
  * This is the same rule the Finance page uses for "Ticket sales" (see
  * orderOrganizerNet in earnings-compute.ts), so the two pages always agree.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { eventStaff, orders, tickets, users } from "@/db/schema";
 
@@ -109,4 +109,54 @@ export async function promoterSales(eventId: string) {
     .where(and(eq(eventStaff.eventId, eventId), eq(eventStaff.role, "promoter"), eq(eventStaff.status, "active")))
     .groupBy(users.name, users.firstName, users.lastName, eventStaff.refCode)
     .orderBy(sql`coalesce(sum(${perOrder.live}), 0) desc`);
+}
+
+/**
+ * One promoter's own figures, per event — what their Promote page shows.
+ *
+ * The same rule as promoterSales above, so the promoter and the organiser
+ * always see the same numbers: paid orders only, live tickets only, and each
+ * order's subtotal split across its tickets so a refunded ticket takes its
+ * share with it. A cancelled event voids its tickets, so it drops to zero.
+ */
+export async function salesForPromoter(promoterUserId: string, eventIds: string[]) {
+  const result = new Map<string, { sold: number; faceValue: number }>();
+  if (eventIds.length === 0) return result;
+
+  const perOrder = db
+    .select({
+      orderId: tickets.orderId,
+      all: sql<number>`count(*)::int`.as("all_tickets"),
+      live: sql<number>`(count(*) filter (where ${tickets.status} in ('valid', 'checked_in')))::int`.as(
+        "live_tickets"
+      ),
+    })
+    .from(tickets)
+    .where(inArray(tickets.eventId, eventIds))
+    .groupBy(tickets.orderId)
+    .as("per_order");
+
+  const rows = await db
+    .select({
+      eventId: orders.eventId,
+      sold: sql<number>`coalesce(sum(${perOrder.live}), 0)::int`,
+      faceValue: sql<number>`coalesce(round(sum(
+        ${orders.subtotal} * case when ${perOrder.all} > 0 then ${perOrder.live}::numeric / ${perOrder.all} else 1 end
+      ), 2), 0)::float`,
+    })
+    .from(orders)
+    .innerJoin(perOrder, eq(perOrder.orderId, orders.id))
+    .where(
+      and(
+        eq(orders.promoterId, promoterUserId),
+        eq(orders.status, "paid"),
+        inArray(orders.eventId, eventIds)
+      )
+    )
+    .groupBy(orders.eventId);
+
+  for (const r of rows) {
+    result.set(r.eventId, { sold: Number(r.sold) || 0, faceValue: Number(r.faceValue) || 0 });
+  }
+  return result;
 }
