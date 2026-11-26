@@ -166,7 +166,9 @@ export async function POST(request: NextRequest) {
     }
     // Tickets and receipts go to the account's own address. Whatever the
     // page sent as buyerEmail is ignored.
-    const buyerEmail = account.email;
+    // Stored in lowercase so recovery and My events find it however it
+    // was typed at signup.
+    const buyerEmail = account.email.trim().toLowerCase();
 
     // Hand back inventory from checkouts that were abandoned past their
     // 15-minute hold, before we decide what's available.
