@@ -255,7 +255,7 @@ export default function HomePage() {
               title="Free entry"
               note="No ticket money required"
               events={free}
-              href="/discover"
+              href="/discover?free=1"
             />
             <EventRail
               title={sectioned ? "Also on" : "Wetin else dey"}
