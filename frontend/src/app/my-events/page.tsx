@@ -5,7 +5,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { CalendarDays, MapPin, QrCode, Ticket } from "lucide-react";
 import { WordMark } from "@/components/wordmark";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AccountNav } from "@/components/account-nav";
 import { EventImage } from "@/components/event-image";
 import { safeHttpUrl } from "@/lib/media";
 
@@ -163,15 +163,7 @@ export default function MyEventsPage() {
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4 sm:px-6">
           <WordMark />
-          <div className="flex items-center gap-3">
-            <Link href="/discover" className="text-sm font-semibold text-ink-2 hover:text-ink">
-              Discover
-            </Link>
-            <Link href="/profile" className="text-sm font-semibold text-ink-2 hover:text-ink">
-              Profile
-            </Link>
-            <ThemeToggle />
-          </div>
+          <AccountNav />
         </div>
       </header>
 

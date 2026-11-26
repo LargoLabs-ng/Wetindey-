@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ArrowLeftRight } from "lucide-react";
 import { auth } from "@/auth";
 import { hasDashboardAccess } from "@/lib/authz";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -44,6 +45,17 @@ export default async function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* One account, two sides. The organiser side used to have no
+                way out except signing out; this goes back to the attendee
+                home page, still signed in. */}
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-line-dark px-2.5 py-1.5 text-sm font-medium text-on-dark-2 transition-colors hover:border-gold hover:text-gold"
+            >
+              <ArrowLeftRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="sm:hidden">Attending</span>
+              <span className="hidden sm:inline">Switch to attending</span>
+            </Link>
             <NotificationBell tone="dark" />
             <span className="hidden text-sm text-on-dark-2 sm:inline">
               {session?.user?.name}

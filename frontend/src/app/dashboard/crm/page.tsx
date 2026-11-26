@@ -7,7 +7,7 @@ import CrmClient from "./crm-client";
 
 export default async function CrmPage() {
   const session = await auth();
-  if (!session?.user?.id) redirect("/login");
+  if (!session?.user?.id) redirect("/login?callbackUrl=%2Fdashboard%2Fcrm");
 
   const organization = await db.query.organizations.findFirst({
     where: eq(organizations.ownerId, session.user.id),

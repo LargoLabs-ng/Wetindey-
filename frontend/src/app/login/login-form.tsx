@@ -14,12 +14,17 @@ function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
 
   // Only ever follow a same-site path, so ?callbackUrl= can't be used to
   // bounce someone to another domain after they log in.
+  //
+  // With nowhere requested, a login lands on the attendee home page. Most
+  // accounts are students, and the organiser side is one tap away for
+  // those who run events; /organiser/login and the dashboard's own
+  // sign-in redirect still ask for /dashboard explicitly.
   const requested = searchParams.get("callbackUrl");
-  const destination = safeCallbackPath(requested, "/dashboard");
-  // Carried over to signup, so someone who came here to buy a ticket and
-  // turns out to need an account still lands back on that event.
+  const destination = safeCallbackPath(requested, "/");
+  // Carried over to signup, so someone who came here to buy a ticket (or to
+  // reach the dashboard) and turns out to need an account still lands there.
   const signupHref =
-    requested && destination !== "/dashboard"
+    requested && destination !== "/"
       ? `/signup?callbackUrl=${encodeURIComponent(destination)}`
       : "/signup";
 

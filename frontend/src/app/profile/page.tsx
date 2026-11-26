@@ -135,7 +135,7 @@ export default function ProfilePage() {
         {status === "unauthenticated" ? (
           <div className="mt-6 rounded-2xl border border-line bg-card p-6">
             <p className="text-ink-2">
-              <Link href="/login" className="font-semibold text-purple hover:underline">
+              <Link href="/login?callbackUrl=%2Fprofile" className="font-semibold text-purple hover:underline">
                 Sign in
               </Link>{" "}
               to see your profile.

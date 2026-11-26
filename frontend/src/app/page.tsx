@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
-import { Menu, Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 import { WordMark } from "@/components/wordmark";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AccountNav } from "@/components/account-nav";
 import { OrganisingStrip } from "@/components/organising-strip";
 import {
   EventFeature,
@@ -32,11 +31,8 @@ type Viewer = {
 } | null;
 
 export default function HomePage() {
-  const { status } = useSession();
-  const signedIn = status === "authenticated";
   const [events, setEvents] = useState<CardEvent[] | null>(null);
   const [viewer, setViewer] = useState<Viewer>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/discover")
@@ -131,143 +127,12 @@ export default function HomePage() {
       <header className="relative border-b border-line">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <WordMark />
-          {/* The nav has to know who is looking at it. It offered "Sign in"
-              and "Sign up" to everyone, including people already signed in —
-              which reads as the app not recognising you, and buries the two
-              links a signed-in student actually wants. */}
-          <nav className="hidden items-center gap-2 sm:flex">
-            <ThemeToggle className="mr-1" />
-            {signedIn ? (
-              <>
-                <Link
-                  href="/dashboard/events"
-                  className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
-                >
-                  Organising
-                </Link>
-                <Link
-                  href="/my-events"
-                  className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
-                >
-                  My events
-                </Link>
-                <Link
-                  href="/profile"
-                  className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
-                >
-                  Profile
-                </Link>
-                <Link
-                  href="/organiser"
-                  className="rounded-lg bg-purple px-3.5 py-2 text-sm font-semibold text-white hover:bg-purple-deep"
-                >
-                  Host an Event
-                </Link>
-              </>
-            ) : (
-              <>
-                <Link
-                  href="/login"
-                  className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
-                >
-                  Sign in
-                </Link>
-                <Link
-                  href="/signup"
-                  className="rounded-lg px-3 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
-                >
-                  Sign up
-                </Link>
-                <Link
-                  href="/organiser"
-                  className="rounded-lg bg-purple px-3.5 py-2 text-sm font-semibold text-white hover:bg-purple-deep"
-                >
-                  Host an Event
-                </Link>
-              </>
-            )}
-          </nav>
-          <button
-            type="button"
-            onClick={() => setMenuOpen((open) => !open)}
-            aria-expanded={menuOpen}
-            aria-controls="mobile-navigation"
-            aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line text-ink transition-colors hover:bg-surface-2 sm:hidden"
-          >
-            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
+          {/* Shared with Discover, event pages and My events. It knows who
+              is looking: Sign in for visitors; My events, Profile and one
+              organiser link ("Organiser mode" or "Host an event") for
+              signed-in people. */}
+          <AccountNav />
         </div>
-        {menuOpen && (
-          <nav
-            id="mobile-navigation"
-            aria-label="Mobile navigation"
-            className="absolute inset-x-0 top-full z-50 border-b border-line bg-cream px-4 py-3 shadow-lg sm:hidden"
-          >
-            <div className="mx-auto flex max-w-5xl flex-col gap-1">
-              <div className="flex items-center justify-between border-b border-line pb-3">
-                <span className="text-sm font-semibold text-ink">Menu</span>
-                <ThemeToggle />
-              </div>
-              {signedIn ? (
-                <>
-                  <Link
-                    href="/dashboard/events"
-                    onClick={() => setMenuOpen(false)}
-                    className="rounded-lg px-3 py-3 text-sm font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink"
-                  >
-                    Organising
-                  </Link>
-                  <Link
-                    href="/my-events"
-                    onClick={() => setMenuOpen(false)}
-                    className="rounded-lg px-3 py-3 text-sm font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink"
-                  >
-                    My events
-                  </Link>
-                  <Link
-                    href="/profile"
-                    onClick={() => setMenuOpen(false)}
-                    className="rounded-lg px-3 py-3 text-sm font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink"
-                  >
-                    Profile
-                  </Link>
-                  <Link
-                    href="/organiser"
-                    onClick={() => setMenuOpen(false)}
-                    className="mt-2 rounded-lg bg-purple px-3.5 py-3 text-center text-sm font-semibold text-white hover:bg-purple-deep"
-                  >
-                    Host an Event
-                  </Link>
-                </>
-              ) : (
-                <>
-                  <Link
-                    href="/login"
-                    onClick={() => setMenuOpen(false)}
-                    className="rounded-lg px-3 py-3 text-sm font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink"
-                  >
-                    Sign in
-                  </Link>
-                  <Link
-                    href="/signup"
-                    onClick={() => setMenuOpen(false)}
-                    className="rounded-lg px-3 py-3 text-sm font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink"
-                  >
-                    Sign up
-                  </Link>
-                  <Link
-                    href="/organiser"
-                    onClick={() => setMenuOpen(false)}
-                    className="mt-2 rounded-lg bg-purple px-3.5 py-3 text-center text-sm font-semibold text-white hover:bg-purple-deep"
-                  >
-                    Host an Event
-                  </Link>
-                </>
-              )}
-            </div>
-          </nav>
-        )}
       </header>
 
       {/* ── Hero ─────────────────────────────────────────────────────── */}
@@ -315,7 +180,9 @@ export default function HomePage() {
               See wetin dey
             </Link>
             <Link
-              href={signedIn ? "/dashboard" : "/signup?hosting=1"}
+              // /organiser sends signed-in people to their dashboard and shows
+              // everyone else the host page, so one link serves both.
+              href="/organiser"
               className="inline-flex items-center justify-center rounded-xl border px-6 py-3.5 text-base font-semibold transition-colors"
               style={{
                 borderColor: "var(--color-indigo-line)",
@@ -346,7 +213,7 @@ export default function HomePage() {
               the first — it takes about two minutes.
             </p>
             <Link
-              href="/signup"
+              href="/organiser"
               className="mt-5 inline-block rounded-lg bg-purple px-5 py-2.5 text-sm font-semibold text-white hover:bg-purple-deep"
             >
               Post your event
@@ -427,7 +294,7 @@ export default function HomePage() {
             </p>
           </div>
           <Link
-            href="/signup"
+            href="/organiser"
             className="shrink-0 rounded-xl bg-purple px-5 py-3 font-semibold text-white hover:bg-purple-deep"
           >
             Post an event

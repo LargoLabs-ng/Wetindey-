@@ -56,9 +56,14 @@ export async function GET(request: NextRequest) {
 
     const order = payment.order;
 
+    // The event's public address, so the result page can offer "Try again"
+    // on the same event and a way back to it. Slugs are public already.
+    const eventSlug = order.event.slug;
+
     if (payment.manualReviewRequired) {
       return NextResponse.json({
         status: "manual_review",
+        eventSlug,
         message:
           payment.manualReviewReason === LATE_PAYMENT_REVIEW_REASON
             ? "Your payment reached us after your seats had been released, and this ticket sold out in the meantime. No ticket was issued. Our team will refund you or contact you about the next step."
@@ -70,6 +75,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         status: 'success',
         orderId: order.id,
+        eventSlug,
         eventTitle: order.event.title,
         // Free RSVPs land on this same page; nothing was paid, so the page
         // shouldn't say "Payment Confirmed".
@@ -97,6 +103,7 @@ export async function GET(request: NextRequest) {
     if (payment.status === 'pending' || payment.status === 'initialized') {
       return NextResponse.json({
         status: 'pending',
+        eventSlug,
         message: 'Payment is being processed. Please wait...',
         orderId: order.id,
       });
@@ -105,6 +112,7 @@ export async function GET(request: NextRequest) {
     if (payment.status === 'failed' || payment.status === 'abandoned') {
       return NextResponse.json({
         status: 'failed',
+        eventSlug,
         message: 'Payment was not completed. Please try again.',
       });
     }

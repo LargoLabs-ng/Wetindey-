@@ -19,7 +19,7 @@ import { useSession } from 'next-auth/react';
 import { EventBanner } from '@/components/event-banner';
 import { safeHttpUrl, type GalleryItem, type Sponsor } from '@/lib/media';
 import { WordMark } from '@/components/wordmark';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { AccountNav } from '@/components/account-nav';
 import { EventConversation } from '@/components/event-conversation';
 import {
   RegistrationAnswersForm,
@@ -683,8 +683,9 @@ export default function EventDetailPage() {
   if (error || !event) {
     return (
       <div className="wd-night min-h-screen bg-cream">
-        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-6 sm:px-6">
           <WordMark />
+          <AccountNav />
         </div>
         <div className="mx-auto max-w-lg px-4 py-16 text-center sm:px-6">
           <p className="text-2xl font-extrabold tracking-[-0.02em] text-ink">
@@ -765,7 +766,7 @@ export default function EventDetailPage() {
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
-          <ThemeToggle variant="glass" />
+          <AccountNav variant="glass" />
         </div>
       </header>
 
