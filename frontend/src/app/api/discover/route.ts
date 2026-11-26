@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { events, ticketTypes, tickets, universities, users } from "@/db/schema";
+import { events, orders, ticketTypes, tickets, universities, users } from "@/db/schema";
 import { availableQuantity } from "@/lib/inventory";
 import { publicListingWhere } from "@/lib/event-visibility";
 import { getSessionUserId } from "@/lib/authz";
 import { publicGoingFloor } from "@/lib/going-badge";
+import { categoryKey, groupCategories } from "@/lib/categories";
 
 /**
  * GET /api/discover — everything the home and discover surfaces need.
@@ -25,6 +26,12 @@ export type DiscoverCard = {
   hook: string | null;
   coverImage: string | null;
   category: string | null;
+  /**
+   * The category's grouping key ("Parties." → "party"), so the home page
+   * and Discover filters treat differently-typed versions as one. The
+   * stored category above is unchanged. See lib/categories.ts.
+   */
+  categoryKey: string;
   venueName: string | null;
   city: string | null;
   startDatetime: string;
@@ -83,6 +90,29 @@ export async function GET() {
 
   const goingByEvent = new Map(attending.map((row) => [row.eventId, row.going]));
 
+  // Trending: people with a confirmed ticket from a PAID order placed in the
+  // last seven days. Pending, abandoned, cancelled and refunded orders don't
+  // count, and neither do tickets refunded since. Only the ranking leaves
+  // the server, never the counts, so it can't be used to work out sales.
+  const weekAgo = new Date(Date.now() - 7 * 86400000);
+  const recent = await db
+    .select({
+      eventId: tickets.eventId,
+      people: sql<number>`coalesce(sum(coalesce(${ticketTypes.admits}, 1)), 0)::int`,
+    })
+    .from(tickets)
+    .innerJoin(orders, eq(tickets.orderId, orders.id))
+    .leftJoin(ticketTypes, eq(tickets.ticketTypeId, ticketTypes.id))
+    .where(
+      and(
+        inArray(tickets.status, ["valid", "checked_in"]),
+        eq(orders.status, "paid"),
+        gte(orders.createdAt, weekAgo)
+      )
+    )
+    .groupBy(tickets.eventId);
+  const recentByEvent = new Map(recent.map((row) => [row.eventId, row.people]));
+
   const now = Date.now();
 
   const cards: DiscoverCard[] = published
@@ -101,6 +131,7 @@ export async function GET() {
         hook: e.description ? e.description.slice(0, 140) : null,
         coverImage: e.coverImage,
         category: e.category,
+        categoryKey: categoryKey(e.category),
         venueName: e.venueName,
         city: e.city,
         startDatetime: new Date(e.startDatetime).toISOString(),
@@ -120,16 +151,41 @@ export async function GET() {
       };
     });
 
-  // Categories that actually have something in them. A filter chip leading to
-  // an empty page is worse than no chip.
-  const counts = new Map<string, number>();
+  // Categories that actually have something in them, with differently
+  // typed versions of the same one grouped ("Party", "party.", "Parties").
+  // A filter chip leading to an empty page is worse than no chip.
+  const categories = groupCategories(cards.map((c) => c.category));
+
+  // Listed events ranked by recent sales, busiest first; ties go to the
+  // sooner event. Events with no qualifying sales aren't trending.
+  const trending = cards
+    .filter((c) => (recentByEvent.get(c.id) ?? 0) > 0)
+    .sort(
+      (a, b) =>
+        (recentByEvent.get(b.id) ?? 0) - (recentByEvent.get(a.id) ?? 0) ||
+        a.startDatetime.localeCompare(b.startDatetime)
+    )
+    .map((c) => c.id);
+
+  // Universities that have something on, for "Around universities".
+  const uniCounts = new Map<string, number>();
   for (const c of cards) {
-    const key = (c.category ?? "").trim();
-    if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+    if (c.universityId) uniCounts.set(c.universityId, (uniCounts.get(c.universityId) ?? 0) + 1);
   }
-  const categories = [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => ({ name, count }));
+  const uniRows = uniCounts.size
+    ? await db
+        .select({ id: universities.id, name: universities.name, shortName: universities.shortName })
+        .from(universities)
+        .where(inArray(universities.id, [...uniCounts.keys()]))
+    : [];
+  const universitiesOn = uniRows
+    .map((u) => ({
+      id: u.id,
+      name: u.shortName || u.name,
+      fullName: u.name,
+      count: uniCounts.get(u.id) ?? 0,
+    }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
   // Who is asking, so the home page can lead with their own campus.
   //
@@ -162,6 +218,8 @@ export async function GET() {
   return NextResponse.json({
     events: cards,
     categories,
+    trending,
+    universities: universitiesOn,
     total: cards.length,
     viewer,
   });
