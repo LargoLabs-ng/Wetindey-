@@ -103,9 +103,11 @@ interface Event {
   ticketTypes: TicketType[];
   /** Public "N+ going" floor from the server, or null for no badge. */
   goingFloor?: number | null;
-  organization?: { name: string } | null;
+  organization?: { name: string; logoUrl?: string | null } | null;
   /** The organiser's mark, as opposed to this event's flyer. */
   logoUrl?: string | null;
+  /** Only ever not "published" for the organiser's own team (a preview). */
+  status?: string;
   gallery?: GalleryItem[] | null;
   sponsors?: Sponsor[] | null;
 }
@@ -733,6 +735,12 @@ export default function EventDetailPage() {
   // nine people) means no badge. See lib/going-badge.ts.
   const going = goingLabel(event.goingFloor);
   const organiser = event.organization?.name?.trim() || null;
+  // This event's own logo first; the organisation's as the fallback, so an
+  // organiser uploads their crest once rather than for every event.
+  const organiserLogo = event.logoUrl || event.organization?.logoUrl || null;
+  // The API only returns an unpublished event to its own team, so seeing
+  // one at all means this is a preview.
+  const isPreview = Boolean(event.status && event.status !== 'published');
 
   const countdown = dateTbd
     ? 'Date to be announced'
@@ -834,11 +842,11 @@ export default function EventDetailPage() {
                           when they haven't. White plate behind it because a
                           logo is usually drawn for paper and disappears
                           against a dark photograph otherwise. */}
-                      {event.logoUrl ? (
+                      {organiserLogo ? (
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={event.logoUrl}
+                            src={organiserLogo}
                             alt=""
                             className="h-full w-full object-contain p-0.5"
                           />
@@ -876,6 +884,26 @@ export default function EventDetailPage() {
       {/* Extra bottom padding on a phone so the fixed bar below never sits on
           top of the last section. */}
       <main className="mx-auto max-w-5xl px-4 pb-28 sm:px-6 lg:pb-20">
+        {isPreview && (
+          <div
+            role="status"
+            className="mt-6 flex flex-col gap-3 rounded-2xl border border-gold/50 bg-gold/15 p-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div>
+              <p className="font-bold text-ink">Preview — not live yet</p>
+              <p className="text-sm text-ink-2">
+                Only you and your team can see this page. Buyers can&apos;t
+                open it or buy tickets until you publish.
+              </p>
+            </div>
+            <Link
+              href={`/dashboard/events/${event.id}`}
+              className="shrink-0 rounded-xl bg-purple px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-purple-deep"
+            >
+              Back to your event
+            </Link>
+          </div>
+        )}
         <div className="grid gap-10 pt-8 lg:grid-cols-[1fr_380px]">
           {/* ── The event itself ───────────────────────────────────── */}
           <div className="min-w-0">

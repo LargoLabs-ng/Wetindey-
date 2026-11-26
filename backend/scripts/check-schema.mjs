@@ -203,6 +203,15 @@ const EXPECT = [
     ],
     types: [],
   },
+  {
+    migration: "0026_organization_setup.sql",
+    columns: [
+      ["organizations", "logo_url"],
+      ["organizations", "setup_completed_at"],
+    ],
+    tables: [],
+    types: [],
+  },
 ];
 
 const sql = postgres(url, { max: 1, prepare: false, ssl: "require" });

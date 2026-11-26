@@ -58,7 +58,13 @@ export function OrganisingStrip() {
           </p>
         </div>
         <Link
-          href="/dashboard/events"
+          // Door crew have no events list in the dashboard (it sends them to
+          // the scanner), so theirs goes straight to the door picker.
+          href={
+            events.some((e) => e.href.startsWith("/dashboard"))
+              ? "/dashboard/events"
+              : "/checkin"
+          }
           className="shrink-0 text-sm font-semibold text-purple hover:underline"
         >
           All of them →
@@ -73,7 +79,11 @@ export function OrganisingStrip() {
         {/* The old nav's one organiser action, kept but demoted to where it
             belongs: after the events you already have, not instead of them. */}
         <Link
-          href="/dashboard/events/new"
+          // Through setup, which asks a first-time host for their name and
+          // logo and otherwise passes straight on to the wizard. Door crew
+          // can't open /dashboard at all, so the wizard link alone dead-ended
+          // at the scanner for them.
+          href="/organiser/setup?next=%2Fdashboard%2Fevents%2Fnew"
           className="flex w-[52vw] max-w-[220px] shrink-0 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-line-2 p-5 text-center text-sm font-semibold text-ink-2 transition-colors hover:border-purple hover:text-purple sm:w-52"
         >
           <Plus className="h-5 w-5" />

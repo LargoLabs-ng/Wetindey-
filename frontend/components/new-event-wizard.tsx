@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Eye, Loader2 } from "lucide-react";
 import { AfterPurchaseFields } from "@/components/after-purchase-fields";
 import { CoverImageField } from "@/components/cover-image-field";
 import { EventBrandingFields } from "@/components/event-branding-fields";
@@ -103,6 +103,9 @@ export function NewEventWizard() {
   const [visibility, setVisibility] = useState<EventVisibility>("public");
   const [savedVisibility, setSavedVisibility] = useState<EventVisibility>("public");
 
+  // The draft's address, for the Preview link on the last step.
+  const [slug, setSlug] = useState<string | null>(null);
+
   const [hydrating, setHydrating] = useState(Boolean(eventId));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,6 +142,7 @@ export function NewEventWizard() {
         const raw = await res.json();
         const ev = raw.event ?? raw;
         if (cancelled) return;
+        setSlug(typeof ev.slug === "string" ? ev.slug : null);
         setDetails({
           title: ev.title ?? "",
           description: ev.description ?? "",
@@ -209,6 +213,8 @@ export function NewEventWizard() {
     }
 
     const id = eventId ?? data.event?.id ?? data.id;
+    const savedSlug = data.event?.slug ?? data.slug;
+    if (typeof savedSlug === "string") setSlug(savedSlug);
     if (!id) {
       setError("The event was saved but returned no id. Refresh and try again.");
       return;
@@ -621,6 +627,20 @@ export function NewEventWizard() {
               </span>
             </label>
           </div>
+
+          {/* Opens in a new tab so the form here — the agreement box
+              included — is exactly as they left it when they come back. */}
+          {slug && (
+            <a
+              href={`/events/${slug}`}
+              target="_blank"
+              rel="noopener"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-line-dark py-3 font-semibold text-on-dark transition-colors hover:border-gold hover:text-gold"
+            >
+              <Eye className="h-4 w-4" />
+              Preview page
+            </a>
+          )}
 
           <div className="flex gap-3">
             <button

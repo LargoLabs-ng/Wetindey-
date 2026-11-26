@@ -32,6 +32,10 @@ export async function GET(
       where: eq(events.slug, slug),
       with: {
         ticketTypes: { orderBy: (t) => ticketTypeOrder(t) },
+        // Who is putting it on, for the byline. Name and logo ONLY: the
+        // organisations row also holds the payout bank account, and this
+        // response goes to the open internet.
+        organization: { columns: { name: true, logoUrl: true } },
       },
     });
 

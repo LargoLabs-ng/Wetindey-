@@ -2,14 +2,30 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight, BarChart3, QrCode, Ticket } from "lucide-react";
 import { auth } from "@/auth";
-import { hasDashboardAccess } from "@/lib/authz";
+import { getStaffedEvents, hasDashboardAccess } from "@/lib/authz";
+import { getOwnedOrganizations, needsOrganiserSetup } from "@/lib/organiser-setup";
 import { WordMark } from "@/components/wordmark";
 
 export default async function OrganiserLandingPage() {
   const session = await auth();
-  if (session?.user?.id) {
-    if (await hasDashboardAccess(session.user.id)) redirect("/dashboard");
-    redirect("/checkin");
+  const userId = session?.user?.id;
+  if (userId) {
+    // Gate crew go to the scanner; their menu has a separate link to
+    // /organiser/setup for hosting their own event.
+    if (!(await hasDashboardAccess(userId))) redirect("/checkin");
+
+    // Someone who runs nothing and works on nothing came here to host:
+    // the setup screen first, then straight into the event wizard. An
+    // empty dashboard with a "Create event" button was one tap longer and
+    // led to the same place.
+    const [owned, staffed] = await Promise.all([
+      getOwnedOrganizations(userId),
+      getStaffedEvents(userId),
+    ]);
+    if (staffed.length === 0 && needsOrganiserSetup(owned)) {
+      redirect("/organiser/setup");
+    }
+    redirect("/dashboard");
   }
 
   return (

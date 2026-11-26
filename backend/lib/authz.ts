@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { auth } from "@/auth";
 import { can, type Capability } from "@/lib/permissions";
 import { db } from "@/db";
@@ -11,6 +11,7 @@ import {
   platformAdminRolePermissions,
 } from "@/db/schema";
 import type { AdminPermission } from "@/lib/admin-rbac";
+import { getOwnedOrganizations, isHostingOrganization } from "@/lib/organiser-setup";
 
 export type OrgRole =
   | "owner"
@@ -40,10 +41,18 @@ export async function getMembership(userId: string, organizationId: string) {
 }
 
 /**
- * V1 simplification: most organizers belong to exactly one Organization
- * (created for them at registration). A user with multiple memberships
- * (e.g. someone invited to a second org's team) will need an org-switcher
- * in a later phase — this just returns the first one found.
+ * The organisation this person runs.
+ *
+ * V1 simplification: an organiser owns one organisation. Someone who owns
+ * more than one gets the oldest, consistently — the order used to be
+ * whatever Postgres felt like returning.
+ *
+ * OWNER memberships only. An organisation-level membership in any other
+ * role (the old team-invite route could create those) never let anyone
+ * open that organisation's events — requireEventAccess ignores it — so it
+ * must not make this return somebody else's organisation either. Before
+ * this, it could: the Finance page would then answer "only the owner can
+ * manage payouts" to a person who owns an organisation of their own.
  */
 export async function getPrimaryOrganizationId(
   userId: string
@@ -51,7 +60,13 @@ export async function getPrimaryOrganizationId(
   const [membership] = await db
     .select({ organizationId: organizationMembers.organizationId })
     .from(organizationMembers)
-    .where(eq(organizationMembers.userId, userId))
+    .where(
+      and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.role, "owner")
+      )
+    )
+    .orderBy(asc(organizationMembers.createdAt))
     .limit(1);
   return membership?.organizationId ?? null;
 }
@@ -72,8 +87,13 @@ export function canDeleteEvent(role: OrgRole): boolean {
 }
 
 /**
- * Every organization the user belongs to. Dashboard queries scope to this
- * list so one organizer can never read another organizer's data.
+ * Every organization the user OWNS. Dashboard queries scope to this list so
+ * one organizer can never read another organizer's data.
+ *
+ * Owner only, for the same reason as getPrimaryOrganizationId: callers
+ * treat every organisation in this list as the user's own and label its
+ * events "owner". A non-owner organisation membership must not turn into
+ * a view of that organisation's whole event list.
  */
 export async function getOrganizationIdsForUser(
   userId: string
@@ -81,7 +101,12 @@ export async function getOrganizationIdsForUser(
   const rows = await db
     .select({ organizationId: organizationMembers.organizationId })
     .from(organizationMembers)
-    .where(eq(organizationMembers.userId, userId));
+    .where(
+      and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.role, "owner")
+      )
+    );
   return rows.map((r) => r.organizationId);
 }
 
@@ -468,10 +493,18 @@ export async function hasDashboardAccess(userId: string): Promise<boolean> {
   // Anything they can actually look at earns them the dashboard.
   if (staffed.some((e) => can(e.role, "event:view"))) return true;
 
+  // Door crew who have since set up to host their own events. "Owns an
+  // organisation" alone is not the test — early sign-ups handed every
+  // account an empty one, volunteers included — but an organisation they
+  // confirmed on the setup screen is a deliberate choice to host. What they
+  // see in here is still only their own organisation's events.
+  if (staffed.length > 0) {
+    const owned = await getOwnedOrganizations(userId);
+    if (owned.some(isHostingOrganization)) return true;
+  }
+
   // Nothing viewable. If they are staffed on something regardless, they are
-  // gate crew and belong at the scanner. Registration hands every new
-  // account its own organization, so "owns an org" cannot be the test —
-  // a volunteer who signed up to work one door owns an empty one too.
+  // gate crew and belong at the scanner.
   if (staffed.length > 0) return false;
 
   // Staffed nowhere at all: a new organizer who still has to create their

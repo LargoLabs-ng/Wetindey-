@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
 // Finance is top-level, not buried inside an event. "How much can I
@@ -12,14 +13,32 @@ const links = [
   { href: "/dashboard/finance", label: "Finance" },
 ];
 
-export function DashboardNav({ showCrm = false }: { showCrm?: boolean }) {
+export function DashboardNav({
+  showCrm = false,
+  showSettings = false,
+}: {
+  showCrm?: boolean;
+  /** Organisation owners only: the organisation's name, logo and team. */
+  showSettings?: boolean;
+}) {
   const pathname = usePathname();
-  const visibleLinks = showCrm
-    ? [...links, { href: "/dashboard/crm", label: "CRM" }]
-    : links;
+  const visibleLinks = [
+    ...links,
+    ...(showCrm ? [{ href: "/dashboard/crm", label: "CRM" }] : []),
+    ...(showSettings ? [{ href: "/dashboard/settings", label: "Settings" }] : []),
+  ];
+
+  // Scrolls sideways rather than wrapping when five links don't fit a phone,
+  // and brings the current page's link into view so it is never half cut off.
+  const nav = useRef<HTMLElement>(null);
+  useEffect(() => {
+    nav.current
+      ?.querySelector('[aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [pathname]);
 
   return (
-    <nav className="flex items-center gap-1">
+    <nav ref={nav} className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 [scrollbar-width:none]">
       {visibleLinks.map((link) => {
         const active =
           link.href === "/dashboard"
@@ -31,7 +50,7 @@ export function DashboardNav({ showCrm = false }: { showCrm?: boolean }) {
             key={link.href}
             href={link.href}
             aria-current={active ? "page" : undefined}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
               active
                 ? "bg-surface-2 text-on-dark"
                 : "text-on-dark-2 hover:bg-surface hover:text-on-dark"

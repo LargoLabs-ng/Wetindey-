@@ -1,0 +1,25 @@
+-- 0026 — organisation logo, and whether the organiser finished setting up.
+--
+-- Additive only: two new nullable columns on "organizations". Nothing is
+-- renamed, dropped or rewritten, and every existing row keeps working
+-- exactly as it does today (both columns start empty). Adding a nullable
+-- column with no default is a metadata-only change in Postgres, so the table
+-- is not rewritten and nothing is locked for long.
+--
+-- logo_url
+--   The organisation's own mark. Events already have their own logo_url;
+--   this is the fallback shown when an event has none, so an organiser
+--   uploads their crest once instead of once per event.
+--
+-- setup_completed_at
+--   When the organiser confirmed their organisation's name (on the new
+--   setup screen, or by typing it at sign-up). Left empty on purpose for
+--   organisations that already exist: old sign-ups created an empty
+--   organisation for everyone, door volunteers included, so "owns an
+--   organisation" alone cannot mean "is an organiser". Organisers who
+--   already have events are unaffected — their events give them access.
+--
+-- Safe to apply before the code that uses it is deployed (today's code never
+-- reads these columns), and safe to run twice.
+ALTER TABLE "organizations" ADD COLUMN IF NOT EXISTS "logo_url" text;
+ALTER TABLE "organizations" ADD COLUMN IF NOT EXISTS "setup_completed_at" timestamp;

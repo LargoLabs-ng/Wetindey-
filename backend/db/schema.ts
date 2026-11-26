@@ -282,6 +282,19 @@ export const organizations = pgTable("organizations", {
   bankName: varchar("bank_name", { length: 120 }),
   bankAccountName: varchar("bank_account_name", { length: 200 }),
   bankAccountNumber: varchar("bank_account_number", { length: 20 }),
+  /**
+   * The organisation's crest. Events keep their own logo_url too; this is
+   * what shows when an event has none, so it is uploaded once rather than
+   * once per event. Added in migration 0026.
+   */
+  logoUrl: text("logo_url"),
+  /**
+   * When the organiser confirmed this organisation's name — on the setup
+   * screen, or by typing it at sign-up. Null for organisations that existed
+   * before 0026: early sign-ups minted an empty organisation for everyone,
+   * door volunteers included, so owning one is not proof of hosting.
+   */
+  setupCompletedAt: timestamp("setup_completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

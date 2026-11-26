@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { ArrowLeft, CalendarDays, MapPin, Pencil, QrCode, UserPlus, Users, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarDays, Eye, MapPin, Pencil, QrCode, UserPlus, Users, Wallet } from "lucide-react";
 import { db } from "@/db";
 import { ticketTypes } from "@/db/schema";
 import { requireEventCapability } from "@/lib/authz";
@@ -136,6 +136,28 @@ export default async function EventDetailPage({
           </div>
         )}
       </header>
+
+      {/* Not live yet: the team can already open the real page (the public
+          API shows drafts to them), but nothing said so. */}
+      {(event.status === "draft" || event.status === "unpublished") &&
+        !event.archivedAt && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-line-dark bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold text-on-dark">Not live yet</p>
+              <p className="text-sm text-on-dark-2">
+                See the page exactly as buyers will. Only your team can open
+                it until you publish.
+              </p>
+            </div>
+            <Link
+              href={`/events/${event.slug}`}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-line-dark px-4 py-2 text-sm font-semibold text-on-dark transition-colors hover:border-gold hover:text-gold"
+            >
+              <Eye className="h-4 w-4" />
+              Preview page
+            </Link>
+          </div>
+        )}
 
       {event.status === "published" && (
         <div className="flex flex-col gap-3 rounded-2xl border border-line-dark bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">

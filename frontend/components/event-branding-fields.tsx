@@ -208,6 +208,8 @@ export function EventBrandingFields({ eventId }: { eventId: string }) {
           <div className="min-w-0">
             <p className="text-sm text-on-dark-2">
               Shown beside your name on the event page, and on tickets.
+              Leave it empty to use your organisation&apos;s logo from
+              Settings.
             </p>
             {logoUrl && (
               <button

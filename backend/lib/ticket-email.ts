@@ -82,7 +82,8 @@ export async function sendTicketsForOrder(
       note: order.event.afterPurchaseNote,
       url: order.event.afterPurchaseUrl,
     },
-    organiserLogoUrl: order.event.logoUrl,
+    // The event's own logo, else the organisation's (added in 0026).
+    organiserLogoUrl: order.event.logoUrl || order.event.organization?.logoUrl || null,
     organiserName: order.event.organization?.name ?? null,
   });
 

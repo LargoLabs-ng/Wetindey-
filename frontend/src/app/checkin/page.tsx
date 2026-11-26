@@ -63,6 +63,15 @@ export default async function CheckInEventPicker() {
           ))}
         </ul>
       )}
+
+      {/* Working someone else's door shouldn't stop anyone hosting their
+          own. Only on this picker, never on the scanner itself. */}
+      <p className="pt-2 text-center text-sm text-on-dark-3">
+        Running your own event?{" "}
+        <Link href="/organiser/setup" className="font-semibold text-on-dark-2 hover:text-gold">
+          Set up to host
+        </Link>
+      </p>
     </div>
   );
 }

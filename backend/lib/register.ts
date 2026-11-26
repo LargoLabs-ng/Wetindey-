@@ -124,6 +124,10 @@ export async function createAccount(tx: Tx, input: NewAccount) {
         name: input.organizationName,
         slug: input.organizationSlug,
         ownerId: user.id,
+        // They typed this name themselves at sign-up ("I also run events"),
+        // which is exactly what the setup screen would ask, so it counts as
+        // done. The logo can be added later in Settings.
+        setupCompletedAt: new Date(),
       })
       .returning();
 

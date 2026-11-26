@@ -40,7 +40,7 @@ export default async function DashboardLayout({
               <WordMark tone="dark" asLink={false} />
             </Link>
             <div className="hidden sm:block">
-              <DashboardNav showCrm={isOrganizationOwner} />
+              <DashboardNav showCrm={isOrganizationOwner} showSettings={isOrganizationOwner} />
             </div>
           </div>
 
@@ -65,7 +65,7 @@ export default async function DashboardLayout({
         </div>
 
         <div className="border-t border-line-dark px-4 py-2 sm:hidden">
-          <DashboardNav showCrm={isOrganizationOwner} />
+          <DashboardNav showCrm={isOrganizationOwner} showSettings={isOrganizationOwner} />
         </div>
       </header>
 

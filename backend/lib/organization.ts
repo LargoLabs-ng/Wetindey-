@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organizations, organizationMembers, users } from "@/db/schema";
 import { generateUniqueSlug } from "@/lib/slug";
+import { getPrimaryOrganizationId } from "@/lib/authz";
 
 /**
  * Get the user's organization, creating one the first time they need it.
@@ -15,16 +16,20 @@ import { generateUniqueSlug } from "@/lib/slug";
  * So nobody gets one at signup. An organization appears at the moment
  * someone actually creates an event, which is the only point it means
  * anything.
+ *
+ * Since Phase 6 the event wizard sends a first-time organiser through the
+ * setup screen (lib/organiser-setup.ts) first, so the organisation already
+ * exists with a name they chose. This remains the safety net for anything
+ * that reaches the event API directly.
  */
 export async function ensureOrganizationForUser(
   userId: string
 ): Promise<string> {
-  const [existing] = await db
-    .select({ organizationId: organizationMembers.organizationId })
-    .from(organizationMembers)
-    .where(eq(organizationMembers.userId, userId))
-    .limit(1);
-  if (existing) return existing.organizationId;
+  // Only an organisation they OWN. Any other membership is somebody else's
+  // organisation, and an event created there would land in a stranger's
+  // dashboard. getPrimaryOrganizationId applies exactly that rule.
+  const existing = await getPrimaryOrganizationId(userId);
+  if (existing) return existing;
 
   const [user] = await db
     .select({ name: users.name, firstName: users.firstName, email: users.email })

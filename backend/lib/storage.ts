@@ -31,6 +31,18 @@ export function storageConfigured(): boolean {
 
 export { isOptimizable, BLOB_HOST_SUFFIX } from "./image-url";
 
+/** An organisation's logo. Same size and type rules as a cover. */
+export async function putOrganizationLogo(file: File): Promise<{ url: string }> {
+  const ext = COVER_TYPES[file.type];
+  if (!ext) throw new Error("Unsupported image type");
+  const blob = await put(`logos/organisation.${ext}`, file, {
+    access: "public",
+    addRandomSuffix: true,
+    contentType: file.type,
+  });
+  return { url: blob.url };
+}
+
 export async function putEventCover(
   file: File,
   eventHint: string

@@ -15,7 +15,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
  * Signed out: Sign in, Sign up, Host an event.
  * Signed in:  My events, Profile, Sign out, and one organiser link —
  *             "Organiser mode" for people who already run or work on an
- *             event, "Host an event" for everyone else.
+ *             event, "Host an event" for everyone else. Gate crew get
+ *             "Door check-in" plus a separate "Host an event" link.
  *
  * Mobile first: one menu button that opens a panel. From the `sm` width up
  * the links sit inline. The theme switch lives here too, so a page header is
@@ -35,6 +36,7 @@ export function AccountNav({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [organises, setOrganises] = useState(false);
+  const [doorOnly, setDoorOnly] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,7 +45,9 @@ export function AccountNav({
     fetch("/api/account/nav", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
-        if (!cancelled) setOrganises(d?.organises === true);
+        if (cancelled) return;
+        setOrganises(d?.organises === true);
+        setDoorOnly(d?.doorOnly === true);
       })
       .catch(() => {
         // Falls back to "Host an event", which still lands organisers on
@@ -83,7 +87,15 @@ export function AccountNav({
     },
   });
 
-  const organiserLabel = signedIn && organises ? "Organiser mode" : "Host an event";
+  // Gate crew: their main button opens the scanner (that is where
+  // /organiser sends them), and hosting gets its own link to the setup
+  // screen — otherwise "Host an event" would drop them at the door.
+  const door = signedIn && doorOnly;
+  const organiserLabel = door
+    ? "Door check-in"
+    : signedIn && organises
+      ? "Organiser mode"
+      : "Host an event";
   const showDiscover = pathname !== "/discover";
 
   const glass = variant === "glass";
@@ -136,6 +148,11 @@ export function AccountNav({
             </Link>
           </>
         ) : null}
+        {door && (
+          <Link href="/organiser/setup" className={inlineLink}>
+            Host an event
+          </Link>
+        )}
         <Link href="/organiser" className={primaryLink}>
           {organiserLabel}
         </Link>
@@ -187,6 +204,11 @@ export function AccountNav({
                 </Link>
               </>
             ) : null}
+            {door && (
+              <Link href="/organiser/setup" onClick={() => setOpen(false)} className={panelLink}>
+                Host an event
+              </Link>
+            )}
             <Link
               href="/organiser"
               onClick={() => setOpen(false)}
