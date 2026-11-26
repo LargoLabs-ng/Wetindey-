@@ -142,8 +142,59 @@ function TicketRow({ item, past }: { item: Item; past: boolean }) {
 }
 
 export default function MyEventsPage() {
-  const [data, setData] = useState<{ upcoming: Item[]; past: Item[] } | null>(null);
+  const [data, setData] = useState<{
+    upcoming: Item[];
+    past: Item[];
+    emailVerified?: boolean;
+  } | null>(null);
   const [signedOut, setSignedOut] = useState(false);
+  const [confirm, setConfirm] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
+  // Older tickets bought as a guest, before login was needed, appear here
+  // once the account's email is confirmed — so offer the link.
+  const sendConfirmation = async () => {
+    setConfirm("sending");
+    try {
+      const res = await fetch("/api/auth/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returnTo: "/my-events" }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.verified) {
+        window.location.reload();
+        return;
+      }
+      setConfirm(res.ok ? "sent" : "error");
+    } catch {
+      setConfirm("error");
+    }
+  };
+
+  const confirmBanner =
+    data && data.emailVerified === false ? (
+      <div className="mt-6 rounded-2xl border border-line bg-card p-4 text-sm">
+        <p className="font-semibold text-ink">Bought tickets before you had an account?</p>
+        <p className="mt-1 text-ink-2">
+          Confirm your email and tickets bought with it will show up here too.
+        </p>
+        {confirm === "sent" ? (
+          <p className="mt-3 text-ink">Link sent. Check your inbox, and your spam folder too.</p>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void sendConfirmation()}
+            disabled={confirm === "sending"}
+            className="mt-3 rounded-lg bg-purple px-4 py-2 font-semibold text-white hover:bg-purple-deep disabled:opacity-50"
+          >
+            {confirm === "sending" ? "Sending…" : "Send confirmation link"}
+          </button>
+        )}
+        {confirm === "error" && (
+          <p className="mt-2 text-coral">We couldn&apos;t send it just now. Please try again in a minute.</p>
+        )}
+      </div>
+    ) : null;
 
   useEffect(() => {
     fetch("/api/tickets/mine")
@@ -174,8 +225,8 @@ export default function MyEventsPage() {
           <div className="mt-6 rounded-2xl border border-line bg-card p-8 text-center">
             <p className="text-lg font-bold text-ink">Sign in to see your tickets</p>
             <p className="mx-auto mt-1 max-w-sm text-sm text-ink-2">
-              Bought as a guest? You don&apos;t need an account — we can email
-              your tickets again instead.
+              Bought a ticket before accounts were needed? We can email it to
+              you again instead.
             </p>
             <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
               <Link
@@ -195,6 +246,8 @@ export default function MyEventsPage() {
         ) : !data ? (
           <p className="mt-6 text-ink-3">Loading…</p>
         ) : data.upcoming.length === 0 && data.past.length === 0 ? (
+          <>
+          {confirmBanner}
           <div className="mt-6 rounded-2xl border border-line bg-card p-8 text-center">
             <Ticket className="mx-auto h-8 w-8 text-ink-3" />
             <p className="mt-3 text-lg font-bold text-ink">No tickets yet</p>
@@ -217,8 +270,10 @@ export default function MyEventsPage() {
               </Link>
             </div>
           </div>
+          </>
         ) : (
           <>
+            {confirmBanner}
             {data.upcoming.length > 0 && (
               <section className="mt-6">
                 <h2 className="text-sm font-bold uppercase tracking-wide text-ink-3">

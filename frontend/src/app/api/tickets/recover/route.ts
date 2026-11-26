@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { orders } from "@/db/schema";
 import { sendTicketsForOrder } from "@/lib/ticket-email";
@@ -46,7 +46,9 @@ export async function POST(request: Request) {
   const matching = await db
     .select({ id: orders.id, status: orders.status })
     .from(orders)
-    .where(eq(orders.email, email));
+    // Case-insensitive: orders from before emails were stored in lowercase
+    // may say "Ada@Gmail.com", and "ada@gmail.com" has to find them.
+    .where(sql`lower(trim(${orders.email})) = ${email}`);
 
   const paid = matching.filter((o) => o.status === "paid");
 

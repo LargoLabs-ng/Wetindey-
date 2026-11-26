@@ -2,11 +2,12 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { users, accounts, organizations, organizationMembers } from "@/db/schema";
 import { verifyPassword } from "@/lib/password";
 import { markEmailVerified } from "@/lib/buyer-account";
+import { decideGoogleLink } from "@/lib/account-linking";
 import { generateUniqueSlug } from "@/lib/slug";
 
 const googleConfigured = Boolean(
@@ -53,6 +54,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     ...(googleConfigured
       ? [
           Google({
+            // Joins a Google sign-in to an existing account with the same
+            // email. Made safe by the signIn callback below, which removes
+            // any password whose owner never confirmed the address
+            // (see lib/account-linking.ts).
             allowDangerousEmailAccountLinking: true,
           }),
         ]
@@ -79,6 +84,52 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
   },
   callbacks: {
+    // Runs before Auth.js joins a Google sign-in to an existing account.
+    async signIn({ account, profile }) {
+      if (account?.provider !== "google") return true;
+
+      const email = typeof profile?.email === "string" ? profile.email.trim().toLowerCase() : "";
+      const googleEmailVerified = profile?.email_verified === true && email !== "";
+
+      const [existing] = email
+        ? await db
+            .select({
+              id: users.id,
+              passwordHash: users.passwordHash,
+              emailVerified: users.emailVerified,
+            })
+            .from(users)
+            .where(sql`lower(${users.email}) = ${email}`)
+            .limit(1)
+        : [];
+
+      const decision = decideGoogleLink({
+        googleEmailVerified,
+        existing: existing
+          ? {
+              hasPassword: Boolean(existing.passwordHash),
+              emailVerified: existing.emailVerified !== null,
+            }
+          : null,
+      });
+
+      if (decision === "deny") return false;
+
+      if (decision === "allow-drop-password" && existing) {
+        // Google has just proved this person owns the address; a password
+        // that was never confirmed may belong to someone else. Remove it.
+        // The events.signIn handler below then marks the email verified.
+        await db
+          .update(users)
+          .set({ passwordHash: null, updatedAt: new Date() })
+          .where(eq(users.id, existing.id));
+        console.warn(
+          `Google sign-in removed an unconfirmed password from account ${existing.id}`
+        );
+      }
+
+      return true;
+    },
     async jwt({ token, user }) {
       if (user) token.userId = user.id;
       return token;
