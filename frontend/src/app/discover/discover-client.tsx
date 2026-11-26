@@ -94,14 +94,37 @@ export default function DiscoverClient() {
     setQ(urlQ);
   }
 
+  /**
+   * The filters we most recently asked the router for.
+   *
+   * router.replace() doesn't update the address bar straight away, so two
+   * quick changes (type a search, then tap a chip) both read the OLD address
+   * and the second wipes out the first. Building every change on top of the
+   * last one we asked for, not on what the address bar says right now, keeps
+   * both. When the address changes for any other reason (the Discover link,
+   * Back), it's taken as the new starting point.
+   */
+  const wanted = useRef(params.toString());
+  const asked = useRef(new Set<string>());
+  const paramsKey = params.toString();
+  useEffect(() => {
+    if (asked.current.has(paramsKey)) {
+      asked.current.delete(paramsKey);
+      return;
+    }
+    wanted.current = paramsKey;
+  }, [paramsKey]);
+
   const setParams = useCallback(
     (patch: Record<string, string | null>) => {
-      const next = new URLSearchParams(window.location.search);
+      const next = new URLSearchParams(wanted.current);
       for (const [key, value] of Object.entries(patch)) {
         if (value === null || value === "") next.delete(key);
         else next.set(key, value);
       }
       const query = next.toString();
+      wanted.current = query;
+      asked.current.add(query);
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
     [pathname, router]
@@ -111,7 +134,10 @@ export default function DiscoverClient() {
   const onSearch = (value: string) => {
     setQ(value);
     if (typing.current) clearTimeout(typing.current);
-    typing.current = setTimeout(() => setParams({ q: value.trim() || null }), 300);
+    typing.current = setTimeout(() => {
+      typing.current = null;
+      setParams({ q: value.trim() || null });
+    }, 300);
   };
   useEffect(
     () => () => {
@@ -120,12 +146,24 @@ export default function DiscoverClient() {
     []
   );
 
-  const setCategory = (value: string | null) => setParams({ category: value });
-  const setWhen = (value: WhenKey) => setParams({ when: value === "any" ? null : value });
-  const toggleFree = () => setParams({ free: freeOnly ? null : "1" });
+  // Tapping a chip also saves whatever is in the search box right now, so a
+  // search typed a split second earlier is never lost.
+  const withSearch = (patch: Record<string, string | null>) => {
+    if (typing.current) {
+      clearTimeout(typing.current);
+      typing.current = null;
+    }
+    setParams({ q: q.trim() || null, ...patch });
+  };
+  const setCategory = (value: string | null) => withSearch({ category: value });
+  const setWhen = (value: WhenKey) => withSearch({ when: value === "any" ? null : value });
+  const toggleFree = () => withSearch({ free: freeOnly ? null : "1" });
   const clearAll = () => {
     if (typing.current) clearTimeout(typing.current);
+    typing.current = null;
     setQ("");
+    wanted.current = "";
+    asked.current.add("");
     router.replace(pathname, { scroll: false });
   };
 
