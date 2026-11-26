@@ -20,6 +20,7 @@ import { EventBanner } from '@/components/event-banner';
 import { safeHttpUrl, type GalleryItem, type Sponsor } from '@/lib/media';
 import { WordMark } from '@/components/wordmark';
 import { AccountNav } from '@/components/account-nav';
+import { cameFromInsideApp } from '@/components/nav-history';
 import { EventConversation } from '@/components/event-conversation';
 import {
   RegistrationAnswersForm,
@@ -759,8 +760,17 @@ export default function EventDetailPage() {
     <div className="wd-night min-h-screen bg-cream">
       <header className="absolute inset-x-0 top-0 z-10">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
+          {/* Back means back: to the Discover search, the home page row or
+              My events the visitor came from, with their filters and place.
+              Someone who arrived on a shared link has nowhere in the app to
+              go back to, so they get Discover instead of leaving the site. */}
           <Link
             href="/discover"
+            onClick={(e) => {
+              if (!cameFromInsideApp()) return;
+              e.preventDefault();
+              router.back();
+            }}
             className="inline-flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-sm font-semibold text-white backdrop-blur"
           >
             <ArrowLeft className="h-4 w-4" />
