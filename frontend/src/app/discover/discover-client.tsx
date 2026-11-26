@@ -7,7 +7,14 @@ import { WordMark } from "@/components/wordmark";
 import { AccountNav } from "@/components/account-nav";
 import { EventCardItem, FeaturedCard, type CardEvent } from "@/components/event-card";
 
-type Payload = { events: CardEvent[]; categories: { name: string; count: number }[] };
+import { categoryKey } from "@/lib/categories";
+
+type Payload = {
+  events: CardEvent[];
+  /** Grouped: "Party", "party." and "Parties" are one chip. */
+  categories: { key: string; name: string; count: number }[];
+  universities?: { id: string; name: string; fullName: string; count: number }[];
+};
 
 const WHEN = [
   { key: "any", label: "Any time" },
@@ -62,7 +69,8 @@ function inWindow(iso: string, key: WhenKey) {
 /**
  * Discover.
  *
- * Search and filters live in the web address (?q=…&category=…&when=…&free=1)
+ * Search and filters live in the web address
+ * (?q=…&category=…&when=…&free=1&uni=…)
  * rather than only in memory. That is what makes Back from an event come
  * back to the same results, and it makes a filtered view something you can
  * copy and share. Changes replace the current history entry instead of
@@ -77,7 +85,11 @@ export default function DiscoverClient() {
   const [loading, setLoading] = useState(true);
 
   // The address is the source of truth for the filters.
+  // A category in the address is matched by its group, so an older link
+  // like ?category=Party still finds events typed "party." or "Parties".
   const category = params.get("category") || null;
+  const selectedCategory = category ? categoryKey(category) : null;
+  const uni = params.get("uni") || null;
   const whenParam = params.get("when") ?? "any";
   const when: WhenKey = WHEN_KEYS.includes(whenParam) ? (whenParam as WhenKey) : "any";
   const freeOnly = params.get("free") === "1";
@@ -156,6 +168,7 @@ export default function DiscoverClient() {
     setParams({ q: q.trim() || null, ...patch });
   };
   const setCategory = (value: string | null) => withSearch({ category: value });
+  const setUni = (value: string | null) => withSearch({ uni: value });
   const setWhen = (value: WhenKey) => withSearch({ when: value === "any" ? null : value });
   const toggleFree = () => withSearch({ free: freeOnly ? null : "1" });
   const clearAll = () => {
@@ -171,7 +184,7 @@ export default function DiscoverClient() {
     fetch("/api/discover")
       .then((r) => r.json())
       .then(setData)
-      .catch(() => setData({ events: [], categories: [] }))
+      .catch(() => setData({ events: [], categories: [], universities: [] }))
       .finally(() => setLoading(false));
   }, []);
 
@@ -211,7 +224,10 @@ export default function DiscoverClient() {
     if (!data) return [];
     const needle = q.trim().toLowerCase();
     return data.events.filter((e) => {
-      if (category && e.category !== category) return false;
+      if (selectedCategory && (e.categoryKey ?? categoryKey(e.category)) !== selectedCategory) {
+        return false;
+      }
+      if (uni && e.universityId !== uni) return false;
       if (freeOnly && !e.isFree) return false;
       if (!inWindow(e.startDatetime, when)) return false;
       if (!needle) return true;
@@ -219,9 +235,11 @@ export default function DiscoverClient() {
         .filter(Boolean)
         .some((v) => (v as string).toLowerCase().includes(needle));
     });
-  }, [data, q, category, when, freeOnly]);
+  }, [data, q, selectedCategory, uni, when, freeOnly]);
 
-  const filtering = Boolean(q.trim() || category || freeOnly || when !== "any");
+  const filtering = Boolean(q.trim() || category || uni || freeOnly || when !== "any");
+  const universities = data?.universities ?? [];
+  const uniName = uni ? universities.find((u) => u.id === uni)?.name ?? "That university" : null;
   const [lead, ...rest] = results;
 
   const chip = (active: boolean) =>
@@ -262,14 +280,14 @@ export default function DiscoverClient() {
 
         {/* Filters in one row above the results, scrollable on a phone. */}
         <div className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
-          <button onClick={() => setCategory(null)} className={chip(category === null)}>
+          <button onClick={() => setCategory(null)} className={chip(selectedCategory === null)}>
             All
           </button>
           {data?.categories.map((c) => (
             <button
-              key={c.name}
-              onClick={() => setCategory(c.name === category ? null : c.name)}
-              className={chip(category === c.name)}
+              key={c.key}
+              onClick={() => setCategory(c.key === selectedCategory ? null : c.key)}
+              className={chip(c.key === selectedCategory)}
             >
               {c.name}
               <span className="ml-1.5 opacity-60">{c.count}</span>
@@ -287,6 +305,32 @@ export default function DiscoverClient() {
             Free
           </button>
         </div>
+
+        {/* Universities: shown once there's more than one to choose from, or
+            when one was picked from the home page's "Around universities". */}
+        {(universities.length > 1 || uni) && (
+          <div className="-mx-4 mt-2 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+            <button onClick={() => setUni(null)} className={chip(uni === null)}>
+              All schools
+            </button>
+            {uni && !universities.some((u) => u.id === uni) && (
+              <button onClick={() => setUni(null)} className={chip(true)}>
+                {uniName} ✕
+              </button>
+            )}
+            {universities.map((u) => (
+              <button
+                key={u.id}
+                title={u.fullName}
+                onClick={() => setUni(u.id === uni ? null : u.id)}
+                className={chip(u.id === uni)}
+              >
+                {u.name}
+                <span className="ml-1.5 opacity-60">{u.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ── Results ─────────────────────────────────────────────────── */}
         {loading ? (

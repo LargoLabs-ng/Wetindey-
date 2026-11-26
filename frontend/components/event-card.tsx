@@ -2,6 +2,7 @@ import Link from "next/link";
 import { EventImage } from "@/components/event-image";
 import { naira } from "@/lib/fees";
 import { goingLabel } from "@/lib/going-badge";
+import { categoryLabel } from "@/lib/categories";
 
 export type CardEvent = {
   id: string;
@@ -10,6 +11,8 @@ export type CardEvent = {
   hook: string | null;
   coverImage: string | null;
   category: string | null;
+  /** Grouping key from /api/discover ("Parties." → "party"). */
+  categoryKey?: string;
   venueName: string | null;
   city: string | null;
   startDatetime: string;
@@ -242,7 +245,7 @@ export function FeaturedCard({ e }: { e: CardEvent }) {
 
       <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8">
         <div className="flex flex-wrap items-center gap-2">
-          {e.category && <Pill>{e.category}</Pill>}
+          {e.category && <Pill>{categoryLabel(e.category)}</Pill>}
           <Signal e={e} />
         </div>
 

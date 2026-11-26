@@ -30,9 +30,84 @@ type Viewer = {
   campusId: string | null;
 } | null;
 
+type CategoryChip = { key: string; name: string; count: number };
+type UniversityTile = { id: string; name: string; fullName: string; count: number };
+
+/** "Browse by category": every grouped category, each a link into Discover. */
+function CategoryBrowse({ categories }: { categories: CategoryChip[] }) {
+  // One category isn't a choice, it's a label.
+  if (categories.length < 2) return null;
+  return (
+    <section className="mt-14">
+      <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-ink">Browse by category</h2>
+      <div className="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+        {categories.map((c) => (
+          <Link
+            key={c.key}
+            href={`/discover?category=${encodeURIComponent(c.key)}`}
+            className="whitespace-nowrap rounded-full border border-line bg-card px-4 py-2 text-sm font-semibold text-ink hover:border-purple hover:text-purple"
+          >
+            {c.name}
+            <span className="ml-1.5 text-ink-3">{c.count}</span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * "Around universities": one tile per school with something on, linking to
+ * Discover filtered to that school. Tiles rather than more cards, so no
+ * event shows up twice on the page. The viewer's own school comes first.
+ */
+function UniversityBrowse({
+  universities,
+  viewer,
+}: {
+  universities: UniversityTile[];
+  viewer: Viewer;
+}) {
+  const ordered = viewer
+    ? [...universities].sort(
+        (a, b) =>
+          Number(b.id === viewer.universityId) - Number(a.id === viewer.universityId)
+      )
+    : universities;
+  // Only their own school? The campus row above already covers it.
+  if (ordered.length === 0) return null;
+  if (ordered.length === 1 && viewer && ordered[0].id === viewer.universityId) return null;
+
+  return (
+    <section className="mt-14">
+      <h2 className="text-2xl font-extrabold tracking-[-0.03em] text-ink">Around universities</h2>
+      <p className="mt-0.5 text-sm text-ink-3">What&apos;s on, school by school</p>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {ordered.map((u) => (
+          <Link
+            key={u.id}
+            href={`/discover?uni=${encodeURIComponent(u.id)}`}
+            title={u.fullName}
+            className="rounded-2xl border border-line bg-card p-4 hover:border-purple"
+          >
+            <p className="truncate font-extrabold text-ink">{u.name}</p>
+            <p className="mt-1 text-sm text-ink-3">
+              {u.count} {u.count === 1 ? "event" : "events"}
+              {viewer && u.id === viewer.universityId ? " · your school" : ""}
+            </p>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function HomePage() {
   const [events, setEvents] = useState<CardEvent[] | null>(null);
   const [viewer, setViewer] = useState<Viewer>(null);
+  const [categories, setCategories] = useState<CategoryChip[]>([]);
+  const [trendingIds, setTrendingIds] = useState<string[]>([]);
+  const [universities, setUniversities] = useState<UniversityTile[]>([]);
 
   useEffect(() => {
     fetch("/api/discover")
@@ -40,6 +115,9 @@ export default function HomePage() {
       .then((d) => {
         setEvents(d.events ?? []);
         setViewer(d.viewer ?? null);
+        setCategories(d.categories ?? []);
+        setTrendingIds(d.trending ?? []);
+        setUniversities(d.universities ?? []);
       })
       .catch(() => setEvents([]));
   }, []);
@@ -113,6 +191,21 @@ export default function HomePage() {
   const campus = viewer
     ? cut((e) => e.universityId === viewer.universityId)
     : [];
+
+  // Trending: the server's ranking by tickets sold this week (it never
+  // sends the counts). Shown whenever at least two events qualify, even on
+  // a small listing — that is the one row worth having at any size. An
+  // event already used above stays where it is.
+  const trending = (() => {
+    const byId = new Map(all.map((e) => [e.id, e]));
+    const chosen = trendingIds
+      .map((id) => byId.get(id))
+      .filter((e): e is CardEvent => !!e && !spent.has(e.id))
+      .slice(0, 8);
+    if (chosen.length < SECTION_MIN) return [];
+    chosen.forEach((e) => spent.add(e.id));
+    return chosen;
+  })();
   const soon = cut((e) => new Date(e.startDatetime).getTime() - now < 14 * 86400000);
   const justDropped = cut(
     (e) => !!e.createdAt && now - new Date(e.createdAt).getTime() < 14 * 86400000,
@@ -236,8 +329,16 @@ export default function HomePage() {
               title={`Around ${viewer?.universityName ?? "campus"}`}
               note="Everything else at your school"
               events={campus}
-              href="/discover"
+              href={viewer ? `/discover?uni=${encodeURIComponent(viewer.universityId)}` : "/discover"}
             />
+
+            <EventRail
+              title="Trending"
+              note="Most tickets this week"
+              events={trending}
+            />
+
+            <CategoryBrowse categories={categories} />
 
             <EventRail
               title="Happening soon"
@@ -257,6 +358,8 @@ export default function HomePage() {
               events={free}
               href="/discover?free=1"
             />
+            <UniversityBrowse universities={universities} viewer={viewer} />
+
             <EventRail
               title={sectioned ? "Also on" : "Wetin else dey"}
               note={
