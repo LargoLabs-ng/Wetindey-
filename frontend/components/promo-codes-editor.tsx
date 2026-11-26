@@ -21,6 +21,8 @@ type Row = {
   code: string;
   label: string;
   promoterName: string;
+  /** Linked team member (event_staff id), "" for none. Referral codes only. */
+  staffId: string;
   rate: string;
   usageLimit: string;
   active: boolean;
@@ -49,6 +51,7 @@ function blank(kind: PromoKind): Row {
     code: "",
     label: "",
     promoterName: "",
+    staffId: "",
     rate: kind === "discount" ? "10" : "5",
     usageLimit: "",
     active: true,
@@ -58,6 +61,7 @@ function blank(kind: PromoKind): Row {
 }
 
 type Tier = { id: string; name: string };
+type TeamMember = { id: string; name: string };
 
 type ServerCode = {
   id: string;
@@ -71,6 +75,7 @@ type ServerCode = {
   active: boolean;
   appliesToAllTiers?: boolean;
   ticketTypeIds?: string[];
+  staffId?: string | null;
   orders: number;
   tickets: number;
   revenue: number;
@@ -86,6 +91,7 @@ function toRow(c: ServerCode): Row {
     code: c.code,
     label: c.label ?? "",
     promoterName: c.promoterName ?? "",
+    staffId: c.staffId ?? "",
     rate: String(c.rate),
     usageLimit: c.usageLimit === null ? "" : String(c.usageLimit),
     active: c.active,
@@ -117,6 +123,8 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
   const [canSeeMoney, setCanSeeMoney] = useState(true);
   /** This event's ticket types, for "Only some ticket types". */
   const [tiers, setTiers] = useState<Tier[]>([]);
+  /** Team members a referral code can be linked to. */
+  const [team, setTeam] = useState<TeamMember[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -146,7 +154,10 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
         }
         if (!res.ok) throw new Error("Could not load your codes.");
         const data = await res.json();
-        if (!cancelled) setRows((data.codes ?? []).map(toRow));
+        if (!cancelled) {
+          setRows((data.codes ?? []).map(toRow));
+          setTeam(data.team ?? []);
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Load failed.");
       } finally {
@@ -180,6 +191,7 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
           usageLimit: r.usageLimit.trim() ? Number(r.usageLimit) : null,
           active: r.active,
           appliesToAllTiers: r.appliesToAllTiers,
+          staffId: r.kind === "refer_to_earn" ? r.staffId || null : null,
           // Only tiers that still exist: one deleted since loading would be
           // refused by the server as "not on this event".
           ticketTypeIds: r.appliesToAllTiers
@@ -197,6 +209,7 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
     // Rebuilt from the server so new rows pick up their ids — otherwise the
     // next save inserts them a second time.
     setRows((data.codes ?? []).map(toRow));
+    if (data.team) setTeam(data.team);
     setSaved(true);
   }
 
@@ -299,6 +312,42 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
+
+            {isRef && team.length > 0 && (
+              <div className="mt-3">
+                <label htmlFor={`owner-${row.key}`} className={caption}>
+                  Their Wetin Dey account (optional)
+                </label>
+                <select
+                  id={`owner-${row.key}`}
+                  value={row.staffId}
+                  onChange={(e) => {
+                    const staffId = e.target.value;
+                    const member = team.find((m) => m.id === staffId);
+                    patch(row.key, {
+                      staffId,
+                      // Fill the name in for them, but never overwrite one
+                      // they've typed.
+                      ...(member && !row.promoterName.trim()
+                        ? { promoterName: member.name }
+                        : {}),
+                    });
+                  }}
+                  className={`${input} min-h-11`}
+                >
+                  <option value="">Not linked</option>
+                  {team.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-on-dark-3">
+                  If they&apos;re on your team, link them so they can&apos;t
+                  earn commission on tickets they buy themselves.
+                </p>
+              </div>
+            )}
 
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <div>
@@ -421,9 +470,10 @@ export function PromoCodesEditor({ eventId }: { eventId: string }) {
           <span className="font-semibold text-on-dark">
             {naira(owed)} owed to promoters.
           </span>{" "}
-          We don&apos;t pay them — this is a record of what you owe, and it
-          isn&apos;t deducted from your payout. Settle it however you already
-          settle with people.
+          Refunded and cancelled tickets are already taken off. We don&apos;t
+          pay promoters — this is a record of what you owe, and it isn&apos;t
+          deducted from your payout. Settle it however you already settle
+          with people.
         </p>
       )}
 

@@ -23,6 +23,7 @@ import {
   type PromoCode,
 } from '@/lib/promo';
 import { loadPromoCode } from '@/lib/promo-lookup';
+import { withoutSelfReferral } from '@/lib/referral';
 import {
   HOLD_MINUTES,
   holdSeats,
@@ -68,6 +69,25 @@ async function resolvePromoter(
     // from a link already out in the world.
     if (!row || row.status !== "active") return null;
     return row.userId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The account behind a referral code, when the organiser linked the code to
+ * a team member. Null when it isn't linked (a code with only a typed name),
+ * or on any failure — like resolvePromoter, this never blocks a purchase.
+ */
+async function codeOwnerUserId(promo: PromoCode | null): Promise<string | null> {
+  if (!promo || promo.kind !== "refer_to_earn" || !promo.staffId) return null;
+  try {
+    const [row] = await db
+      .select({ userId: eventStaff.userId })
+      .from(eventStaff)
+      .where(eq(eventStaff.id, promo.staffId))
+      .limit(1);
+    return row?.userId ?? null;
   } catch {
     return null;
   }
@@ -289,6 +309,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Nobody earns from their own purchase (lib/referral.ts). Worked out
+    // before the price, though dropping a referral code never changes it.
+    const selfCheck = withoutSelfReferral({
+      buyerId: account.id,
+      linkPromoterId: await resolvePromoter(eventId, ref),
+      codeOwnerUserId: await codeOwnerUserId(promo),
+    });
+    if (selfCheck.dropCode) promo = null;
+    const promoterId = selfCheck.promoterId;
+
     const activePrice = activeTicketPrice(ticketType, new Date()).price;
     const faceValue = activePrice * quantity;
     const effect = applyPromo(faceValue, promo);
@@ -301,8 +331,6 @@ export async function POST(request: NextRequest) {
     const subtotal = quote.subtotal;
     const fees = quote.platformFee;
     const total = quote.buyerTotal;
-
-    const promoterId = await resolvePromoter(eventId, ref);
 
     // Hold the seats and write the order in one transaction. The hold is a
     // single conditional UPDATE (see holdSeats), so two buyers going for the

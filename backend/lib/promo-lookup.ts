@@ -53,5 +53,6 @@ export async function loadPromoCode(
     active: row.active,
     appliesToAllTiers: row.appliesToAllTiers,
     ticketTypeIds,
+    staffId: row.staffId,
   };
 }
