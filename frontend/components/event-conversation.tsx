@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { EyeOff, Flag, MessageCircle, Megaphone, Undo2, UserX } from "lucide-react";
 
@@ -68,6 +69,8 @@ export function EventConversation({
   eventId: string;
   eventTitle: string;
 }) {
+  // Signing in from here comes back to this event, not the home page.
+  const pathname = usePathname();
   const { status } = useSession();
   const signedIn = status === "authenticated";
 
@@ -430,11 +433,13 @@ export function EventConversation({
             </>
           ) : (
             <div className="rounded-xl border border-line bg-card p-4 text-sm text-ink-2">
-              <Link href="/login" className="font-semibold text-purple hover:underline">
+              <Link
+                href={`/login?callbackUrl=${encodeURIComponent(pathname || "/")}`}
+                className="font-semibold text-purple hover:underline"
+              >
                 Sign in
               </Link>{" "}
-              to ask a question. You don&apos;t need an account to buy a ticket —
-              only to talk here.
+              to ask a question.
             </div>
           )}
         </div>

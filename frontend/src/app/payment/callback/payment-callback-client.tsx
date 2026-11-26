@@ -8,7 +8,7 @@ import dynamic from 'next/dynamic';
 import { SUPPORT_EMAIL } from '@/lib/app-url';
 import { safeHttpUrl } from '@/lib/media';
 import { WordMark } from '@/components/wordmark';
-import { ThemeToggle } from '@/components/theme-toggle';
+import { AccountNav } from '@/components/account-nav';
 
 const QRCodeDisplay = dynamic(
   () => import('@/components/qr-code-display').then((mod) => mod.QRCodeDisplay),
@@ -27,6 +27,8 @@ interface PaymentStatus {
   message: string;
   orderId?: string;
   eventTitle?: string;
+  /** The event's public slug, for "Try again" and the way back to it. */
+  eventSlug?: string;
   tickets?: Ticket[];
   /** A free RSVP: nothing was paid, so the page celebrates instead. */
   free?: boolean;
@@ -92,6 +94,7 @@ export default function PaymentCallbackClient() {
             free,
             orderId: data.orderId,
             eventTitle: data.eventTitle,
+            eventSlug: data.eventSlug,
             tickets: data.tickets,
             afterPurchase: data.afterPurchase ?? null,
           });
@@ -110,6 +113,7 @@ export default function PaymentCallbackClient() {
           setPaymentStatus({
             status: 'failed',
             message: data.message || 'Payment verification failed',
+            eventSlug: data.eventSlug,
           });
         }
       } catch {
@@ -133,7 +137,7 @@ export default function PaymentCallbackClient() {
               label beside it and swapping the image left the label behind,
               so the header read "Wetin Dey? Ticket Buddy". */}
           <WordMark />
-          <ThemeToggle />
+          <AccountNav />
         </div>
       </header>
 
@@ -268,25 +272,43 @@ export default function PaymentCallbackClient() {
             </div>
           )}
 
-          <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:justify-center">
-            <Link
-              href="/events"
-              // `--color-forest` is the old dark primary, and on a dark page
-              // it resolves to a LIGHT colour — white text on it disappears.
-              // The action colour is purple here, as everywhere else.
-              className="rounded-xl px-6 py-3 font-semibold text-white transition-opacity"
-              style={{ backgroundColor: 'var(--color-purple)' }}
-            >
-              Browse More Events
-            </Link>
+          {/* One clear next step per outcome, then a way to keep browsing.
+              Paid → your tickets. Failed → the same event, to try again.
+              (Both used to go to Discover, which lost the event entirely.)
+              `--color-forest` is the old dark primary and turns LIGHT on a
+              dark page, so the action colour is purple, as everywhere else. */}
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+            {paymentStatus.status === 'success' && (
+              <Link
+                href="/my-events"
+                className="rounded-xl px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ backgroundColor: 'var(--color-purple)' }}
+              >
+                View my tickets
+              </Link>
+            )}
 
             {paymentStatus.status === 'failed' && (
               <Link
-                href="/events"
-                className="rounded border px-6 py-3 font-semibold transition-opacity"
-                style={{ borderColor: 'var(--color-stone-mid)', color: 'var(--color-forest)' }}
+                href={
+                  paymentStatus.eventSlug
+                    ? `/events/${encodeURIComponent(paymentStatus.eventSlug)}`
+                    : '/discover'
+                }
+                className="rounded-xl px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ backgroundColor: 'var(--color-purple)' }}
               >
-                Try Again
+                Try again
+              </Link>
+            )}
+
+            {paymentStatus.status !== 'loading' && paymentStatus.status !== 'pending' && (
+              <Link
+                href="/discover"
+                className="rounded-xl border px-6 py-3 font-semibold transition-colors"
+                style={{ borderColor: 'var(--color-stone-mid)', color: 'var(--color-ink, var(--color-forest))' }}
+              >
+                {paymentStatus.status === 'failed' ? 'Browse other events' : 'Discover more events'}
               </Link>
             )}
           </div>

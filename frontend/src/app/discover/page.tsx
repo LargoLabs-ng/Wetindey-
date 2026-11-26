@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { WordMark } from "@/components/wordmark";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AccountNav } from "@/components/account-nav";
 import { EventCardItem, FeaturedCard, type CardEvent } from "@/components/event-card";
 
 type Payload = { events: CardEvent[]; categories: { name: string; count: number }[] };
@@ -94,7 +94,7 @@ export default function DiscoverPage() {
       <header className="border-b border-line bg-cream">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <WordMark />
-          <ThemeToggle />
+          <AccountNav />
         </div>
       </header>
 
